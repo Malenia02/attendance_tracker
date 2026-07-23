@@ -26,7 +26,11 @@ class AuthController extends Controller
 
         $user = User::query()
             ->with('personnel')
-            ->where('username', $validated['username'])
+            ->where(function ($query) use ($validated): void {
+                $query
+                    ->where('username', $validated['username'])
+                    ->orWhereHas('personnel', fn ($query) => $query->where('email', $validated['username']));
+            })
             ->first();
 
         if (! $user) {

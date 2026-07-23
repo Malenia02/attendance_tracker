@@ -10,7 +10,8 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { apiFetch, clearAuth, getStoredUser } from "../../lib/auth";
 
 const menuItems = [
   {
@@ -27,6 +28,7 @@ const menuItems = [
     label: "Personnel",
     path: "/personnel",
     icon: Users,
+    roles: ["Administrator", "HR"],
   },
   {
     label: "Schedules",
@@ -52,6 +54,7 @@ const menuItems = [
     label: "System Users",
     path: "/system-users",
     icon: ShieldCheck,
+    roles: ["Administrator"],
   },
   {
     label: "Settings",
@@ -61,12 +64,33 @@ const menuItems = [
 ];
 
 export default function Sidebar({ isOpen }) {
+  const navigate = useNavigate();
+  const currentUser = getStoredUser();
+  const displayName = currentUser?.personnel?.full_name || currentUser?.username || "System User";
+  const initials = displayName
+    .split(" ")
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  async function handleLogout() {
+    try {
+      await apiFetch("/auth/logout", { method: "POST" });
+    } finally {
+      clearAuth();
+      navigate("/login", { replace: true });
+    }
+  }
+
   return (
     <aside className={`sidebar ${isOpen ? "sidebar-open" : ""}`}>
       <nav className="sidebar-nav">
         <p className="sidebar-section-title">Attendance System</p>
 
-        {menuItems.map((item) => {
+        {menuItems
+          .filter((item) => !item.roles || item.roles.includes(currentUser?.user_role))
+          .map((item) => {
           const Icon = item.icon;
 
           return (
@@ -81,20 +105,20 @@ export default function Sidebar({ isOpen }) {
               <span>{item.label}</span>
             </NavLink>
           );
-        })}
+          })}
       </nav>
 
       <div className="sidebar-user">
-        <div className="avatar">JD</div>
+        <div className="avatar">{initials}</div>
 
         <div className="sidebar-user-info">
-          <strong>John Doe</strong>
-          <span>Administrator</span>
+          <strong>{displayName}</strong>
+          <span>{currentUser?.user_role || "User"}</span>
         </div>
 
-        <Link to="/login" className="sidebar-icon-button" aria-label="Sign out">
+        <button type="button" className="sidebar-icon-button" aria-label="Sign out" onClick={handleLogout}>
           <LogOut size={18} />
-        </Link>
+        </button>
       </div>
     </aside>
   );

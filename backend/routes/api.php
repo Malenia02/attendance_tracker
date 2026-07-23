@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\SystemUserController;
 use Illuminate\Support\Facades\Route;
 
@@ -10,8 +11,16 @@ Route::middleware('api.auth')->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
-    Route::get('/system-users/options', [SystemUserController::class, 'options']);
-    Route::apiResource('/system-users', SystemUserController::class)
-        ->parameters(['system-users' => 'systemUser'])
-        ->except(['show']);
+    Route::middleware('role:Administrator,HR')->group(function (): void {
+        Route::get('/personnel/options', [PersonnelController::class, 'options']);
+        Route::apiResource('/personnel', PersonnelController::class)
+            ->except(['show']);
+    });
+
+    Route::middleware('role:Administrator')->group(function (): void {
+        Route::get('/system-users/options', [SystemUserController::class, 'options']);
+        Route::apiResource('/system-users', SystemUserController::class)
+            ->parameters(['system-users' => 'systemUser'])
+            ->except(['show']);
+    });
 });

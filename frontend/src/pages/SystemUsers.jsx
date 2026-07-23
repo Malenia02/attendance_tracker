@@ -12,8 +12,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
-
-const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+import { apiFetch } from "../lib/auth";
 
 const emptyForm = {
   personnel_id: "",
@@ -66,7 +65,7 @@ export default function SystemUsers() {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetch(`${API_BASE}/system-users/options`, { signal: controller.signal })
+    apiFetch("/system-users/options", { signal: controller.signal })
       .then(readResponse)
       .then(setOptions)
       .catch((error) => {
@@ -89,8 +88,8 @@ export default function SystemUsers() {
 
       try {
         const query = params.toString();
-        const payload = await fetch(
-          `${API_BASE}/system-users${query ? `?${query}` : ""}`,
+        const payload = await apiFetch(
+          `/system-users${query ? `?${query}` : ""}`,
           { signal: controller.signal },
         ).then(readResponse);
 
@@ -168,10 +167,10 @@ export default function SystemUsers() {
     }
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         editingUser
-          ? `${API_BASE}/system-users/${editingUser.user_id}`
-          : `${API_BASE}/system-users`,
+          ? `/system-users/${editingUser.user_id}`
+          : "/system-users",
         {
           method: editingUser ? "PUT" : "POST",
           headers: {
@@ -209,7 +208,7 @@ export default function SystemUsers() {
     setPageError("");
 
     try {
-      const payload = await fetch(`${API_BASE}/system-users/${user.user_id}`, {
+      const payload = await apiFetch(`/system-users/${user.user_id}`, {
         method: "DELETE",
         headers: { Accept: "application/json" },
       }).then(readResponse);

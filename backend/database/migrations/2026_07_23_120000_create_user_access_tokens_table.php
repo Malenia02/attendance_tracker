@@ -18,9 +18,10 @@ return new class extends Migration
             $table->char('token_hash', 64)->unique();
             $table->string('user_agent', 500)->nullable();
             $table->string('ip_address', 45)->nullable();
-            $table->timestamp('last_used_at')->nullable();
-            $table->timestamp('expires_at')->index();
-            $table->timestamps();
+            $table->dateTime('last_used_at')->nullable();
+            $table->dateTime('expires_at')->index();
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
 
             $table
                 ->foreign('user_id')

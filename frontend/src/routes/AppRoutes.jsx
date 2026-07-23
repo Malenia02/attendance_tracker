@@ -5,6 +5,7 @@ import Attendance from "../pages/Attendance";
 import Personnel from "../pages/Personnel";
 import Login from "../pages/Login";
 import SystemUsers from "../pages/SystemUsers";
+import RequireAuth from "../components/auth/RequireAuth";
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -26,7 +27,14 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
 
-      <Route path="/" element={<MainLayout />}>
+      <Route
+        path="/"
+        element={
+          <RequireAuth>
+            <MainLayout />
+          </RequireAuth>
+        }
+      >
         <Route index element={<Navigate to="/login" replace />} />
 
         <Route path="dashboard" element={<Dashboard />} />

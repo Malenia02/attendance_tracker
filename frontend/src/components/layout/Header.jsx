@@ -9,9 +9,12 @@ import {
   UserCircle,
 } from "lucide-react";
 import { useTheme } from "../../context/ThemeContext";
+import { getStoredUser } from "../../lib/auth";
 
 export default function Header({ onToggleSidebar }) {
   const { theme, toggleTheme } = useTheme();
+  const currentUser = getStoredUser();
+  const displayName = currentUser?.personnel?.full_name || currentUser?.username || "System User";
 
   return (
     <header className="topbar">
@@ -64,8 +67,8 @@ export default function Header({ onToggleSidebar }) {
         <div className="topbar-user">
           <UserCircle size={34} />
           <div>
-            <strong>John Doe</strong>
-            <span>Administrator</span>
+            <strong>{displayName}</strong>
+            <span>{currentUser?.user_role || "User"}</span>
           </div>
         </div>
       </div>

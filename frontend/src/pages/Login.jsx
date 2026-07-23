@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Eye,
@@ -8,20 +8,47 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
+import { apiFetch, getAuthToken, storeAuth } from "../lib/auth";
 
 export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [credentials, setCredentials] = useState({ username: "", password: "" });
+  const [remember, setRemember] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  if (getAuthToken()) return <Navigate to="/dashboard" replace />;
 
   function handleChange(event) {
     const { name, value } = event.target;
     setCredentials((current) => ({ ...current, [name]: value }));
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    navigate("/dashboard");
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const response = await apiFetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...credentials, remember }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.message || "Unable to sign in. Please try again.");
+      }
+
+      storeAuth(payload.token, payload.user, remember);
+      navigate("/dashboard", { replace: true });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -65,6 +92,8 @@ export default function Login() {
           </div>
 
           <form className="login-form" onSubmit={handleSubmit}>
+            {error && <div className="login-error" role="alert">{error}</div>}
+
             <label htmlFor="username">Username or email address</label>
             <div className="login-input-group">
               <UserRound size={19} />
@@ -107,12 +136,17 @@ export default function Login() {
             </div>
 
             <label className="remember-option">
-              <input type="checkbox" name="remember" />
+              <input
+                type="checkbox"
+                name="remember"
+                checked={remember}
+                onChange={(event) => setRemember(event.target.checked)}
+              />
               <span>Keep me signed in on this device</span>
             </label>
 
-            <button type="submit" className="login-submit">
-              Sign in
+            <button type="submit" className="login-submit" disabled={submitting}>
+              {submitting ? "Signing in…" : "Sign in"}
               <ArrowRight size={18} />
             </button>
           </form>
