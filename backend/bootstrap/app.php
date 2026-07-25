@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'api.auth' => \App\Http\Middleware\AuthenticateApiToken::class,
+            'api.audit' => \App\Http\Middleware\AuditApiActivity::class,
             'role' => \App\Http\Middleware\EnsureUserRole::class,
         ]);
     })

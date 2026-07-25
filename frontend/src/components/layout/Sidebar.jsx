@@ -1,5 +1,7 @@
 import {
   BarChart3,
+  Building2,
+  CalendarRange,
   CalendarDays,
   Clock3,
   FileText,
@@ -13,53 +15,62 @@ import {
 import { NavLink, useNavigate } from "react-router-dom";
 import { apiFetch, clearAuth, getStoredUser } from "../../lib/auth";
 
-const menuItems = [
+const menuSections = [
   {
-    label: "Dashboard",
-    path: "/dashboard",
-    icon: LayoutDashboard,
+    label: "Overview",
+    items: [
+      { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+    ],
   },
   {
-    label: "Attendance",
-    path: "/attendance",
-    icon: Clock3,
+    label: "Time & Attendance",
+    items: [
+      { label: "Attendance", path: "/attendance", icon: Clock3 },
+      { label: "DTR Monitoring", path: "/dtr", icon: FileText },
+      { label: "Calendar & Holidays", path: "/calendar", icon: CalendarRange },
+      {
+        label: "QR Attendance",
+        path: "/qr-attendance",
+        icon: QrCode,
+        roles: ["Administrator", "HR", "Supervisor", "Encoder"],
+      },
+    ],
   },
   {
-    label: "Personnel",
-    path: "/personnel",
-    icon: Users,
-    roles: ["Administrator", "HR"],
+    label: "Workforce",
+    items: [
+      {
+        label: "Personnel",
+        path: "/personnel",
+        icon: Users,
+        roles: ["Administrator", "HR"],
+      },
+      {
+        label: "Departments & Offices",
+        path: "/departments",
+        icon: Building2,
+        roles: ["Administrator", "HR"],
+      },
+      { label: "Schedules", path: "/schedules", icon: CalendarDays },
+    ],
   },
   {
-    label: "Schedules",
-    path: "/schedules",
-    icon: CalendarDays,
-  },
-  {
-    label: "DTR Reports",
-    path: "/dtr",
-    icon: FileText,
-  },
-  {
-    label: "QR Attendance",
-    path: "/qr-attendance",
-    icon: QrCode,
-  },
-  {
-    label: "Activity Logs",
-    path: "/activity-logs",
-    icon: BarChart3,
-  },
-  {
-    label: "System Users",
-    path: "/system-users",
-    icon: ShieldCheck,
-    roles: ["Administrator"],
-  },
-  {
-    label: "Settings",
-    path: "/settings",
-    icon: Settings,
+    label: "Administration",
+    items: [
+      {
+        label: "Activity Logs",
+        path: "/activity-logs",
+        icon: BarChart3,
+        roles: ["Administrator"],
+      },
+      {
+        label: "System Users",
+        path: "/system-users",
+        icon: ShieldCheck,
+        roles: ["Administrator"],
+      },
+      { label: "Settings", path: "/settings", icon: Settings },
+    ],
   },
 ];
 
@@ -86,26 +97,36 @@ export default function Sidebar({ isOpen }) {
   return (
     <aside className={`sidebar ${isOpen ? "sidebar-open" : ""}`}>
       <nav className="sidebar-nav">
-        <p className="sidebar-section-title">Attendance System</p>
+        {menuSections.map((section) => {
+          const visibleItems = section.items.filter(
+            (item) => !item.roles || item.roles.includes(currentUser?.user_role),
+          );
 
-        {menuItems
-          .filter((item) => !item.roles || item.roles.includes(currentUser?.user_role))
-          .map((item) => {
-          const Icon = item.icon;
+          if (!visibleItems.length) return null;
 
           return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                isActive ? "nav-link active" : "nav-link"
-              }
-            >
-              <Icon size={18} />
-              <span>{item.label}</span>
-            </NavLink>
+            <div className="sidebar-menu-section" key={section.label}>
+              <p className="sidebar-section-title">{section.label}</p>
+
+              {visibleItems.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    className={({ isActive }) =>
+                      isActive ? "nav-link active" : "nav-link"
+                    }
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
           );
-          })}
+        })}
       </nav>
 
       <div className="sidebar-user">

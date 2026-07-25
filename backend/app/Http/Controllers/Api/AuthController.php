@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Models\UserAccessToken;
 use Illuminate\Http\JsonResponse;
@@ -72,6 +73,14 @@ class AuthController extends Controller
             }
 
             $user->forceFill($changes)->save();
+            $this->logAuthentication(
+                $request,
+                $user,
+                $attempts >= self::MAX_ATTEMPTS ? 'ACCOUNT_LOCKED' : 'FAILED_LOGIN',
+                $attempts >= self::MAX_ATTEMPTS
+                    ? $user->username.' was locked after repeated failed login attempts.'
+                    : 'A failed login attempt was recorded for '.$user->username.'.'
+            );
 
             if ($attempts >= self::MAX_ATTEMPTS) {
                 return response()->json([
@@ -107,6 +116,12 @@ class AuthController extends Controller
             'last_used_at' => now(),
             'expires_at' => $expiresAt,
         ]);
+        $this->logAuthentication(
+            $request,
+            $user,
+            'LOGIN',
+            $user->username.' signed in successfully.'
+        );
 
         return response()->json([
             'message' => 'Signed in successfully.',
@@ -139,6 +154,23 @@ class AuthController extends Controller
             'message' => 'The username or password is incorrect.',
             'attempts_remaining' => $attemptsRemaining,
         ], 422);
+    }
+
+    private function logAuthentication(
+        Request $request,
+        User $user,
+        string $activityType,
+        string $description
+    ): void {
+        ActivityLog::create([
+            'user_id' => $user->user_id,
+            'activity_type' => $activityType,
+            'description' => $description,
+            'entity_type' => 'system_users',
+            'entity_id' => $user->user_id,
+            'ip_address' => $request->ip(),
+            'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+        ]);
     }
 
     private function formatUser(User $user): array

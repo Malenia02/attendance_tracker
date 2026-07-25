@@ -11,7 +11,7 @@ class QrScanLog extends Model
 
     protected $primaryKey = 'qr_scan_id';
 
-    const UPDATED_AT = null;
+    public $timestamps = false;
 
     protected $fillable = [
         'qr_token_id',
@@ -25,6 +25,7 @@ class QrScanLog extends Model
         'ip_address',
         'user_agent',
         'device_identifier',
+        'scanned_by',
         'scan_status',
         'message',
     ];
@@ -60,6 +61,15 @@ class QrScanLog extends Model
             AttendanceRecord::class,
             'attendance_id',
             'attendance_id'
+        );
+    }
+
+    public function scanner(): BelongsTo
+    {
+        return $this->belongsTo(
+            User::class,
+            'scanned_by',
+            'user_id'
         );
     }
 }
