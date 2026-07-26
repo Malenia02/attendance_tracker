@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AttendanceChangeLog;
 use App\Models\AttendanceRecord;
+use App\Models\DtrCertification;
 use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Models\TimeLog;
 use App\Models\WorkSchedule;
+use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,6 +37,11 @@ class AttendanceController extends Controller
             'status' => ['nullable', Rule::in(self::STATUS_FILTERS)],
         ]);
         $date = Carbon::parse($validated['date'] ?? now()->toDateString())->toDateString();
+        $user = $request->user();
+        $visiblePersonnelIds = PersonnelAccess::scope(
+            Personnel::query()->where('status', 'Active'),
+            $user
+        )->pluck('personnel_id');
         $holidays = Holiday::query()
             ->whereDate('holiday_date', $date)
             ->orderByRaw('department_id IS NULL DESC')
@@ -42,6 +50,7 @@ class AttendanceController extends Controller
         $isToday = $date === now()->toDateString();
         $scheduleAssignments = PersonnelSchedule::query()
             ->with('schedule')
+            ->whereIn('personnel_id', $visiblePersonnelIds)
             ->whereDate('effective_from', '<=', $date)
             ->where(function ($query) use ($date): void {
                 $query->whereNull('effective_to')->orWhereDate('effective_to', '>=', $date);
@@ -59,6 +68,7 @@ class AttendanceController extends Controller
                     ->with('schedule'),
             ])
             ->where('status', 'Active')
+            ->whereIn('personnel_id', $visiblePersonnelIds)
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
                     $query
@@ -76,13 +86,10 @@ class AttendanceController extends Controller
                 $schedule = $record?->schedule
                     ?? $scheduleAssignments->get($person->personnel_id)?->schedule;
                 $referenceTime = $isToday ? now() : Carbon::parse($date)->endOfDay();
-                $appliesToPersonnel = fn (Holiday $event): bool =>
-                    ! $event->department_id || $event->department_id === $person->department_id;
-                $personHoliday = $holidays->first(fn (Holiday $event): bool =>
-                    $event->holiday_type !== 'Special Working Holiday' && $appliesToPersonnel($event)
+                $appliesToPersonnel = fn (Holiday $event): bool => ! $event->department_id || $event->department_id === $person->department_id;
+                $personHoliday = $holidays->first(fn (Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday' && $appliesToPersonnel($event)
                 );
-                $isSpecialWorkingDay = $holidays->contains(fn (Holiday $event): bool =>
-                    $event->holiday_type === 'Special Working Holiday' && $appliesToPersonnel($event)
+                $isSpecialWorkingDay = $holidays->contains(fn (Holiday $event): bool => $event->holiday_type === 'Special Working Holiday' && $appliesToPersonnel($event)
                 );
 
                 if ($record) {
@@ -111,6 +118,7 @@ class AttendanceController extends Controller
 
         $recentLogs = TimeLog::query()
             ->with('personnel:personnel_id,first_name,middle_name,last_name,suffix,employee_number')
+            ->whereIn('personnel_id', $visiblePersonnelIds)
             ->whereDate('log_datetime', $date)
             ->orderByDesc('log_datetime')
             ->limit(12)
@@ -154,7 +162,7 @@ class AttendanceController extends Controller
     public function options(Request $request): JsonResponse
     {
         $user = $request->user();
-        $canManageOthers = in_array($user->user_role, ['Administrator', 'HR', 'Supervisor', 'Encoder'], true);
+        $canManageOthers = PersonnelAccess::canManageOthers($user);
 
         return response()->json([
             'server_time' => now()->toISOString(),
@@ -163,7 +171,7 @@ class AttendanceController extends Controller
             'can_manage_others' => $canManageOthers,
             'personnel' => Personnel::query()
                 ->where('status', 'Active')
-                ->when(! $canManageOthers, fn ($query) => $query->where('personnel_id', $user->personnel_id))
+                ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
                 ->orderBy('last_name')
                 ->orderBy('first_name')
                 ->get(['personnel_id', 'employee_number', 'first_name', 'middle_name', 'last_name', 'suffix'])
@@ -183,15 +191,15 @@ class AttendanceController extends Controller
             'device_identifier' => ['nullable', 'string', 'max:255'],
         ]);
         $user = $request->user();
-        $canManageOthers = in_array($user->user_role, ['Administrator', 'HR', 'Supervisor', 'Encoder'], true);
+        $trustedQrScan = $request->attributes->get('trusted_qr_scan') === true;
 
-        if (! $canManageOthers && (int) $user->personnel_id !== (int) $validated['personnel_id']) {
+        if (! $trustedQrScan && (int) $user->personnel_id !== (int) $validated['personnel_id']) {
             return response()->json([
                 'message' => 'You may only record attendance for your own personnel account.',
             ], 403);
         }
 
-        if (! $canManageOthers && ! $user->personnel_id) {
+        if (! $trustedQrScan && ! $user->personnel_id) {
             return response()->json([
                 'message' => 'Your account is not linked to a personnel record.',
             ], 422);
@@ -305,11 +313,53 @@ class AttendanceController extends Controller
             ], 403);
         }
 
-        $attendance->forceFill([
-            'is_verified' => true,
-            'verified_by' => $request->user()->user_id,
-            'verified_at' => now(),
-        ])->save();
+        $attendance->loadMissing('personnel');
+
+        if (! $attendance->personnel || ! PersonnelAccess::canAccess($request->user(), $attendance->personnel)) {
+            return response()->json([
+                'message' => 'This attendance record is outside your assigned office scope.',
+            ], 403);
+        }
+
+        $certificationStatus = DtrCertification::query()
+            ->where('personnel_id', $attendance->personnel_id)
+            ->where('dtr_year', $attendance->attendance_date->year)
+            ->where('dtr_month', $attendance->attendance_date->month)
+            ->value('certification_status');
+
+        if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
+            return response()->json([
+                'message' => $certificationStatus === 'Certified'
+                    ? 'This DTR is certified and locked.'
+                    : 'Return the submitted DTR before changing attendance verification.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($attendance, $request): void {
+            $oldValues = [
+                'is_verified' => (bool) $attendance->is_verified,
+                'verified_by' => $attendance->verified_by,
+                'verified_at' => $attendance->verified_at?->toISOString(),
+            ];
+            $attendance->forceFill([
+                'is_verified' => true,
+                'verified_by' => $request->user()->user_id,
+                'verified_at' => now(),
+            ])->save();
+
+            AttendanceChangeLog::create([
+                'attendance_id' => $attendance->attendance_id,
+                'changed_by' => $request->user()->user_id,
+                'action_type' => 'Verified',
+                'old_values' => $oldValues,
+                'new_values' => [
+                    'is_verified' => true,
+                    'verified_by' => $request->user()->user_id,
+                    'verified_at' => $attendance->verified_at?->toISOString(),
+                ],
+                'reason' => 'Attendance verification.',
+            ]);
+        });
 
         return response()->json([
             'message' => 'Attendance record verified successfully.',
@@ -320,6 +370,264 @@ class AttendanceController extends Controller
                 $attendance->attendance_date->isToday()
             ),
         ]);
+    }
+
+    public function verifyBulk(Request $request): JsonResponse
+    {
+        if (! in_array($request->user()->user_role, ['Administrator', 'HR', 'Supervisor'], true)) {
+            return response()->json([
+                'message' => 'You do not have permission to verify attendance records.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'attendance_ids' => ['required', 'array', 'min:1', 'max:31'],
+            'attendance_ids.*' => ['integer', 'distinct', 'exists:attendance_records,attendance_id'],
+        ]);
+        $records = AttendanceRecord::query()
+            ->with(['schedule', 'personnel'])
+            ->whereIn('attendance_id', $validated['attendance_ids'])
+            ->get();
+
+        foreach ($records as $record) {
+            if (! $record->personnel || ! PersonnelAccess::canAccess($request->user(), $record->personnel)) {
+                return response()->json([
+                    'message' => 'One or more attendance records are outside your assigned office scope.',
+                ], 403);
+            }
+
+            $certificationStatus = DtrCertification::query()
+                ->where('personnel_id', $record->personnel_id)
+                ->where('dtr_year', $record->attendance_date->year)
+                ->where('dtr_month', $record->attendance_date->month)
+                ->value('certification_status');
+
+            if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
+                return response()->json([
+                    'message' => 'Return submitted DTRs before verifying attendance, and never modify certified DTRs.',
+                ], 422);
+            }
+
+            if ($this->determineAttendanceStatus(
+                $record,
+                $record->schedule,
+                $record->attendance_date->copy()->endOfDay()
+            ) === 'Incomplete') {
+                return response()->json([
+                    'message' => 'Incomplete entries must be corrected before bulk verification.',
+                ], 422);
+            }
+        }
+
+        DB::transaction(function () use ($records, $request): void {
+            foreach ($records as $record) {
+                $oldValues = [
+                    'is_verified' => (bool) $record->is_verified,
+                    'verified_by' => $record->verified_by,
+                    'verified_at' => $record->verified_at?->toISOString(),
+                ];
+                $record->forceFill([
+                    'is_verified' => true,
+                    'verified_by' => $request->user()->user_id,
+                    'verified_at' => now(),
+                ])->save();
+
+                AttendanceChangeLog::create([
+                    'attendance_id' => $record->attendance_id,
+                    'changed_by' => $request->user()->user_id,
+                    'action_type' => 'Verified',
+                    'old_values' => $oldValues,
+                    'new_values' => [
+                        'is_verified' => true,
+                        'verified_by' => $request->user()->user_id,
+                        'verified_at' => $record->verified_at?->toISOString(),
+                    ],
+                    'reason' => 'Bulk verification from DTR exception review.',
+                ]);
+            }
+        });
+
+        return response()->json([
+            'message' => $records->count().' attendance '
+                .str('record')->plural($records->count())
+                .' verified successfully.',
+            'verified_count' => $records->count(),
+        ]);
+    }
+
+    public function correct(Request $request): JsonResponse
+    {
+        if (! in_array($request->user()->user_role, ['Administrator', 'HR'], true)) {
+            return response()->json([
+                'message' => 'Only an administrator or HR user may correct historical attendance.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'personnel_id' => ['required', 'integer', 'exists:personnel,personnel_id'],
+            'attendance_date' => ['required', 'date', 'before_or_equal:today'],
+            'record_type' => ['required', Rule::in([
+                'Time Entries',
+                'Absent',
+                'Leave',
+                'Official Business',
+                'Work From Home',
+            ])],
+            'morning_time_in' => ['nullable', 'date_format:H:i'],
+            'morning_time_out' => ['nullable', 'date_format:H:i'],
+            'afternoon_time_in' => ['nullable', 'date_format:H:i'],
+            'afternoon_time_out' => ['nullable', 'date_format:H:i'],
+            'reason' => ['required', 'string', 'min:10', 'max:255'],
+        ]);
+        $date = Carbon::parse($validated['attendance_date'])->toDateString();
+        $personnel = Personnel::query()->where('status', 'Active')->findOrFail($validated['personnel_id']);
+        $certification = DtrCertification::query()
+            ->where('personnel_id', $personnel->personnel_id)
+            ->where('dtr_year', Carbon::parse($date)->year)
+            ->where('dtr_month', Carbon::parse($date)->month)
+            ->first();
+
+        if ($certification?->certification_status === 'Certified') {
+            return response()->json([
+                'message' => 'This DTR is certified and locked. It must be formally reopened before attendance can change.',
+            ], 422);
+        }
+
+        if ($certification?->certification_status === 'Submitted') {
+            return response()->json([
+                'message' => 'Return the submitted DTR for correction before changing its attendance records.',
+            ], 422);
+        }
+
+        if ($validated['record_type'] === 'Time Entries') {
+            $timeError = $this->validateCorrectionTimes($validated);
+
+            if ($timeError) {
+                return response()->json(['message' => $timeError], 422);
+            }
+        }
+
+        $schedule = $this->effectiveSchedule($personnel->personnel_id, $date);
+        $user = $request->user();
+        $result = DB::transaction(function () use (
+            $personnel,
+            $schedule,
+            $date,
+            $validated,
+            $user
+        ): AttendanceRecord {
+            $record = AttendanceRecord::query()
+                ->where('personnel_id', $personnel->personnel_id)
+                ->whereDate('attendance_date', $date)
+                ->lockForUpdate()
+                ->first();
+            $isNew = ! $record;
+            $record ??= new AttendanceRecord([
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => $date,
+                'created_by' => $user->user_id,
+            ]);
+            $trackedFields = [
+                'morning_time_in',
+                'morning_time_out',
+                'afternoon_time_in',
+                'afternoon_time_out',
+                'attendance_status',
+                'total_work_minutes',
+                'late_minutes',
+                'undertime_minutes',
+                'is_verified',
+                'remarks',
+            ];
+            $oldValues = $isNew ? null : $record->only($trackedFields);
+
+            $record->schedule_id = $schedule?->schedule_id;
+            $record->record_source = 'Manual';
+            $record->remarks = $validated['reason'];
+            $record->is_verified = true;
+            $record->verified_by = $user->user_id;
+            $record->verified_at = now();
+
+            if ($validated['record_type'] === 'Time Entries') {
+                foreach ([
+                    'morning_time_in',
+                    'morning_time_out',
+                    'afternoon_time_in',
+                    'afternoon_time_out',
+                ] as $field) {
+                    $record->{$field} = filled($validated[$field] ?? null)
+                        ? Carbon::parse($date.' '.$validated[$field], config('app.timezone'))
+                        : null;
+                }
+
+                $record->attendance_status = 'Incomplete';
+                $record->late_minutes = 0;
+                $record->undertime_minutes = 0;
+                $this->recalculate($record, $schedule, Carbon::parse($date)->endOfDay());
+            } else {
+                $record->morning_time_in = null;
+                $record->morning_time_out = null;
+                $record->afternoon_time_in = null;
+                $record->afternoon_time_out = null;
+                $record->attendance_status = $validated['record_type'];
+                $record->total_work_minutes = 0;
+                $record->late_minutes = 0;
+                $record->undertime_minutes = 0;
+            }
+
+            $record->save();
+
+            AttendanceChangeLog::create([
+                'attendance_id' => $record->attendance_id,
+                'changed_by' => $user->user_id,
+                'action_type' => $isNew ? 'Created' : 'Updated',
+                'old_values' => $oldValues,
+                'new_values' => $record->only($trackedFields),
+                'reason' => $validated['reason'],
+            ]);
+
+            return $record->fresh(['schedule']);
+        });
+
+        return response()->json([
+            'message' => 'Attendance correction saved, verified, and recorded in the audit trail.',
+            'data' => $this->formatAttendance(
+                $result,
+                $result->schedule,
+                Carbon::parse($date)->endOfDay(),
+                false
+            ),
+        ]);
+    }
+
+    private function validateCorrectionTimes(array $values): ?string
+    {
+        $morningIn = $values['morning_time_in'] ?? null;
+        $morningOut = $values['morning_time_out'] ?? null;
+        $afternoonIn = $values['afternoon_time_in'] ?? null;
+        $afternoonOut = $values['afternoon_time_out'] ?? null;
+
+        if ((bool) $morningIn !== (bool) $morningOut) {
+            return 'Morning time in and time out must both be provided.';
+        }
+
+        if ((bool) $afternoonIn !== (bool) $afternoonOut) {
+            return 'Afternoon time in and time out must both be provided.';
+        }
+
+        if (! $morningIn && ! $afternoonIn) {
+            return 'Provide at least one complete morning or afternoon attendance session.';
+        }
+
+        if ($morningIn && $morningOut && $morningOut <= $morningIn) {
+            return 'Morning time out must be later than morning time in.';
+        }
+
+        if ($afternoonIn && $afternoonOut && $afternoonOut <= $afternoonIn) {
+            return 'Afternoon time out must be later than afternoon time in.';
+        }
+
+        return null;
     }
 
     private function effectiveSchedule(int $personnelId, string $date): ?WorkSchedule
@@ -341,8 +649,7 @@ class AttendanceController extends Controller
         AttendanceRecord $record,
         ?WorkSchedule $schedule,
         ?Carbon $referenceTime = null
-    ): void
-    {
+    ): void {
         $morningMinutes = $record->morning_time_in && $record->morning_time_out
             ? max(0, $record->morning_time_in->diffInMinutes($record->morning_time_out))
             : 0;
@@ -587,8 +894,7 @@ class AttendanceController extends Controller
         Carbon $referenceTime,
         bool $allowAction,
         bool $isSpecialWorkingDay = false
-    ): array
-    {
+    ): array {
         $formatted = $record ? $this->formatAttendance(
             $record,
             $schedule,
@@ -639,8 +945,7 @@ class AttendanceController extends Controller
         ?Carbon $referenceTime = null,
         bool $allowAction = true,
         bool $isSpecialWorkingDay = false
-    ): array
-    {
+    ): array {
         $schedule ??= $record->schedule;
         $referenceTime ??= now();
         $displayStatus = $this->determineAttendanceStatus($record, $schedule, $referenceTime);

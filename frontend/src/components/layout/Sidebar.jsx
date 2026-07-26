@@ -74,7 +74,7 @@ const menuSections = [
   },
 ];
 
-export default function Sidebar({ isOpen }) {
+export default function Sidebar({ isOpen, isCollapsed }) {
   const navigate = useNavigate();
   const currentUser = getStoredUser();
   const displayName = currentUser?.personnel?.full_name || currentUser?.username || "System User";
@@ -115,6 +115,8 @@ export default function Sidebar({ isOpen }) {
                   <NavLink
                     key={item.path}
                     to={item.path}
+                    title={isCollapsed ? item.label : undefined}
+                    aria-label={item.label}
                     className={({ isActive }) =>
                       isActive ? "nav-link active" : "nav-link"
                     }
@@ -130,7 +132,12 @@ export default function Sidebar({ isOpen }) {
       </nav>
 
       <div className="sidebar-user">
-        <div className="avatar">{initials}</div>
+        <div className="avatar">
+          {initials}
+          {currentUser?.personnel?.photo_url && (
+            <img src={currentUser.personnel.photo_url} alt="" />
+          )}
+        </div>
 
         <div className="sidebar-user-info">
           <strong>{displayName}</strong>

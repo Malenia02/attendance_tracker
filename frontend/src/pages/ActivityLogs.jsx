@@ -58,7 +58,7 @@ function displayValue(value) {
 
 export default function ActivityLogs() {
   const [logs, setLogs] = useState([]);
-  const [summary, setSummary] = useState({ total: 0, today: 0, system: 0, attendance: 0 });
+  const [summary, setSummary] = useState({ total: 0, today: 0, system: 0, attendance: 0, dtr: 0 });
   const [users, setUsers] = useState([]);
   const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
   const [search, setSearch] = useState("");
@@ -108,6 +108,7 @@ export default function ActivityLogs() {
     { label: "Today", value: summary.today, icon: Clock3, tone: "green" },
     { label: "System actions", value: summary.system, icon: ShieldCheck, tone: "purple" },
     { label: "Attendance changes", value: summary.attendance, icon: FileClock, tone: "orange" },
+    { label: "DTR workflow", value: summary.dtr, icon: FileClock, tone: "green" },
   ], [summary]);
 
   function clearFilters() {
@@ -160,6 +161,7 @@ export default function ActivityLogs() {
             <option value="">All sources</option>
             <option>System</option>
             <option>Attendance</option>
+            <option>DTR</option>
           </select>
           <select value={userId} onChange={(event) => updateFilter(setUserId, event.target.value)}>
             <option value="">All operators</option>

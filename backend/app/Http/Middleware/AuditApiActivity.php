@@ -52,8 +52,8 @@ class AuditApiActivity
                 'ip_address' => $request->ip(),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
             ]);
-        } catch (\Throwable) {
-            // Auditing must never prevent the requested operation from completing.
+        } catch (\Throwable $exception) {
+            report($exception);
         }
 
         return $response;

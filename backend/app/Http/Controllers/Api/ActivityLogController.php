@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\AttendanceChangeLog;
+use App\Models\DtrStatusLog;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +18,7 @@ class ActivityLogController extends Controller
     {
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
-            'source' => ['nullable', Rule::in(['System', 'Attendance'])],
+            'source' => ['nullable', Rule::in(['System', 'Attendance', 'DTR'])],
             'user_id' => ['nullable', 'integer', 'exists:system_users,user_id'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
@@ -70,7 +71,41 @@ class ActivityLogController extends Controller
                 changes.reason as reason,
                 changes.created_at as created_at
             ");
-        $logs = DB::query()->fromSub($activityQuery->unionAll($attendanceQuery), 'audit_logs')
+        $dtrQuery = DB::table('dtr_status_logs as dtr_changes')
+            ->join(
+                'dtr_certifications as certifications',
+                'certifications.dtr_certification_id',
+                '=',
+                'dtr_changes.dtr_certification_id'
+            )
+            ->leftJoin('personnel as dtr_personnel', 'dtr_personnel.personnel_id', '=', 'certifications.personnel_id')
+            ->leftJoin('system_users as users', 'users.user_id', '=', 'dtr_changes.changed_by')
+            ->leftJoin('personnel as user_personnel', 'user_personnel.personnel_id', '=', 'users.personnel_id')
+            ->selectRaw("
+                CONCAT('dtr-', dtr_changes.dtr_status_log_id) as log_key,
+                'DTR' as source,
+                dtr_changes.changed_by as user_id,
+                users.username as username,
+                CONCAT_WS(' ', user_personnel.first_name, user_personnel.middle_name, user_personnel.last_name, user_personnel.suffix) as full_name,
+                CONCAT('DTR_', UPPER(dtr_changes.to_status)) as action,
+                CONCAT(
+                    'DTR for ',
+                    CONCAT_WS(' ', dtr_personnel.first_name, dtr_personnel.middle_name, dtr_personnel.last_name, dtr_personnel.suffix),
+                    ' changed from ', dtr_changes.from_status, ' to ', dtr_changes.to_status, '.'
+                ) as description,
+                'dtr_certifications' as entity_type,
+                dtr_changes.dtr_certification_id as entity_id,
+                dtr_changes.ip_address as ip_address,
+                dtr_changes.user_agent as user_agent,
+                JSON_OBJECT('status', dtr_changes.from_status) as old_values,
+                JSON_OBJECT('status', dtr_changes.to_status) as new_values,
+                dtr_changes.remarks as reason,
+                dtr_changes.created_at as created_at
+            ");
+        $auditQuery = $activityQuery
+            ->unionAll($attendanceQuery)
+            ->unionAll($dtrQuery);
+        $logs = DB::query()->fromSub($auditQuery, 'audit_logs')
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
                     $query
@@ -111,11 +146,15 @@ class ActivityLogController extends Controller
                 'to' => $logs->lastItem(),
             ],
             'summary' => [
-                'total' => ActivityLog::query()->count() + AttendanceChangeLog::query()->count(),
+                'total' => ActivityLog::query()->count()
+                    + AttendanceChangeLog::query()->count()
+                    + DtrStatusLog::query()->count(),
                 'today' => ActivityLog::query()->whereDate('created_at', today())->count()
-                    + AttendanceChangeLog::query()->whereDate('created_at', today())->count(),
+                    + AttendanceChangeLog::query()->whereDate('created_at', today())->count()
+                    + DtrStatusLog::query()->whereDate('created_at', today())->count(),
                 'system' => ActivityLog::query()->count(),
                 'attendance' => AttendanceChangeLog::query()->count(),
+                'dtr' => DtrStatusLog::query()->count(),
             ],
             'users' => User::query()
                 ->with('personnel:personnel_id,first_name,middle_name,last_name,suffix')

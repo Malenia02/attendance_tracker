@@ -5,20 +5,19 @@ import {
   Eye,
   EyeOff,
   LockKeyhole,
-  ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { apiFetch, getAuthToken, storeAuth } from "../lib/auth";
+import DilgSeal from "../components/branding/DilgSeal";
+import { apiFetch, getStoredUser, initializeCsrf, storeAuth } from "../lib/auth";
 
 export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [credentials, setCredentials] = useState({ username: "", password: "" });
-  const [remember, setRemember] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  if (getAuthToken()) return <Navigate to="/dashboard" replace />;
+  if (getStoredUser()) return <Navigate to="/dashboard" replace />;
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -31,10 +30,16 @@ export default function Login() {
     setError("");
 
     try {
+      const csrfResponse = await initializeCsrf();
+
+      if (!csrfResponse.ok) {
+        throw new Error("A secure login session could not be started. Please try again.");
+      }
+
       const response = await apiFetch("/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...credentials, remember }),
+        body: JSON.stringify(credentials),
       });
       const payload = await response.json().catch(() => ({}));
 
@@ -42,7 +47,7 @@ export default function Login() {
         throw new Error(payload.message || "Unable to sign in. Please try again.");
       }
 
-      storeAuth(payload.token, payload.user, remember);
+      storeAuth(payload.user);
       navigate("/dashboard", { replace: true });
     } catch (requestError) {
       setError(requestError.message);
@@ -56,7 +61,7 @@ export default function Login() {
       <section className="login-brand-panel" aria-label="System introduction">
         <div className="login-brand-content">
           <div className="login-seal">
-            <ShieldCheck size={42} strokeWidth={1.8} />
+            <DilgSeal />
           </div>
           <p className="login-agency">Department of the Interior and Local Government</p>
           <h1>GIP Attendance<br />Tracker</h1>
@@ -80,7 +85,7 @@ export default function Login() {
 
       <section className="login-form-panel">
         <div className="login-mobile-brand">
-          <span><ShieldCheck size={22} /></span>
+          <span><DilgSeal /></span>
           <strong>DILG GIP</strong>
         </div>
 
@@ -134,16 +139,6 @@ export default function Login() {
                 {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
               </button>
             </div>
-
-            <label className="remember-option">
-              <input
-                type="checkbox"
-                name="remember"
-                checked={remember}
-                onChange={(event) => setRemember(event.target.checked)}
-              />
-              <span>Keep me signed in on this device</span>
-            </label>
 
             <button type="submit" className="login-submit" disabled={submitting}>
               {submitting ? "Signing in…" : "Sign in"}

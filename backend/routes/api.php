@@ -1,32 +1,37 @@
 <?php
 
-use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\AttendanceController;
-use App\Http\Controllers\Api\DtrController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\DtrController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\SystemUserController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
-
-Route::middleware(['api.auth', 'api.audit'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'throttle:api', 'api.audit'])->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    Route::get('/dashboard', [DashboardController::class, 'index']);
 
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/options', [AttendanceController::class, 'options']);
     Route::post('/attendance/time-log', [AttendanceController::class, 'recordTime'])
         ->middleware('throttle:12,1');
     Route::patch('/attendance/{attendance}/verify', [AttendanceController::class, 'verify']);
+    Route::post('/attendance/verify-bulk', [AttendanceController::class, 'verifyBulk'])
+        ->middleware(['role:Administrator,HR,Supervisor', 'throttle:20,1']);
+    Route::post('/attendance/correction', [AttendanceController::class, 'correct'])
+        ->middleware(['role:Administrator,HR', 'throttle:20,1']);
 
     Route::middleware('role:Administrator,HR,Supervisor,Encoder')->group(function (): void {
         Route::get('/qr-attendance', [QrAttendanceController::class, 'index']);
         Route::post('/qr-attendance/scan', [QrAttendanceController::class, 'scan'])
-            ->middleware('throttle:120,1');
+            ->middleware('throttle:qr-scan');
     });
 
     Route::post('/qr-attendance/personnel/{personnel}/regenerate', [QrAttendanceController::class, 'regenerate'])
@@ -40,6 +45,8 @@ Route::middleware(['api.auth', 'api.audit'])->group(function (): void {
 
     Route::get('/holidays', [HolidayController::class, 'index']);
     Route::get('/holidays/options', [HolidayController::class, 'options']);
+    Route::get('/personnel/{personnel}/photo', [PersonnelController::class, 'photo'])
+        ->name('personnel.photo');
 
     Route::middleware('role:Administrator,HR')->group(function (): void {
         Route::apiResource('/departments', DepartmentController::class)

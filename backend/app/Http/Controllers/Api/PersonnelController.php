@@ -5,9 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Department;
 use App\Models\Personnel;
+use App\Support\PersonnelAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Throwable;
 
 class PersonnelController extends Controller
 {
@@ -79,7 +83,27 @@ class PersonnelController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $personnel = Personnel::create($request->validate($this->rules()));
+        $validated = $request->validate($this->rules());
+        unset($validated['remove_photo']);
+
+        $photoPath = $this->storePhoto($request);
+
+        if ($photoPath) {
+            $validated['photo'] = $photoPath;
+        } else {
+            unset($validated['photo']);
+        }
+
+        try {
+            $personnel = Personnel::create($validated);
+        } catch (Throwable $exception) {
+            if ($photoPath) {
+                Storage::disk('local')->delete($photoPath);
+            }
+
+            throw $exception;
+        }
+
         $personnel->load(['department', 'user']);
 
         return response()->json([
@@ -90,7 +114,34 @@ class PersonnelController extends Controller
 
     public function update(Request $request, Personnel $personnel): JsonResponse
     {
-        $personnel->update($request->validate($this->rules($personnel)));
+        $validated = $request->validate($this->rules($personnel));
+        unset($validated['remove_photo']);
+
+        $oldPhotoPath = $personnel->photo;
+        $newPhotoPath = $this->storePhoto($request);
+
+        if ($newPhotoPath) {
+            $validated['photo'] = $newPhotoPath;
+        } elseif ($request->boolean('remove_photo')) {
+            $validated['photo'] = null;
+        } else {
+            unset($validated['photo']);
+        }
+
+        try {
+            $personnel->update($validated);
+        } catch (Throwable $exception) {
+            if ($newPhotoPath) {
+                Storage::disk('local')->delete($newPhotoPath);
+            }
+
+            throw $exception;
+        }
+
+        if ($oldPhotoPath && $oldPhotoPath !== $personnel->photo) {
+            Storage::disk('local')->delete($oldPhotoPath);
+        }
+
         $personnel->load(['department', 'user']);
 
         return response()->json([
@@ -118,11 +169,39 @@ class PersonnelController extends Controller
             ], 422);
         }
 
+        $photoPath = $personnel->photo;
         $personnel->delete();
+
+        if ($photoPath) {
+            Storage::disk('local')->delete($photoPath);
+        }
 
         return response()->json([
             'message' => 'Personnel record deleted successfully.',
         ]);
+    }
+
+    public function photo(Request $request, Personnel $personnel): BinaryFileResponse|JsonResponse
+    {
+        if (! PersonnelAccess::canAccess($request->user(), $personnel)) {
+            return response()->json([
+                'message' => 'You are not authorized to view this personnel photo.',
+            ], 403);
+        }
+
+        if (! $personnel->photo || ! Storage::disk('local')->exists($personnel->photo)) {
+            return response()->json([
+                'message' => 'Personnel photo not found.',
+            ], 404);
+        }
+
+        return response()->file(
+            Storage::disk('local')->path($personnel->photo),
+            [
+                'Cache-Control' => 'private, max-age=86400',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        );
     }
 
     private function rules(?Personnel $personnel = null): array
@@ -161,6 +240,15 @@ class PersonnelController extends Controller
             ],
             'contact_number' => ['nullable', 'string', 'max:30'],
             'address' => ['nullable', 'string', 'max:255'],
+            'photo' => [
+                'nullable',
+                'file',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:3072',
+                'dimensions:min_width=128,min_height=128,max_width=4000,max_height=4000',
+            ],
+            'remove_photo' => ['sometimes', 'boolean'],
             'status' => ['required', Rule::in(self::STATUSES)],
         ];
     }
@@ -190,6 +278,10 @@ class PersonnelController extends Controller
             'email' => $personnel->email,
             'contact_number' => $personnel->contact_number,
             'address' => $personnel->address,
+            'photo_url' => $personnel->photo
+                ? route('personnel.photo', ['personnel' => $personnel], false)
+                    .'?v='.($personnel->updated_at?->timestamp ?? 0)
+                : null,
             'status' => $personnel->status,
             'system_user' => $personnel->user ? [
                 'user_id' => $personnel->user->user_id,
@@ -199,5 +291,18 @@ class PersonnelController extends Controller
             ] : null,
             'created_at' => $personnel->created_at?->toISOString(),
         ];
+    }
+
+    private function storePhoto(Request $request): ?string
+    {
+        if (! $request->hasFile('photo')) {
+            return null;
+        }
+
+        $path = $request->file('photo')->store('personnel-photos', 'local');
+
+        abort_if(! $path, 500, 'The personnel photo could not be stored.');
+
+        return $path;
     }
 }

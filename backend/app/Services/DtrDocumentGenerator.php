@@ -64,8 +64,14 @@ class DtrDocumentGenerator
                 throw new RuntimeException('No DTR forms were found in the Word template.');
             }
 
-            foreach (array_slice($reports, 0, count($formBoxes)) as $index => $report) {
-                $this->fillForm($document, $xpath, $formBoxes[$index], $report);
+            if (count($reports) === 1) {
+                foreach ($formBoxes as $formBox) {
+                    $this->fillForm($document, $xpath, $formBox, $reports[0]);
+                }
+            } else {
+                foreach (array_slice($reports, 0, count($formBoxes)) as $index => $report) {
+                    $this->fillForm($document, $xpath, $formBoxes[$index], $report);
+                }
             }
 
             $archive->addFromString('word/document.xml', $document->saveXML());
@@ -159,6 +165,7 @@ class DtrDocumentGenerator
                 continue;
             }
 
+            $this->setExactRowHeight($document, $xpath, $row, 180);
             $cells = $xpath->query('./w:tc', $row);
             $record = $days->get($day);
 
@@ -171,7 +178,7 @@ class DtrDocumentGenerator
             $label = $this->statusLabel($record['status']);
 
             if ($label && ! $record['morning_time_in'] && ! $record['afternoon_time_in']) {
-                $this->setCellText($document, $xpath, $cells->item(1), $label);
+                $this->setCellText($document, $xpath, $cells->item(1), $label, 12, true);
             } else {
                 $this->setCellText($document, $xpath, $cells->item(1), $this->formatTime($record['morning_time_in']));
                 $this->setCellText($document, $xpath, $cells->item(2), $this->formatTime($record['morning_time_out']));
@@ -216,7 +223,9 @@ class DtrDocumentGenerator
         DOMDocument $document,
         DOMXPath $xpath,
         ?DOMNode $cell,
-        ?string $value
+        ?string $value,
+        ?int $fontSize = null,
+        bool $noWrap = false
     ): void {
         if (! $cell || $value === null || $value === '') {
             return;
@@ -231,6 +240,8 @@ class DtrDocumentGenerator
                 $textNodes->item($index)->nodeValue = '';
             }
 
+            $this->formatCellText($document, $xpath, $cell, $fontSize, $noWrap);
+
             return;
         }
 
@@ -243,14 +254,84 @@ class DtrDocumentGenerator
 
         $run = $document->createElementNS(self::WORD_NAMESPACE, 'w:r');
         $runProperties = $document->createElementNS(self::WORD_NAMESPACE, 'w:rPr');
-        $fontSize = $document->createElementNS(self::WORD_NAMESPACE, 'w:sz');
-        $fontSize->setAttributeNS(self::WORD_NAMESPACE, 'w:val', '14');
-        $runProperties->appendChild($fontSize);
+        $fontSizeElement = $document->createElementNS(self::WORD_NAMESPACE, 'w:sz');
+        $fontSizeElement->setAttributeNS(self::WORD_NAMESPACE, 'w:val', (string) ($fontSize ?? 14));
+        $runProperties->appendChild($fontSizeElement);
         $text = $document->createElementNS(self::WORD_NAMESPACE, 'w:t');
         $text->appendChild($document->createTextNode($value));
         $run->appendChild($runProperties);
         $run->appendChild($text);
         $paragraph->appendChild($run);
+        $this->formatCellText($document, $xpath, $cell, $fontSize, $noWrap);
+    }
+
+    private function formatCellText(
+        DOMDocument $document,
+        DOMXPath $xpath,
+        DOMNode $cell,
+        ?int $fontSize,
+        bool $noWrap
+    ): void {
+        if ($fontSize) {
+            foreach ($xpath->query('.//w:r', $cell) as $run) {
+                $runProperties = $xpath->query('./w:rPr[1]', $run)->item(0);
+
+                if (! $runProperties) {
+                    $runProperties = $document->createElementNS(self::WORD_NAMESPACE, 'w:rPr');
+                    $run->insertBefore($runProperties, $run->firstChild);
+                }
+
+                foreach (['w:sz', 'w:szCs'] as $elementName) {
+                    $size = $xpath->query('./'.$elementName.'[1]', $runProperties)->item(0);
+
+                    if (! $size) {
+                        $size = $document->createElementNS(self::WORD_NAMESPACE, $elementName);
+                        $runProperties->appendChild($size);
+                    }
+
+                    $size->setAttributeNS(self::WORD_NAMESPACE, 'w:val', (string) $fontSize);
+                }
+            }
+        }
+
+        if ($noWrap) {
+            $cellProperties = $xpath->query('./w:tcPr[1]', $cell)->item(0);
+
+            if (! $cellProperties) {
+                $cellProperties = $document->createElementNS(self::WORD_NAMESPACE, 'w:tcPr');
+                $cell->insertBefore($cellProperties, $cell->firstChild);
+            }
+
+            if (! $xpath->query('./w:noWrap', $cellProperties)->length) {
+                $cellProperties->appendChild(
+                    $document->createElementNS(self::WORD_NAMESPACE, 'w:noWrap')
+                );
+            }
+        }
+    }
+
+    private function setExactRowHeight(
+        DOMDocument $document,
+        DOMXPath $xpath,
+        DOMNode $row,
+        int $height
+    ): void {
+        $rowProperties = $xpath->query('./w:trPr[1]', $row)->item(0);
+
+        if (! $rowProperties) {
+            $rowProperties = $document->createElementNS(self::WORD_NAMESPACE, 'w:trPr');
+            $row->insertBefore($rowProperties, $row->firstChild);
+        }
+
+        $rowHeight = $xpath->query('./w:trHeight[1]', $rowProperties)->item(0);
+
+        if (! $rowHeight) {
+            $rowHeight = $document->createElementNS(self::WORD_NAMESPACE, 'w:trHeight');
+            $rowProperties->appendChild($rowHeight);
+        }
+
+        $rowHeight->setAttributeNS(self::WORD_NAMESPACE, 'w:val', (string) $height);
+        $rowHeight->setAttributeNS(self::WORD_NAMESPACE, 'w:hRule', 'exact');
     }
 
     private function formatTime(?string $value): string
@@ -264,6 +345,7 @@ class DtrDocumentGenerator
             'Missing', 'Absent' => 'ABSENT',
             'Leave' => 'LEAVE',
             'Holiday' => 'HOLIDAY',
+            'Rest Day' => 'REST DAY',
             'Official Business' => 'OB',
             'Work From Home' => 'WFH',
             default => null,

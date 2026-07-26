@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class SystemUserController extends Controller
 {
@@ -149,7 +150,17 @@ class SystemUserController extends Controller
             $systemUser->locked_until = null;
         }
 
+        $securityChanged = $systemUser->isDirty([
+            'password_hash',
+            'user_role',
+            'status',
+        ]);
+
         $systemUser->save();
+
+        if ($securityChanged) {
+            $systemUser->accessTokens()->delete();
+        }
         $systemUser->load('personnel');
 
         return response()->json([
@@ -197,9 +208,14 @@ class SystemUserController extends Controller
             'password' => [
                 $user ? 'nullable' : 'required',
                 'string',
-                'min:8',
                 'max:72',
                 'confirmed',
+                Password::min(12)
+                    ->mixedCase()
+                    ->letters()
+                    ->numbers()
+                    ->symbols()
+                    ->uncompromised(),
             ],
             'user_role' => ['required', Rule::in(self::ROLES)],
             'status' => ['required', Rule::in(self::STATUSES)],

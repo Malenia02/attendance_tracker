@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DtrCertification extends Model
 {
@@ -21,6 +22,8 @@ class DtrCertification extends Model
         'certified_at',
         'certification_status',
         'remarks',
+        'certified_snapshot',
+        'certified_hash',
     ];
 
     protected $casts = [
@@ -28,6 +31,7 @@ class DtrCertification extends Model
         'dtr_month' => 'integer',
         'prepared_at' => 'datetime',
         'certified_at' => 'datetime',
+        'certified_snapshot' => 'array',
     ];
 
     public function personnel(): BelongsTo
@@ -55,5 +59,14 @@ class DtrCertification extends Model
             'certified_by',
             'user_id'
         );
+    }
+
+    public function statusLogs(): HasMany
+    {
+        return $this->hasMany(
+            DtrStatusLog::class,
+            'dtr_certification_id',
+            'dtr_certification_id'
+        )->orderByDesc('created_at');
     }
 }

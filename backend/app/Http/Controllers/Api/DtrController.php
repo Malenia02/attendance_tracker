@@ -5,15 +5,18 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\DtrCertification;
+use App\Models\DtrStatusLog;
 use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Services\DtrDocumentGenerator;
+use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -38,7 +41,7 @@ class DtrController extends Controller
         $monthEnd = $month->copy()->endOfMonth();
         $cutoff = $month->isSameMonth(now()) ? now()->endOfDay() : $monthEnd;
         $user = $request->user();
-        $canManageOthers = in_array($user->user_role, self::MANAGER_ROLES, true);
+        $canManageOthers = PersonnelAccess::canManageOthers($user);
 
         $holidays = Holiday::query()
             ->whereBetween('holiday_date', [$month->toDateString(), $monthEnd->toDateString()])
@@ -59,11 +62,12 @@ class DtrController extends Controller
                     ->whereBetween('attendance_date', [$month->toDateString(), $monthEnd->toDateString()])
                     ->orderBy('attendance_date'),
                 'dtrCertifications' => fn ($query) => $query
+                    ->with('statusLogs.changedBy:user_id,username')
                     ->where('dtr_year', $month->year)
                     ->where('dtr_month', $month->month),
             ])
             ->where('status', 'Active')
-            ->when(! $canManageOthers, fn ($query) => $query->where('personnel_id', $user->personnel_id))
+            ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
                     $query
@@ -98,6 +102,7 @@ class DtrController extends Controller
             'timezone' => config('app.timezone'),
             'can_manage_others' => $canManageOthers,
             'can_certify' => in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true),
+            'can_correct_attendance' => in_array($user->user_role, ['Administrator', 'HR'], true),
             'can_generate' => $user->user_role === 'Administrator',
             'data' => $rows,
             'summary' => [
@@ -122,6 +127,10 @@ class DtrController extends Controller
         $status = $validated['status'];
         $isOwnRecord = (int) $user->personnel_id === (int) $personnel->personnel_id;
 
+        if (! PersonnelAccess::canAccess($user, $personnel)) {
+            return response()->json(['message' => 'This DTR is outside your assigned office scope.'], 403);
+        }
+
         if ($status === 'Certified' || $status === 'Returned') {
             if (! in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true)) {
                 return response()->json(['message' => 'You do not have permission to certify or return DTRs.'], 403);
@@ -130,11 +139,29 @@ class DtrController extends Controller
             return response()->json(['message' => 'You may only update your own DTR.'], 403);
         }
 
+        if ($status === 'Certified' && $isOwnRecord) {
+            return response()->json([
+                'message' => 'You cannot certify your own DTR. A different authorized reviewer is required.',
+            ], 403);
+        }
+
         if ($status === 'Returned' && blank($validated['remarks'] ?? null)) {
             return response()->json(['message' => 'Please provide a reason when returning a DTR.'], 422);
         }
 
-        if ($status === 'Submitted') {
+        [$year, $month] = array_map('intval', explode('-', $validated['month']));
+        $certificationKey = [
+            'personnel_id' => $personnel->personnel_id,
+            'dtr_year' => $year,
+            'dtr_month' => $month,
+        ];
+        DtrCertification::query()->firstOrCreate(
+            $certificationKey,
+            ['certification_status' => 'Draft']
+        );
+        $monitorRow = null;
+
+        if (in_array($status, ['Submitted', 'Certified'], true)) {
             $monitorRequest = Request::create('/api/dtr', 'GET', ['month' => $validated['month']]);
             $monitorRequest->setUserResolver(fn () => $user);
             $monitorData = $this->index($monitorRequest)->getData(true);
@@ -142,49 +169,104 @@ class DtrController extends Controller
 
             if (! $monitorRow || ! $monitorRow['is_ready']) {
                 return response()->json([
-                    'message' => 'Resolve all missing, incomplete, and unverified attendance records before submission.',
+                    'message' => 'Resolve all missing, incomplete, and unverified attendance records before submission or certification.',
                 ], 422);
             }
         }
 
-        [$year, $month] = array_map('intval', explode('-', $validated['month']));
-        $certification = DtrCertification::query()->firstOrNew([
-            'personnel_id' => $personnel->personnel_id,
-            'dtr_year' => $year,
-            'dtr_month' => $month,
-        ]);
-        $previousStatus = $certification->certification_status ?? 'Draft';
+        $result = DB::transaction(function () use (
+            $certificationKey,
+            $status,
+            $validated,
+            $user,
+            $request,
+            $monitorRow
+        ): array {
+            $certification = DtrCertification::query()
+                ->where($certificationKey)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $previousStatus = $certification->certification_status ?? 'Draft';
+            $transitionError = match (true) {
+                $previousStatus === 'Certified' => 'This DTR is certified and locked. A separate authorized reopening process is required.',
+                $status === $previousStatus => "This DTR is already {$status}.",
+                $status === 'Draft' => 'A submitted or returned DTR cannot be moved back to Draft.',
+                $status === 'Submitted' && ! in_array($previousStatus, ['Draft', 'Returned'], true) => 'Only draft or returned DTRs may be submitted.',
+                $status === 'Returned' && $previousStatus !== 'Submitted' => 'Only submitted DTRs may be returned for correction.',
+                $status === 'Certified' && $previousStatus !== 'Submitted' => 'The DTR must be submitted before certification.',
+                $status === 'Certified' && $certification->prepared_by === $user->user_id => 'The person who submitted a DTR cannot also certify it.',
+                default => null,
+            };
 
-        $certification->certification_status = $status;
-        $certification->remarks = $validated['remarks'] ?? null;
-
-        if ($status === 'Submitted') {
-            $certification->prepared_by = $user->user_id;
-            $certification->prepared_at = now();
-            $certification->certified_by = null;
-            $certification->certified_at = null;
-        } elseif ($status === 'Certified') {
-            if ($previousStatus !== 'Submitted') {
-                return response()->json(['message' => 'The DTR must be submitted before certification.'], 422);
+            if ($transitionError) {
+                return ['error' => $transitionError];
             }
 
-            $certification->certified_by = $user->user_id;
-            $certification->certified_at = now();
-        } elseif ($status === 'Draft') {
-            $certification->prepared_by = null;
-            $certification->prepared_at = null;
-            $certification->certified_by = null;
-            $certification->certified_at = null;
-        } elseif ($status === 'Returned') {
-            $certification->certified_by = null;
-            $certification->certified_at = null;
+            $certification->certification_status = $status;
+            $certification->remarks = $validated['remarks'] ?? null;
+
+            if ($status === 'Submitted') {
+                $certification->prepared_by = $user->user_id;
+                $certification->prepared_at = now();
+                $certification->certified_by = null;
+                $certification->certified_at = null;
+                $certification->certified_snapshot = null;
+                $certification->certified_hash = null;
+            } elseif ($status === 'Certified') {
+                $snapshot = $monitorRow;
+                $encodedSnapshot = json_encode(
+                    $snapshot,
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                );
+                $certification->certified_by = $user->user_id;
+                $certification->certified_at = now();
+                $certification->certified_snapshot = $snapshot;
+                $certification->certified_hash = hash_hmac(
+                    'sha256',
+                    $encodedSnapshot,
+                    (string) config('attendance.dtr_signing_key')
+                );
+            } elseif ($status === 'Returned') {
+                $certification->certified_by = null;
+                $certification->certified_at = null;
+                $certification->certified_snapshot = null;
+                $certification->certified_hash = null;
+            }
+
+            $certification->save();
+
+            DtrStatusLog::create([
+                'dtr_certification_id' => $certification->dtr_certification_id,
+                'changed_by' => $user->user_id,
+                'from_status' => $previousStatus,
+                'to_status' => $status,
+                'remarks' => $validated['remarks'] ?? null,
+                'ip_address' => $request->ip(),
+                'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+                'request_id' => (string) Str::uuid(),
+            ]);
+
+            return [
+                'certification' => $certification,
+                'previous_status' => $previousStatus,
+            ];
+        });
+
+        if (isset($result['error'])) {
+            return response()->json(['message' => $result['error']], 422);
         }
 
-        $certification->save();
+        $certification = $result['certification'];
+        $previousStatus = $result['previous_status'];
+        $wasResubmitted = $previousStatus === 'Returned' && $status === 'Submitted';
 
         return response()->json([
-            'message' => 'DTR status updated to '.$status.'.',
-            'certification' => $this->formatCertification($certification),
+            'message' => $wasResubmitted
+                ? 'DTR corrections submitted for review.'
+                : 'DTR status updated to '.$status.'.',
+            'certification' => $this->formatCertification(
+                $certification->fresh('statusLogs.changedBy:user_id,username')
+            ),
         ]);
     }
 
@@ -245,6 +327,48 @@ class DtrController extends Controller
             ], 422);
         }
 
+        $certifications = DtrCertification::query()
+            ->where('dtr_year', (int) substr($validated['month'], 0, 4))
+            ->where('dtr_month', (int) substr($validated['month'], 5, 2))
+            ->whereIn('personnel_id', $reports->pluck('personnel_id'))
+            ->get()
+            ->keyBy('personnel_id');
+        $invalidSnapshots = collect();
+        $reports = $reports->map(function (array $report) use ($certifications, $invalidSnapshots): array {
+            $certification = $certifications->get($report['personnel_id']);
+
+            if (! $certification?->certified_snapshot) {
+                return $report;
+            }
+
+            $encodedSnapshot = json_encode(
+                $certification->certified_snapshot,
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+            );
+            $expectedHash = hash_hmac(
+                'sha256',
+                $encodedSnapshot,
+                (string) config('attendance.dtr_signing_key')
+            );
+
+            if (! hash_equals((string) $certification->certified_hash, $expectedHash)) {
+                $invalidSnapshots->push($report['full_name']);
+
+                return $report;
+            }
+
+            return [
+                ...$certification->certified_snapshot,
+                'certification' => $report['certification'],
+            ];
+        });
+
+        if ($invalidSnapshots->isNotEmpty()) {
+            return response()->json([
+                'message' => 'A certified DTR integrity check failed for '.$invalidSnapshots->implode(', ').'.',
+            ], 409);
+        }
+
         $generatedDirectory = storage_path('app/generated-dtr');
         File::ensureDirectoryExists($generatedDirectory);
         $batchId = Str::uuid()->toString();
@@ -273,7 +397,7 @@ class DtrController extends Controller
         }
 
         $zipPath = $generatedDirectory.DIRECTORY_SEPARATOR."DTR-{$validated['month']}-{$batchId}.zip";
-        $archive = new ZipArchive();
+        $archive = new ZipArchive;
 
         if ($archive->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             foreach ($documents as $document) {
@@ -335,44 +459,52 @@ class DtrController extends Controller
                 continue;
             }
 
-            $assignment = $person->scheduleAssignments->first(fn (PersonnelSchedule $assignment) =>
-                $assignment->effective_from->lte($date)
+            $assignment = $person->scheduleAssignments->first(fn (PersonnelSchedule $assignment) => $assignment->effective_from->lte($date)
                 && (! $assignment->effective_to || $assignment->effective_to->gte($date))
             );
             $schedule = $assignment?->schedule;
             $dayField = strtolower($date->format('l'));
             $dateEvents = $holidays->get($date->toDateString(), collect());
             $holiday = $this->applicableHoliday($dateEvents, $person);
-            $isSpecialWorkingDay = $dateEvents->contains(fn (Holiday $event) =>
-                $event->holiday_type === 'Special Working Holiday'
+            $isSpecialWorkingDay = $dateEvents->contains(fn (Holiday $event) => $event->holiday_type === 'Special Working Holiday'
                 && (! $event->department_id || $event->department_id === $person->department_id)
             );
-            $isDutyDay = ((bool) ($schedule?->{$dayField}) || $isSpecialWorkingDay) && ! $holiday;
+            $isRegularDutyDay = (bool) ($schedule?->{$dayField});
+            $isAuthorizedDutyDay = ! $isRegularDutyDay && $isSpecialWorkingDay && ! $holiday;
+            $isDutyDay = ($isRegularDutyDay || $isAuthorizedDutyDay) && ! $holiday;
             $record = $records->get($date->toDateString());
-
-            if (! $isDutyDay && ! $record && ! $holiday) {
-                continue;
-            }
-
-            $status = $record
-                ? $this->displayStatus($record, $schedule, $date->copy()->endOfDay())
-                : ($holiday ? 'Holiday' : 'Missing');
+            $attendanceRecord = $isDutyDay ? $record : null;
+            $status = $holiday
+                ? 'Holiday'
+                : (! $isDutyDay
+                    ? 'Rest Day'
+                    : ($record
+                        ? $this->displayStatus($record, $schedule, $date->copy()->endOfDay())
+                        : 'Missing'));
+            $dayType = $holiday
+                ? 'Holiday'
+                : ($isAuthorizedDutyDay
+                    ? 'Authorized Duty Day'
+                    : ($isDutyDay ? 'Regular Duty Day' : 'Rest Day'));
 
             $daily->push([
+                'attendance_id' => $attendanceRecord?->attendance_id,
                 'date' => $date->toDateString(),
                 'day' => $date->format('D'),
                 'day_number' => $date->day,
+                'day_type' => $dayType,
                 'is_duty_day' => $isDutyDay,
+                'is_authorized_duty_day' => $isAuthorizedDutyDay,
                 'holiday' => $holiday?->holiday_name,
                 'status' => $status,
-                'morning_time_in' => $record?->morning_time_in?->toISOString(),
-                'morning_time_out' => $record?->morning_time_out?->toISOString(),
-                'afternoon_time_in' => $record?->afternoon_time_in?->toISOString(),
-                'afternoon_time_out' => $record?->afternoon_time_out?->toISOString(),
-                'work_minutes' => $record?->total_work_minutes ?? 0,
-                'late_minutes' => $record?->late_minutes ?? 0,
-                'undertime_minutes' => $record?->undertime_minutes ?? 0,
-                'is_verified' => (bool) $record?->is_verified,
+                'morning_time_in' => $attendanceRecord?->morning_time_in?->toISOString(),
+                'morning_time_out' => $attendanceRecord?->morning_time_out?->toISOString(),
+                'afternoon_time_in' => $attendanceRecord?->afternoon_time_in?->toISOString(),
+                'afternoon_time_out' => $attendanceRecord?->afternoon_time_out?->toISOString(),
+                'work_minutes' => $attendanceRecord?->total_work_minutes ?? 0,
+                'late_minutes' => $attendanceRecord?->late_minutes ?? 0,
+                'undertime_minutes' => $attendanceRecord?->undertime_minutes ?? 0,
+                'is_verified' => (bool) $attendanceRecord?->is_verified,
             ]);
         }
 
@@ -432,8 +564,7 @@ class DtrController extends Controller
 
     private function applicableHoliday(Collection $holidays, Personnel $person): ?Holiday
     {
-        return $holidays->first(fn (Holiday $holiday) =>
-            $holiday->holiday_type !== 'Special Working Holiday'
+        return $holidays->first(fn (Holiday $holiday) => $holiday->holiday_type !== 'Special Working Holiday'
             && (! $holiday->department_id || $holiday->department_id === $person->department_id)
         );
     }
@@ -476,12 +607,28 @@ class DtrController extends Controller
 
     private function formatCertification(?DtrCertification $certification): array
     {
+        $history = $certification?->statusLogs
+            ?->map(fn (DtrStatusLog $log) => [
+                'id' => $log->dtr_status_log_id,
+                'from_status' => $log->from_status,
+                'to_status' => $log->to_status,
+                'remarks' => $log->remarks,
+                'changed_by' => $log->changedBy?->username ?? 'System',
+                'changed_at' => $log->created_at?->toISOString(),
+            ])
+            ->values()
+            ->all() ?? [];
+        $latestReturn = collect($history)->firstWhere('to_status', 'Returned');
+
         return [
             'id' => $certification?->dtr_certification_id,
             'status' => $certification?->certification_status ?? 'Draft',
             'remarks' => $certification?->remarks,
+            'return_reason' => $latestReturn['remarks']
+                ?? ($certification?->certification_status === 'Returned' ? $certification?->remarks : null),
             'prepared_at' => $certification?->prepared_at?->toISOString(),
             'certified_at' => $certification?->certified_at?->toISOString(),
+            'history' => $history,
         ];
     }
 

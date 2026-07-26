@@ -21,6 +21,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import DilgSeal from "../components/branding/DilgSeal";
 import { apiFetch } from "../lib/auth";
 
 
@@ -35,12 +36,6 @@ function getDeviceIdentifier() {
   }
 
   return value;
-}
-
-function photoUrl(value) {
-  if (!value) return null;
-  if (/^(https?:)?\/\//.test(value) || value.startsWith("/")) return value;
-  return `/storage/${value.replace(/^storage[\\/]/, "").replaceAll("\\", "/")}`;
 }
 
 function initials(name = "") {
@@ -85,6 +80,7 @@ function getDevicePosition() {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy,
+        timestamp: position.timestamp,
       }),
       (positionError) => {
         const message = positionError.code === positionError.PERMISSION_DENIED
@@ -184,6 +180,8 @@ export default function QrAttendance() {
           ...(position ? {
             latitude: position.latitude,
             longitude: position.longitude,
+            accuracy: position.accuracy,
+            position_timestamp: new Date(position.timestamp).toISOString(),
           } : {}),
         }),
       });
@@ -504,7 +502,7 @@ export default function QrAttendance() {
 
 function ScanResult({ result }) {
   const person = result.personnel;
-  const image = photoUrl(person?.photo);
+  const image = person?.photo_url;
 
   return (
     <div className={`qr-result ${result.accepted ? "accepted" : "rejected"}`}>
@@ -540,7 +538,7 @@ function ScanResult({ result }) {
 
 function PersonnelQrCard({ person, busy, onRegenerate }) {
   const [image, setImage] = useState("");
-  const personImage = photoUrl(person.photo);
+  const personImage = person.photo_url;
 
   useEffect(() => {
     let active = true;
@@ -551,10 +549,10 @@ function PersonnelQrCard({ person, busy, onRegenerate }) {
 
     import("qrcode")
       .then(({ default: QRCode }) => QRCode.toDataURL(person.qr_payload, {
-        width: 260,
-        margin: 1,
-        errorCorrectionLevel: "M",
-        color: { dark: "#10234d", light: "#ffffff" },
+        width: 360,
+        margin: 2,
+        errorCorrectionLevel: "Q",
+        color: { dark: "#09244f", light: "#ffffff" },
       }))
       .then((value) => {
         if (active) setImage(value);
@@ -564,26 +562,65 @@ function PersonnelQrCard({ person, busy, onRegenerate }) {
     return () => { active = false; };
   }, [person.qr_payload]);
 
+  const credentialNumber = `DILG-GIP-${String(person.personnel_id).padStart(5, "0")}`;
+
   return (
     <article className="personnel-qr-card">
       <header>
-        <div className="qr-card-brand"><ShieldCheck size={16} /><span>DILG GIP Attendance</span></div>
-        <small>Personnel QR Card</small>
+        <div className="qr-card-brand">
+          <span><DilgSeal /></span>
+          <div>
+            <strong>Department of the Interior and Local Government</strong>
+            <small>GIP Attendance Management System</small>
+          </div>
+        </div>
+        <div className="qr-card-classification">
+          <span>OFFICIAL</span>
+          <small>PERSONNEL ID</small>
+        </div>
       </header>
+      <div className="qr-card-ribbon">
+        <span>Authorized personnel credential</span>
+        <span><i></i> Active</span>
+      </div>
       <div className="personnel-qr-body">
         <div className="personnel-card-identity">
-          {personImage ? <img src={personImage} alt="" /> : <span>{initials(person.full_name)}</span>}
-          <div><strong>{person.full_name}</strong><small>{person.employee_number}</small><em>{person.department?.code || person.personnel_type}</em></div>
+          <div className="personnel-card-profile">
+            <div className="personnel-card-photo">
+              {personImage ? <img src={personImage} alt="" /> : <span>{initials(person.full_name)}</span>}
+              <i><BadgeCheck size={13} /></i>
+            </div>
+            <div className="personnel-card-name">
+              <small>Cardholder</small>
+              <strong>{person.full_name}</strong>
+              <span>{person.position_title || `${person.personnel_type} Personnel`}</span>
+            </div>
+          </div>
+          <div className="personnel-card-details">
+            <div><small>Employee number</small><strong>{person.employee_number}</strong></div>
+            <div><small>Office / Unit</small><strong>{person.department?.code || "Not assigned"}</strong></div>
+            <div><small>Personnel type</small><strong>{person.personnel_type}</strong></div>
+          </div>
         </div>
-        {image ? (
-          <img className="personnel-qr-image" src={image} alt={`Attendance QR for ${person.full_name}`} />
-        ) : (
-          <div className="personnel-no-qr"><QrCode size={35} /><span>No QR generated</span></div>
-        )}
+        <div className="personnel-card-code">
+          <span><ShieldCheck size={11} /> Secure attendance QR</span>
+          <div className="personnel-qr-frame">
+            {image ? (
+              <img className="personnel-qr-image" src={image} alt={`Attendance QR for ${person.full_name}`} />
+            ) : (
+              <div className="personnel-no-qr"><QrCode size={35} /><span>No QR generated</span></div>
+            )}
+          </div>
+          <small>Scan only at an authorized DILG kiosk</small>
+        </div>
       </div>
       <footer>
-        <span>Present this card only at an authorized attendance kiosk.</span>
-        <button type="button" onClick={onRegenerate} disabled={busy}>
+        <div className="personnel-card-serial">
+          <ShieldCheck size={15} />
+          <span><small>Credential number</small><strong>{credentialNumber}</strong></span>
+        </div>
+        <div className="personnel-card-security">Digitally signed attendance credential</div>
+        <button className="personnel-qr-action" type="button" onClick={onRegenerate} disabled={busy}>
           {person.has_qr ? <RefreshCw size={13} /> : <QrCode size={13} />}
           {busy ? "Generating…" : person.has_qr ? "Regenerate" : "Generate"}
         </button>

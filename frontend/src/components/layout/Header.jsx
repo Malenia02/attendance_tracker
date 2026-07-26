@@ -4,14 +4,14 @@ import {
   Menu,
   Moon,
   Search,
-  ShieldCheck,
   Sun,
   UserCircle,
 } from "lucide-react";
+import DilgSeal from "../branding/DilgSeal";
 import { useTheme } from "../../context/ThemeContext";
 import { getStoredUser } from "../../lib/auth";
 
-export default function Header({ onToggleSidebar }) {
+export default function Header({ onToggleSidebar, sidebarToggled }) {
   const { theme, toggleTheme } = useTheme();
   const currentUser = getStoredUser();
   const displayName = currentUser?.personnel?.full_name || currentUser?.username || "System User";
@@ -20,9 +20,9 @@ export default function Header({ onToggleSidebar }) {
     <header className="topbar">
       <div className="header-brand">
         <span className="header-brand-mark">
-          <ShieldCheck size={25} />
+          <DilgSeal />
         </span>
-        <span>DILG Admin</span>
+        <span>DILG GIP</span>
       </div>
 
       <div className="topbar-left">
@@ -31,6 +31,8 @@ export default function Header({ onToggleSidebar }) {
           className="square-button menu-button"
           onClick={onToggleSidebar}
           aria-label="Toggle sidebar"
+          aria-pressed={sidebarToggled}
+          title={sidebarToggled ? "Expand sidebar" : "Collapse sidebar"}
         >
           <Menu size={20} />
         </button>
@@ -65,7 +67,12 @@ export default function Header({ onToggleSidebar }) {
         </button>
 
         <div className="topbar-user">
-          <UserCircle size={34} />
+          <span className="topbar-avatar">
+            <UserCircle size={34} />
+            {currentUser?.personnel?.photo_url && (
+              <img src={currentUser.personnel.photo_url} alt="" />
+            )}
+          </span>
           <div>
             <strong>{displayName}</strong>
             <span>{currentUser?.user_role || "User"}</span>

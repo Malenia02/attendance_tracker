@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import DilgSeal from "../branding/DilgSeal";
 import {
   apiFetch,
   clearAuth,
-  getAuthToken,
   updateStoredUser,
 } from "../../lib/auth";
 
 export default function RequireAuth({ children }) {
-  const [status, setStatus] = useState(() => (getAuthToken() ? "checking" : "guest"));
+  const [status, setStatus] = useState("checking");
 
   useEffect(() => {
     if (status !== "checking") return;
@@ -39,7 +38,7 @@ export default function RequireAuth({ children }) {
   if (status === "checking") {
     return (
       <div className="auth-loading">
-        <span><ShieldCheck size={27} /></span>
+        <span><DilgSeal /></span>
         <strong>Verifying your session…</strong>
       </div>
     );

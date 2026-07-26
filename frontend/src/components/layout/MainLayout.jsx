@@ -8,7 +8,7 @@ export default function MainLayout() {
 
   return (
     <div className={`app-shell ${sidebarOpen ? "sidebar-toggled" : ""}`}>
-      <Sidebar isOpen={sidebarOpen} />
+      <Sidebar isOpen={sidebarOpen} isCollapsed={sidebarOpen} />
 
       <button
         type="button"
@@ -20,6 +20,7 @@ export default function MainLayout() {
       <div className="main-wrapper">
         <Header
           onToggleSidebar={() => setSidebarOpen((current) => !current)}
+          sidebarToggled={sidebarOpen}
         />
 
         <main className="main-content">

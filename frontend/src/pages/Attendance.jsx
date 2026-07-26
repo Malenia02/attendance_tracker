@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   BadgeCheck,
   CalendarDays,
@@ -8,6 +9,7 @@ import {
   Fingerprint,
   LogIn,
   LogOut,
+  PencilLine,
   Search,
   ShieldCheck,
   Sparkles,
@@ -17,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
+import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -55,11 +58,19 @@ async function readResponse(response) {
 
 export default function Attendance() {
   const today = useMemo(() => localDateKey(), []);
+  const [searchParams] = useSearchParams();
+  const requestedDate = searchParams.get("date");
+  const requestedPersonnelId = searchParams.get("personnel");
   const currentUser = getStoredUser();
   const canVerify = ["Administrator", "HR", "Supervisor"].includes(currentUser?.user_role);
+  const canCorrect = ["Administrator", "HR"].includes(currentUser?.user_role);
 
   const [now, setNow] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState(
+    requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate <= today
+      ? requestedDate
+      : today,
+  );
   const [records, setRecords] = useState([]);
   const [recentLogs, setRecentLogs] = useState([]);
   const [summary, setSummary] = useState({
@@ -88,6 +99,9 @@ export default function Attendance() {
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [holiday, setHoliday] = useState(null);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [correctionBusy, setCorrectionBusy] = useState(false);
+  const [correctionDismissed, setCorrectionDismissed] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -103,6 +117,10 @@ export default function Attendance() {
         setOptions(payload);
         setSelectedPersonnelId((current) => {
           if (current) return current;
+          const requested = payload.personnel.find(
+            (person) => String(person.personnel_id) === String(requestedPersonnelId),
+          );
+          if (requested) return String(requested.personnel_id);
           const preferred = payload.current_user_personnel_id || payload.personnel[0]?.personnel_id;
           return preferred ? String(preferred) : "";
         });
@@ -112,7 +130,7 @@ export default function Attendance() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [requestedPersonnelId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -157,6 +175,13 @@ export default function Attendance() {
   const completed = Boolean(selectedRecord?.attendance_complete);
   const dayClosed = Boolean(selectedRecord?.day_closed);
   const isHalfDay = selectedRecord?.display_status === "Half Day";
+  const requestedCorrectionRecord = !correctionDismissed
+    && searchParams.get("correction") === "1"
+    && requestedPersonnelId
+    && canCorrect
+    ? records.find((record) => String(record.personnel_id) === String(requestedPersonnelId))
+    : null;
+  const correctionRecord = editingRecord || requestedCorrectionRecord;
 
   const timeSteps = [
     { key: "morning_time_in", label: "Morning in", icon: LogIn },
@@ -207,6 +232,33 @@ export default function Attendance() {
       setPageError(error.message);
     } finally {
       setVerifyingId(null);
+    }
+  }
+
+  async function saveCorrection(values) {
+    setCorrectionBusy(true);
+    setPageError("");
+
+    try {
+      const payload = await apiFetch("/attendance/correction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personnel_id: correctionRecord.personnel_id,
+          attendance_date: selectedDate,
+          ...values,
+        }),
+      }).then(readResponse);
+
+      setNotice(payload.message);
+      setEditingRecord(null);
+      setCorrectionDismissed(true);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 4500);
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setCorrectionBusy(false);
     }
   }
 
@@ -458,18 +510,33 @@ export default function Attendance() {
                     )}
                   </td>
                   <td>
-                    {record.is_verified ? (
-                      <span className="verified-badge"><ShieldCheck size={14} />Verified</span>
-                    ) : canVerify && record.attendance_id ? (
-                      <button
-                        type="button"
-                        className="verify-button"
-                        onClick={() => verifyAttendance(record)}
-                        disabled={verifyingId === record.attendance_id}
-                      >
-                        <BadgeCheck size={14} />{verifyingId === record.attendance_id ? "Verifying…" : "Verify"}
-                      </button>
-                    ) : <span className="muted-cell">Unverified</span>}
+                    <div className="attendance-row-actions">
+                      {record.is_verified ? (
+                        <span className="verified-badge"><ShieldCheck size={14} />Verified</span>
+                      ) : canVerify && record.attendance_id ? (
+                        <button
+                          type="button"
+                          className="verify-button"
+                          onClick={() => verifyAttendance(record)}
+                          disabled={verifyingId === record.attendance_id}
+                        >
+                          <BadgeCheck size={14} />{verifyingId === record.attendance_id ? "Verifying…" : "Verify"}
+                        </button>
+                      ) : <span className="muted-cell">Unverified</span>}
+                      {canCorrect && (
+                        <button
+                          type="button"
+                          className="correct-attendance-button"
+                          onClick={() => {
+                            setSelectedPersonnelId(String(record.personnel_id));
+                            setCorrectionDismissed(true);
+                            setEditingRecord(record);
+                          }}
+                        >
+                          <PencilLine size={13} /> Correct
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -480,6 +547,19 @@ export default function Attendance() {
           Showing {filteredRecords.length} of {records.length} active personnel
         </div>
       </div>
+
+      {correctionRecord && (
+        <AttendanceCorrectionModal
+          record={correctionRecord}
+          date={selectedDate}
+          busy={correctionBusy}
+          onClose={() => {
+            setEditingRecord(null);
+            setCorrectionDismissed(true);
+          }}
+          onSave={saveCorrection}
+        />
+      )}
     </section>
   );
 }

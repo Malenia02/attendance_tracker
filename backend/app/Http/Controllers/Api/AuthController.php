@@ -5,9 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
-use App\Models\UserAccessToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -22,7 +23,6 @@ class AuthController extends Controller
         $validated = $request->validate([
             'username' => ['required', 'string', 'max:100'],
             'password' => ['required', 'string', 'max:255'],
-            'remember' => ['sometimes', 'boolean'],
         ]);
 
         $user = User::query()
@@ -34,88 +34,68 @@ class AuthController extends Controller
             })
             ->first();
 
-        if (! $user) {
-            Hash::check($validated['password'], '$2y$12$yHjb7Cp0rB7s3QygFC3YkOt9HqO8ePNZ5o43FKp1jVfSnXqGMZ52W');
+        $passwordHash = $user?->password_hash
+            ?? '$2y$12$yHjb7Cp0rB7s3QygFC3YkOt9HqO8ePNZ5o43FKp1jVfSnXqGMZ52W';
+        $passwordIsValid = Hash::check($validated['password'], $passwordHash);
+
+        if (! $user || ! $passwordIsValid) {
+            if (
+                $user
+                && $user->status === 'Active'
+                && (! $user->locked_until || $user->locked_until->isPast())
+            ) {
+                $locked = $this->registerFailedAttempt($user);
+                $this->logAuthentication(
+                    $request,
+                    $user,
+                    $locked ? 'ACCOUNT_TEMPORARILY_LOCKED' : 'FAILED_LOGIN',
+                    $locked
+                        ? $user->username.' was temporarily locked after repeated failed login attempts.'
+                        : 'A failed login attempt was recorded for '.$user->username.'.'
+                );
+            }
 
             return $this->invalidCredentials();
         }
 
-        if ($user->status === 'Inactive') {
-            return response()->json([
-                'message' => 'This account is inactive. Contact your system administrator.',
-            ], 403);
+        if ($user->status === 'Locked' && $user->locked_until?->isPast()) {
+            $user->forceFill([
+                'status' => 'Active',
+                'failed_login_attempts' => 0,
+                'locked_until' => null,
+            ])->save();
         }
 
-        if ($user->status === 'Locked') {
-            if ($user->locked_until?->isPast()) {
-                $user->forceFill([
-                    'status' => 'Active',
-                    'failed_login_attempts' => 0,
-                    'locked_until' => null,
-                ])->save();
-            } else {
-                return response()->json([
-                    'message' => $user->locked_until
-                        ? 'Too many failed attempts. Try again after '.$user->locked_until->format('g:i A').'.'
-                        : 'This account is locked. Contact your system administrator.',
-                    'locked_until' => $user->locked_until?->toISOString(),
-                ], 423);
-            }
-        }
-
-        if (! Hash::check($validated['password'], $user->password_hash)) {
-            $attempts = $user->failed_login_attempts + 1;
-            $changes = ['failed_login_attempts' => $attempts];
-
-            if ($attempts >= self::MAX_ATTEMPTS) {
-                $changes['status'] = 'Locked';
-                $changes['locked_until'] = now()->addMinutes(self::LOCK_MINUTES);
-            }
-
-            $user->forceFill($changes)->save();
+        if (
+            $user->status !== 'Active'
+            || ($user->locked_until && $user->locked_until->isFuture())
+        ) {
             $this->logAuthentication(
                 $request,
                 $user,
-                $attempts >= self::MAX_ATTEMPTS ? 'ACCOUNT_LOCKED' : 'FAILED_LOGIN',
-                $attempts >= self::MAX_ATTEMPTS
-                    ? $user->username.' was locked after repeated failed login attempts.'
-                    : 'A failed login attempt was recorded for '.$user->username.'.'
+                'REJECTED_LOGIN',
+                'A sign-in attempt was rejected because the account is not active.'
             );
 
-            if ($attempts >= self::MAX_ATTEMPTS) {
-                return response()->json([
-                    'message' => 'Too many failed attempts. This account is locked for 15 minutes.',
-                    'locked_until' => $changes['locked_until']->toISOString(),
-                ], 423);
-            }
-
-            return $this->invalidCredentials(self::MAX_ATTEMPTS - $attempts);
+            return $this->invalidCredentials();
         }
 
-        $user->forceFill([
+        $successfulLoginChanges = [
             'failed_login_attempts' => 0,
             'locked_until' => null,
             'last_login_at' => now(),
-        ])->save();
+        ];
 
-        UserAccessToken::query()
-            ->where('user_id', $user->user_id)
-            ->where('expires_at', '<=', now())
-            ->delete();
+        if (Hash::needsRehash($user->password_hash)) {
+            $successfulLoginChanges['password_hash'] = Hash::make($validated['password']);
+        }
 
-        $plainToken = Str::random(80);
-        $expiresAt = ($validated['remember'] ?? false)
-            ? now()->addDays(30)
-            : now()->addHours(8);
+        $user->forceFill($successfulLoginChanges)->save();
 
-        UserAccessToken::create([
-            'user_id' => $user->user_id,
-            'token_hash' => hash('sha256', $plainToken),
-            'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
-            'ip_address' => $request->ip(),
-            'last_used_at' => now(),
-            'expires_at' => $expiresAt,
-        ]);
+        Auth::guard('web')->login($user);
+        $request->session()->regenerate();
+        $user->accessTokens()->delete();
+
         $this->logAuthentication(
             $request,
             $user,
@@ -125,9 +105,6 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Signed in successfully.',
-            'token' => $plainToken,
-            'token_type' => 'Bearer',
-            'expires_at' => $expiresAt->toISOString(),
             'user' => $this->formatUser($user),
         ]);
     }
@@ -141,19 +118,47 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->attributes->get('accessToken')?->delete();
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
         return response()->json([
             'message' => 'Signed out successfully.',
         ]);
     }
 
-    private function invalidCredentials(?int $attemptsRemaining = null): JsonResponse
+    private function invalidCredentials(): JsonResponse
     {
         return response()->json([
-            'message' => 'The username or password is incorrect.',
-            'attempts_remaining' => $attemptsRemaining,
-        ], 422);
+            'message' => 'Unable to sign in with those credentials.',
+        ], 401);
+    }
+
+    private function registerFailedAttempt(User $user): bool
+    {
+        return DB::transaction(function () use ($user): bool {
+            $lockedUser = User::query()
+                ->whereKey($user->user_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedUser->status !== 'Active') {
+                return $lockedUser->status === 'Locked';
+            }
+
+            $attempts = $lockedUser->failed_login_attempts + 1;
+            $changes = ['failed_login_attempts' => $attempts];
+            $locked = $attempts >= self::MAX_ATTEMPTS;
+
+            if ($locked) {
+                $changes['locked_until'] = now()->addMinutes(self::LOCK_MINUTES);
+            }
+
+            $lockedUser->forceFill($changes)->save();
+            $user->forceFill($changes);
+
+            return $locked;
+        });
     }
 
     private function logAuthentication(
@@ -185,6 +190,10 @@ class AuthController extends Controller
                 'full_name' => $user->personnel->full_name,
                 'employee_number' => $user->personnel->employee_number,
                 'email' => $user->personnel->email,
+                'photo_url' => $user->personnel->photo
+                    ? route('personnel.photo', ['personnel' => $user->personnel], false)
+                        .'?v='.($user->personnel->updated_at?->timestamp ?? 0)
+                    : null,
             ] : null,
         ];
     }

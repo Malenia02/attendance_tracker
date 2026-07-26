@@ -30,6 +30,26 @@ class DtrDocumentGeneratorTest extends TestCase
                     'late_minutes' => 15,
                     'undertime_minutes' => 0,
                 ],
+                [
+                    'day_number' => 2,
+                    'status' => 'Rest Day',
+                    'morning_time_in' => null,
+                    'morning_time_out' => null,
+                    'afternoon_time_in' => null,
+                    'afternoon_time_out' => null,
+                    'late_minutes' => 0,
+                    'undertime_minutes' => 0,
+                ],
+                [
+                    'day_number' => 3,
+                    'status' => 'Holiday',
+                    'morning_time_in' => null,
+                    'morning_time_out' => null,
+                    'afternoon_time_in' => null,
+                    'afternoon_time_out' => null,
+                    'late_minutes' => 0,
+                    'undertime_minutes' => 0,
+                ],
             ],
         ];
 
@@ -43,9 +63,15 @@ class DtrDocumentGeneratorTest extends TestCase
 
             $this->assertIsString($documentXml);
             $this->assertStringContainsString('JUAN DELA CRUZ', $documentXml);
+            $this->assertSame(6, substr_count($documentXml, 'JUAN DELA CRUZ'));
+            $this->assertStringNotContainsString('(Name)', $documentXml);
             $this->assertStringContainsString('July 2026', $documentXml);
             $this->assertStringContainsString('7:15', $documentXml);
             $this->assertStringContainsString('7:00-12:00', $documentXml);
+            $this->assertStringContainsString('REST DAY', $documentXml);
+            $this->assertStringContainsString('HOLIDAY', $documentXml);
+            $this->assertSame(186, substr_count($documentXml, 'w:hRule="exact"'));
+            $this->assertStringContainsString('<w:noWrap', $documentXml);
         } finally {
             File::delete($path);
         }

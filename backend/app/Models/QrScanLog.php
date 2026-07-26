@@ -21,6 +21,8 @@ class QrScanLog extends Model
         'scanned_at',
         'latitude',
         'longitude',
+        'location_accuracy_meters',
+        'position_recorded_at',
         'distance_from_office_meters',
         'ip_address',
         'user_agent',
@@ -34,6 +36,8 @@ class QrScanLog extends Model
         'scanned_at' => 'datetime',
         'latitude' => 'decimal:7',
         'longitude' => 'decimal:7',
+        'location_accuracy_meters' => 'decimal:2',
+        'position_recorded_at' => 'datetime',
         'distance_from_office_meters' => 'decimal:2',
     ];
 

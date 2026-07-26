@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   Building2,
+  Camera,
   GraduationCap,
   IdCard,
+  ImagePlus,
   Mail,
   Pencil,
   Phone,
@@ -70,6 +72,19 @@ export default function Personnel() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const photoObjectUrl = useRef("");
+
+  function releasePhotoObjectUrl() {
+    if (photoObjectUrl.current) {
+      URL.revokeObjectURL(photoObjectUrl.current);
+      photoObjectUrl.current = "";
+    }
+  }
+
+  useEffect(() => () => releasePhotoObjectUrl(), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -118,13 +133,18 @@ export default function Personnel() {
   }, [search, typeFilter, statusFilter, departmentFilter, refreshKey]);
 
   function openCreateModal() {
+    releasePhotoObjectUrl();
     setEditingRecord(null);
     setForm(emptyForm);
+    setPhotoFile(null);
+    setPhotoPreview("");
+    setRemovePhoto(false);
     setFieldErrors({});
     setModalOpen(true);
   }
 
   function openEditModal(record) {
+    releasePhotoObjectUrl();
     setEditingRecord(record);
     setForm({
       employee_number: record.employee_number || "",
@@ -144,6 +164,9 @@ export default function Personnel() {
       address: record.address || "",
       status: record.status,
     });
+    setPhotoFile(null);
+    setPhotoPreview(record.photo_url || "");
+    setRemovePhoto(false);
     setFieldErrors({});
     setModalOpen(true);
   }
@@ -152,6 +175,10 @@ export default function Personnel() {
     if (saving) return;
     setModalOpen(false);
     setEditingRecord(null);
+    releasePhotoObjectUrl();
+    setPhotoFile(null);
+    setPhotoPreview("");
+    setRemovePhoto(false);
     setFieldErrors({});
   }
 
@@ -161,23 +188,64 @@ export default function Personnel() {
     setFieldErrors((current) => ({ ...current, [name]: undefined }));
   }
 
+  function selectPhoto(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setFieldErrors((current) => ({
+        ...current,
+        photo: ["Choose a JPEG, PNG, or WebP image."],
+      }));
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      setFieldErrors((current) => ({
+        ...current,
+        photo: ["The photo must not be larger than 3 MB."],
+      }));
+      return;
+    }
+
+    releasePhotoObjectUrl();
+    photoObjectUrl.current = URL.createObjectURL(file);
+    setPhotoFile(file);
+    setPhotoPreview(photoObjectUrl.current);
+    setRemovePhoto(false);
+    setFieldErrors((current) => ({ ...current, photo: undefined }));
+  }
+
+  function clearPhoto() {
+    releasePhotoObjectUrl();
+    setPhotoFile(null);
+    setPhotoPreview("");
+    setRemovePhoto(Boolean(editingRecord?.photo_url));
+    setFieldErrors((current) => ({ ...current, photo: undefined }));
+  }
+
   async function submitForm(event) {
     event.preventDefault();
     setSaving(true);
     setFieldErrors({});
 
-    const body = Object.fromEntries(
-      Object.entries(form).map(([key, value]) => [key, value === "" ? null : value]),
-    );
-    body.department_id = body.department_id ? Number(body.department_id) : null;
+    const body = new FormData();
+    Object.entries(form).forEach(([key, value]) => body.append(key, value));
+
+    if (photoFile) body.append("photo", photoFile);
+    if (removePhoto) body.append("remove_photo", "1");
+    if (editingRecord) body.append("_method", "PUT");
 
     try {
       const response = await apiFetch(
         editingRecord ? `/personnel/${editingRecord.personnel_id}` : "/personnel",
         {
-          method: editingRecord ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          method: "POST",
+          body,
         },
       );
       const payload = await readResponse(response);
@@ -185,6 +253,10 @@ export default function Personnel() {
       setNotice(payload.message);
       setModalOpen(false);
       setEditingRecord(null);
+      releasePhotoObjectUrl();
+      setPhotoFile(null);
+      setPhotoPreview("");
+      setRemovePhoto(false);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 3500);
     } catch (error) {
@@ -304,7 +376,7 @@ export default function Personnel() {
                 <tr key={record.personnel_id}>
                   <td>
                     <div className="user-identity">
-                      <span>{record.first_name[0]}{record.last_name[0]}</span>
+                      <PersonnelAvatar record={record} />
                       <div>
                         <strong>{record.full_name}</strong>
                         <small>{record.employee_number}</small>
@@ -384,6 +456,36 @@ export default function Personnel() {
             <form className="user-form personnel-form" onSubmit={submitForm}>
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
+              <div className="personnel-photo-field">
+                <div className={`personnel-photo-preview ${photoPreview ? "has-photo" : ""}`}>
+                  <span>{initials(form.first_name, form.last_name)}</span>
+                  {photoPreview && <img src={photoPreview} alt="Personnel preview" />}
+                  <i><Camera size={16} /></i>
+                </div>
+                <div className="personnel-photo-controls">
+                  <strong>Personnel photo</strong>
+                  <p>Use a clear, square image. JPEG, PNG or WebP, up to 3 MB.</p>
+                  <div>
+                    <label className="secondary-action personnel-photo-button">
+                      <ImagePlus size={16} />
+                      {photoPreview ? "Change photo" : "Upload photo"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={selectPhoto}
+                      />
+                    </label>
+                    {photoPreview && (
+                      <button type="button" className="personnel-photo-remove" onClick={clearPhoto}>
+                        <Trash2 size={15} />
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <FieldError errors={fieldErrors} name="photo" />
+                </div>
+              </div>
+
               <h3 className="form-section-title">Personal information</h3>
               <FormField label="First name" name="first_name" form={form} errors={fieldErrors} onChange={updateForm} required />
               <FormField label="Middle name" name="middle_name" form={form} errors={fieldErrors} onChange={updateForm} />
@@ -450,6 +552,19 @@ export default function Personnel() {
         </div>
       )}
     </section>
+  );
+}
+
+function initials(firstName, lastName) {
+  return `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "ID";
+}
+
+function PersonnelAvatar({ record }) {
+  return (
+    <span className={`personnel-list-avatar ${record.photo_url ? "has-photo" : ""}`}>
+      {initials(record.first_name, record.last_name)}
+      {record.photo_url && <img src={record.photo_url} alt="" loading="lazy" />}
+    </span>
   );
 }
 

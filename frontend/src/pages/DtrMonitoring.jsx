@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   BadgeCheck,
@@ -7,9 +8,12 @@ import {
   ChevronRight,
   ClipboardCheck,
   Clock3,
+  CheckCheck,
   Download,
+  ExternalLink,
   FileCheck2,
   FileClock,
+  PencilLine,
   Search,
   ShieldCheck,
   TimerReset,
@@ -17,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch } from "../lib/auth";
+import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 
 function currentMonthKey() {
   const date = new Date();
@@ -48,6 +53,7 @@ async function readResponse(response) {
 }
 
 export default function DtrMonitoring() {
+  const navigate = useNavigate();
   const [month, setMonth] = useState(currentMonthKey);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({
@@ -61,6 +67,7 @@ export default function DtrMonitoring() {
   const [meta, setMeta] = useState({
     month_label: "",
     can_certify: false,
+    can_correct_attendance: false,
     can_generate: false,
     can_manage_others: false,
   });
@@ -75,6 +82,7 @@ export default function DtrMonitoring() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [exceptionBusy, setExceptionBusy] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,6 +95,7 @@ export default function DtrMonitoring() {
         setMeta({
           month_label: payload.month_label,
           can_certify: payload.can_certify,
+          can_correct_attendance: payload.can_correct_attendance,
           can_generate: payload.can_generate,
           can_manage_others: payload.can_manage_others,
         });
@@ -144,10 +153,62 @@ export default function DtrMonitoring() {
       setNotice(payload.message);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 3500);
+      return true;
     } catch (requestError) {
       setError(requestError.message);
+      return false;
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function correctAttendance(row, day, values) {
+    setExceptionBusy(true);
+    setError("");
+
+    try {
+      const payload = await apiFetch("/attendance/correction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personnel_id: row.personnel_id,
+          attendance_date: day.date,
+          ...values,
+        }),
+      }).then(readResponse);
+
+      setNotice(`${payload.message} DTR readiness recalculated.`);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 4500);
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    } finally {
+      setExceptionBusy(false);
+    }
+  }
+
+  async function verifyAttendanceBulk(attendanceIds) {
+    setExceptionBusy(true);
+    setError("");
+
+    try {
+      const payload = await apiFetch("/attendance/verify-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attendance_ids: attendanceIds }),
+      }).then(readResponse);
+
+      setNotice(`${payload.message} DTR readiness recalculated.`);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 4000);
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    } finally {
+      setExceptionBusy(false);
     }
   }
 
@@ -446,16 +507,60 @@ export default function DtrMonitoring() {
           row={selected}
           monthLabel={meta.month_label}
           canCertify={meta.can_certify}
+          canCorrect={meta.can_correct_attendance}
           busy={busyId === selected.personnel_id}
+          exceptionBusy={exceptionBusy}
           onClose={() => setSelected(null)}
           onStatus={(status, remarks) => updateStatus(selected, status, remarks)}
+          onCorrect={(day, values) => correctAttendance(selected, day, values)}
+          onVerifyBulk={verifyAttendanceBulk}
+          onReview={(date) => navigate(
+            `/attendance?date=${date}&personnel=${selected.personnel_id}&correction=1`,
+          )}
         />
       )}
     </section>
   );
 }
 
-function DtrDetails({ row, monthLabel, canCertify, busy, onClose, onStatus }) {
+function DtrDetails({
+  row,
+  monthLabel,
+  canCertify,
+  canCorrect,
+  busy,
+  exceptionBusy,
+  onClose,
+  onStatus,
+  onCorrect,
+  onVerifyBulk,
+  onReview,
+}) {
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
+  const [correctionDay, setCorrectionDay] = useState(null);
+  const problemDays = row.daily_records.filter((day) => (
+    ["Missing", "Incomplete"].includes(day.status)
+    || (day.is_duty_day && !["Missing", "Holiday"].includes(day.status) && !day.is_verified)
+  ));
+  const verifiableDays = problemDays.filter((day) => (
+    day.attendance_id
+    && !day.is_verified
+    && !["Missing", "Incomplete"].includes(day.status)
+  ));
+  const latestHistory = row.certification.history?.slice(0, 4) || [];
+
+  async function saveInlineCorrection(values) {
+    const correctedDate = correctionDay.date;
+    const updated = await onCorrect(correctionDay, values);
+
+    if (updated) {
+      setCorrectionDay(
+        problemDays.find((day) => day.date !== correctedDate) || null,
+      );
+    }
+  }
+
   return (
     <div className="dtr-modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="dtr-detail-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
@@ -474,13 +579,53 @@ function DtrDetails({ row, monthLabel, canCertify, busy, onClose, onStatus }) {
           <div><small>Completion</small><strong>{row.completion_percent}%</strong></div>
         </div>
 
+        {row.certification.status === "Returned" && (
+          <div className="dtr-return-notice">
+            <AlertCircle size={19} />
+            <div>
+              <strong>Correction required</strong>
+              <p>{row.certification.return_reason || "This DTR was returned for attendance correction."}</p>
+            </div>
+          </div>
+        )}
+
+        {!row.is_ready && (
+          <div className="dtr-correction-summary">
+            <div>
+              <strong>{problemDays.length} date{problemDays.length === 1 ? "" : "s"} need attention</strong>
+              <span>
+                {row.issues.missing} missing · {row.issues.incomplete} incomplete · {row.issues.unverified} unverified
+              </span>
+            </div>
+            <div className="dtr-correction-actions">
+              {!!verifiableDays.length && canCertify && (
+                <button
+                  type="button"
+                  disabled={exceptionBusy}
+                  onClick={() => onVerifyBulk(verifiableDays.map((day) => day.attendance_id))}
+                >
+                  <CheckCheck size={14} /> Verify complete ({verifiableDays.length})
+                </button>
+              )}
+              {problemDays[0] && canCorrect && (
+                <button type="button" disabled={exceptionBusy} onClick={() => setCorrectionDay(problemDays[0])}>
+                  Resolve first issue <PencilLine size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="dtr-detail-list">
           <div className="dtr-detail-list-head">
             <strong>Daily records</strong>
             <span>{row.expected_days} expected duty days</span>
           </div>
           {row.daily_records.length ? row.daily_records.map((day) => (
-            <article key={day.date}>
+            <article
+              key={day.date}
+              className={problemDays.some((problem) => problem.date === day.date) ? "needs-correction" : ""}
+            >
               <time><strong>{day.day_number}</strong><small>{day.day}</small></time>
               <div className="dtr-day-times">
                 <span>AM {formatTime(day.morning_time_in)} – {formatTime(day.morning_time_out)}</span>
@@ -488,15 +633,95 @@ function DtrDetails({ row, monthLabel, canCertify, busy, onClose, onStatus }) {
               </div>
               <div className="dtr-day-meta">
                 <span className={`dtr-day-status ${statusClass(day.status)}`}>{day.status}</span>
+                {day.is_authorized_duty_day && <small className="authorized">Authorized Duty Day</small>}
+                {day.holiday && <small className="holiday-name">{day.holiday}</small>}
                 {!!day.late_minutes && <small>Late {day.late_minutes}m</small>}
               </div>
               <span className={`dtr-verification ${day.is_verified ? "verified" : ""}`}>
                 {day.is_verified ? <BadgeCheck size={13} /> : <TimerReset size={13} />}
                 {day.is_verified ? "Verified" : "Unverified"}
               </span>
+              {problemDays.some((problem) => problem.date === day.date) && (
+                <button
+                  type="button"
+                  className="dtr-review-day"
+                  onClick={() => canCorrect ? setCorrectionDay(day) : onReview(day.date)}
+                  aria-label={`${canCorrect ? "Resolve" : "Review"} attendance for ${day.date}`}
+                >
+                  {canCorrect ? "Resolve" : "Review"}
+                  {canCorrect ? <PencilLine size={12} /> : <ExternalLink size={12} />}
+                </button>
+              )}
             </article>
           )) : <div className="dtr-no-days">No expected duty days for this month.</div>}
         </div>
+
+        {!!latestHistory.length && (
+          <div className="dtr-status-history">
+            <strong>Approval history</strong>
+            {latestHistory.map((entry) => (
+              <div key={entry.id}>
+                <i className={statusClass(entry.to_status)}></i>
+                <span>
+                  <b>{entry.from_status} → {entry.to_status}</b>
+                  <small>{entry.changed_by}{entry.remarks ? ` · ${entry.remarks}` : ""}</small>
+                </span>
+                <time>{new Date(entry.changed_at).toLocaleString("en-PH", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}</time>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showReturnForm && (
+          <div className="dtr-return-form">
+            <label htmlFor="dtr-return-reason">Reason for returning this DTR</label>
+            <textarea
+              id="dtr-return-reason"
+              value={returnReason}
+              onChange={(event) => setReturnReason(event.target.value)}
+              maxLength={255}
+              placeholder="Identify the dates or records that require correction..."
+              autoFocus
+            />
+            <div>
+              <button type="button" onClick={() => setShowReturnForm(false)}>Cancel</button>
+              <button
+                type="button"
+                className="confirm-return"
+                disabled={busy || !returnReason.trim()}
+                onClick={async () => {
+                  const updated = await onStatus("Returned", returnReason.trim());
+                  if (updated) {
+                    setShowReturnForm(false);
+                    setReturnReason("");
+                  }
+                }}
+              >
+                Return for correction
+              </button>
+            </div>
+          </div>
+        )}
+
+        {correctionDay && (
+          <AttendanceCorrectionModal
+            key={correctionDay.date}
+            record={{
+              ...correctionDay,
+              full_name: row.full_name,
+              display_status: correctionDay.status,
+            }}
+            date={correctionDay.date}
+            busy={exceptionBusy}
+            onClose={() => setCorrectionDay(null)}
+            onSave={saveInlineCorrection}
+          />
+        )}
 
         <footer>
           <div>
@@ -514,7 +739,8 @@ function DtrDetails({ row, monthLabel, canCertify, busy, onClose, onStatus }) {
                 title={!row.is_ready ? "Resolve missing, incomplete, and unverified records first." : ""}
                 onClick={() => onStatus("Submitted")}
               >
-                <FileCheck2 size={15} /> Submit DTR
+                <FileCheck2 size={15} />
+                {row.certification.status === "Returned" ? "Resubmit DTR" : "Submit DTR"}
               </button>
             )}
             {row.certification.status === "Submitted" && canCertify && (
@@ -523,7 +749,7 @@ function DtrDetails({ row, monthLabel, canCertify, busy, onClose, onStatus }) {
                   type="button"
                   className="return"
                   disabled={busy}
-                  onClick={() => onStatus("Returned", "Returned for attendance correction.")}
+                  onClick={() => setShowReturnForm(true)}
                 >
                   <AlertCircle size={15} /> Return
                 </button>

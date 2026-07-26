@@ -7,6 +7,8 @@ use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\QrScanLog;
 use App\Models\TimeLog;
+use App\Support\PersonnelAccess;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,12 +29,19 @@ class QrAttendanceController extends Controller
 
         $canManageCodes = in_array($request->user()->user_role, self::CODE_MANAGER_ROLES, true);
         $today = now()->toDateString();
-        $todayLogs = QrScanLog::query()->whereDate('scanned_at', $today);
+        $visiblePersonnelIds = PersonnelAccess::scope(
+            Personnel::query()->where('status', 'Active'),
+            $request->user()
+        )->pluck('personnel_id');
+        $todayLogs = QrScanLog::query()
+            ->whereIn('personnel_id', $visiblePersonnelIds)
+            ->whereDate('scanned_at', $today);
         $recentLogs = QrScanLog::query()
             ->with([
                 'personnel:personnel_id,employee_number,first_name,middle_name,last_name,suffix,photo',
                 'scanner:user_id,username',
             ])
+            ->whereIn('personnel_id', $visiblePersonnelIds)
             ->orderByDesc('scanned_at')
             ->limit(20)
             ->get()
@@ -43,7 +52,7 @@ class QrAttendanceController extends Controller
             'timezone' => config('app.timezone'),
             'can_manage_codes' => $canManageCodes,
             'summary' => [
-                'active_personnel' => Personnel::query()->where('status', 'Active')->count(),
+                'active_personnel' => $visiblePersonnelIds->count(),
                 'accepted_today' => (clone $todayLogs)->where('scan_status', 'Accepted')->count(),
                 'rejected_today' => (clone $todayLogs)->whereNotIn('scan_status', ['Accepted', 'Duplicate'])->count(),
                 'duplicates_today' => (clone $todayLogs)->where('scan_status', 'Duplicate')->count(),
@@ -86,6 +95,8 @@ class QrAttendanceController extends Controller
             'device_identifier' => ['required', 'string', 'max:255'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'accuracy' => ['nullable', 'numeric', 'between:0,10000'],
+            'position_timestamp' => ['nullable', 'date'],
         ]);
         $now = now();
         $personnel = $this->resolvePersonnel($validated['code']);
@@ -107,6 +118,16 @@ class QrAttendanceController extends Controller
                 'scan' => $this->formatScanLog($log),
                 'personnel' => $this->formatPersonnelIdentity($personnel),
             ], 422);
+        }
+
+        if (! PersonnelAccess::canAccess($request->user(), $personnel)) {
+            $message = 'This personnel card belongs to a different DILG office.';
+            $log = $this->createScanLog($request, $validated, $personnel, 'Rejected', $message);
+
+            return response()->json([
+                'message' => $message,
+                'scan' => $this->formatScanLog($log),
+            ], 403);
         }
 
         if (($personnel->employment_start_date && $now->isBefore($personnel->employment_start_date->startOfDay()))
@@ -135,6 +156,47 @@ class QrAttendanceController extends Controller
 
         if (! isset($validated['latitude'], $validated['longitude'])) {
             $message = 'Device location is required. Enable GPS and allow location access, then scan again.';
+            $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
+
+            return response()->json([
+                'message' => $message,
+                'scan' => $this->formatScanLog($log),
+                'personnel' => $this->formatPersonnelIdentity($personnel),
+            ], 422);
+        }
+
+        if (! isset($validated['accuracy'], $validated['position_timestamp'])) {
+            $message = 'A fresh, accurate GPS position is required. Refresh location and scan again.';
+            $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
+
+            return response()->json([
+                'message' => $message,
+                'scan' => $this->formatScanLog($log),
+                'personnel' => $this->formatPersonnelIdentity($personnel),
+            ], 422);
+        }
+
+        $maximumAccuracy = (float) config('attendance.maximum_location_accuracy_meters', 50);
+
+        if ((float) $validated['accuracy'] > $maximumAccuracy) {
+            $message = 'GPS accuracy is too low (±'.number_format((float) $validated['accuracy'])
+                .' m). Move to an open area and refresh location.';
+            $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
+
+            return response()->json([
+                'message' => $message,
+                'scan' => $this->formatScanLog($log),
+                'personnel' => $this->formatPersonnelIdentity($personnel),
+            ], 422);
+        }
+
+        $positionRecordedAt = Carbon::parse($validated['position_timestamp']);
+
+        if (
+            $positionRecordedAt->isBefore($now->copy()->subMinute())
+            || $positionRecordedAt->isAfter($now->copy()->addSeconds(10))
+        ) {
+            $message = 'The GPS position is stale. Refresh location and scan again.';
             $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
 
             return response()->json([
@@ -223,6 +285,7 @@ class QrAttendanceController extends Controller
                 'device_identifier' => $validated['device_identifier'],
             ]));
             $attendanceRequest->setUserResolver(fn () => $request->user());
+            $attendanceRequest->attributes->set('trusted_qr_scan', true);
             $attendanceResponse = app(AttendanceController::class)->recordTime($attendanceRequest);
             $attendancePayload = $attendanceResponse->getData(true);
 
@@ -310,7 +373,7 @@ class QrAttendanceController extends Controller
         return hash_hmac(
             'sha256',
             'DILGATTEND|v1|'.$personnel->personnel_id.'|'.$personnel->qr_login_code,
-            (string) config('app.key')
+            (string) config('attendance.qr_signing_key')
         );
     }
 
@@ -331,6 +394,8 @@ class QrAttendanceController extends Controller
             'scanned_at' => now(),
             'latitude' => $validated['latitude'] ?? null,
             'longitude' => $validated['longitude'] ?? null,
+            'location_accuracy_meters' => $validated['accuracy'] ?? null,
+            'position_recorded_at' => $validated['position_timestamp'] ?? null,
             'distance_from_office_meters' => $distance,
             'ip_address' => $request->ip(),
             'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
@@ -369,7 +434,10 @@ class QrAttendanceController extends Controller
             'full_name' => $personnel->full_name,
             'personnel_type' => $personnel->personnel_type,
             'position_title' => $personnel->position_title,
-            'photo' => $personnel->photo,
+            'photo_url' => $personnel->photo
+                ? route('personnel.photo', ['personnel' => $personnel], false)
+                    .'?v='.($personnel->updated_at?->timestamp ?? 0)
+                : null,
             'department' => $personnel->department ? [
                 'code' => $personnel->department->department_code,
                 'name' => $personnel->department->department_name,
