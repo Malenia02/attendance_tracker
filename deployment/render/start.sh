@@ -14,6 +14,7 @@ for variable in \
     DB_HOST \
     DB_DATABASE \
     DB_USERNAME \
+    DB_PASSWORD \
     DTR_SIGNING_KEY \
     QR_SIGNING_KEY
 do

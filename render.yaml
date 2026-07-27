@@ -8,7 +8,6 @@ services:
     dockerContext: .
     preDeployCommand: php artisan migrate --force && php artisan production:check
     healthCheckPath: /health/ready
-    maxShutdownDelaySeconds: 30
     disk:
       name: personnel-photos
       mountPath: /var/www/html/storage/app/private
