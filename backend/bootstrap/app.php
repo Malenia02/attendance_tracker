@@ -30,7 +30,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO
         );
-        $middleware->statefulApi();
         $middleware->append(SecurityHeaders::class);
 
         $middleware->alias([
