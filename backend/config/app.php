@@ -58,6 +58,8 @@ return [
 
     'frontend_deployment' => env('FRONTEND_DEPLOYMENT', 'embedded'),
 
+    'frontend_api_proxy' => (bool) env('FRONTEND_API_PROXY', false),
+
     'trusted_hosts' => array_values(array_filter(array_map(
         'trim',
         explode(',', (string) env('TRUSTED_HOSTS', ''))

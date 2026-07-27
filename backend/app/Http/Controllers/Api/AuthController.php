@@ -195,6 +195,7 @@ class AuthController extends Controller
                         'personnel.photo',
                         ['personnel' => $user->personnel],
                         config('app.frontend_deployment') === 'external'
+                            && ! config('app.frontend_api_proxy')
                     )
                         .'?v='.($user->personnel->updated_at?->timestamp ?? 0)
                     : null,

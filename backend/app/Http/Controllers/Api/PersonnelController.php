@@ -283,6 +283,7 @@ class PersonnelController extends Controller
                     'personnel.photo',
                     ['personnel' => $personnel],
                     config('app.frontend_deployment') === 'external'
+                        && ! config('app.frontend_api_proxy')
                 )
                     .'?v='.($personnel->updated_at?->timestamp ?? 0)
                 : null,

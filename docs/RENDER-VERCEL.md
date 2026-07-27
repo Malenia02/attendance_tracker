@@ -3,6 +3,67 @@
 This deployment keeps the Laravel API on Render and publishes the Vite React
 application on Vercel.
 
+## Free test deployment
+
+For evaluation only, use the separate `render.free.yaml` Blueprint:
+
+```text
+Blueprint Name: dilg-attendance-free-test
+Branch:         main
+Blueprint Path: render.free.yaml
+```
+
+This keeps the paid production `render.yaml` unchanged. The free service:
+
+- uses Render's Free web-service plan;
+- runs migrations during startup because pre-deploy commands are paid-only;
+- has no persistent disk, so uploaded personnel photos can disappear after
+  any restart, idle spin-down, or redeploy;
+- is for test data only and must never contain real personnel records.
+
+The application still requires MySQL. Render's managed database is PostgreSQL,
+so create a free Aiven for MySQL service and enter its connection values in
+the Blueprint form:
+
+```dotenv
+DB_HOST=the Aiven host
+DB_PORT=the Aiven port
+DB_DATABASE=the Aiven database
+DB_USERNAME=the Aiven user
+DB_PASSWORD=the Aiven password
+```
+
+Download Aiven's CA certificate and convert it to base64 in PowerShell:
+
+```powershell
+[Convert]::ToBase64String(
+    [IO.File]::ReadAllBytes("C:\path\to\ca.pem")
+)
+```
+
+Paste the result into `MYSQL_SSL_CA_BASE64`. The startup script reconstructs
+the certificate at `/tmp/dilg-mysql-ca.pem` with restricted permissions.
+Never commit the certificate value or database password.
+
+Enter the exact Vercel deployment URL in Render:
+
+```dotenv
+FRONTEND_URL=https://your-project.vercel.app
+SANCTUM_STATEFUL_DOMAINS=your-project.vercel.app
+CORS_ALLOWED_ORIGINS=https://your-project.vercel.app
+```
+
+Do not enter a value for `SESSION_DOMAIN` in proxy mode. In Vercel, set:
+
+```dotenv
+VITE_API_URL=/api
+```
+
+The included Vercel rewrites proxy `/api/*` and `/sanctum/*` to the free
+Render test service. This keeps encrypted session cookies on the Vercel
+hostname and avoids unreliable third-party cookies between `vercel.app` and
+`onrender.com`.
+
 ## Required domain layout
 
 Use two subdomains of one domain:

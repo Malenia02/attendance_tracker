@@ -29,6 +29,21 @@ if [ -n "${missing_variables}" ]; then
     exit 1
 fi
 
+if [ -n "${MYSQL_ATTR_SSL_CA:-}" ]; then
+    if [ -z "${MYSQL_SSL_CA_BASE64:-}" ]; then
+        echo "ERROR: MYSQL_SSL_CA_BASE64 is required when MYSQL_ATTR_SSL_CA is configured." >&2
+        exit 1
+    fi
+
+    if ! printf '%s' "${MYSQL_SSL_CA_BASE64}" | base64 --decode > "${MYSQL_ATTR_SSL_CA}"; then
+        echo "ERROR: MYSQL_SSL_CA_BASE64 is not a valid base64-encoded certificate." >&2
+        exit 1
+    fi
+
+    chown root:www-data "${MYSQL_ATTR_SSL_CA}"
+    chmod 0640 "${MYSQL_ATTR_SSL_CA}"
+fi
+
 case "${DB_CONNECTION}" in
     mysql|mariadb)
         ;;
@@ -62,6 +77,16 @@ chown www-data:www-data \
     bootstrap/cache
 
 php artisan config:clear
+
+if [ "${RUN_MIGRATIONS_ON_START:-false}" = "true" ]; then
+    echo "Running database migrations during startup (test/free deployment mode)."
+    php artisan migrate --force
+fi
+
+if [ "${EPHEMERAL_UPLOADS:-false}" = "true" ]; then
+    echo "WARNING: Personnel photos use ephemeral storage and can be lost whenever the service restarts or redeploys." >&2
+fi
+
 php artisan production:check
 php artisan optimize:clear
 php artisan config:cache

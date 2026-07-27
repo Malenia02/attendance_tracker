@@ -288,6 +288,14 @@ class ProductionCheck extends Command
 
         $cookieDomain = ltrim((string) config('session.domain'), '.');
 
+        if (config('app.frontend_api_proxy')) {
+            if ($cookieDomain !== '') {
+                $errors[] = 'SESSION_DOMAIN must be empty when FRONTEND_API_PROXY is true so the proxy issues host-only cookies.';
+            }
+
+            return;
+        }
+
         if (
             $cookieDomain === ''
             || ! is_string($apiHost)
