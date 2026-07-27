@@ -1,15 +1,20 @@
 services:
   - type: web
-    name: malenia02-attendance-api-test
+    name: dilg-attendance-api
     runtime: docker
-    plan: free
+    plan: starter
     region: singapore
     dockerfilePath: ./deployment/render/Dockerfile
     dockerContext: .
+    preDeployCommand: php artisan migrate --force && php artisan production:check
     healthCheckPath: /health/ready
+    disk:
+      name: personnel-photos
+      mountPath: /var/www/html/storage/app/private
+      sizeGB: 1
     envVars:
       - key: APP_NAME
-        value: DILG GIP Attendance Tracker (Test)
+        value: DILG GIP Attendance Tracker
       - key: APP_ENV
         value: production
       - key: APP_DEBUG
@@ -17,15 +22,13 @@ services:
       - key: APP_KEY
         sync: false
       - key: APP_URL
-        value: https://malenia02-attendance-api-test.onrender.com
+        sync: false
       - key: FRONTEND_DEPLOYMENT
         value: external
-      - key: FRONTEND_API_PROXY
-        value: "true"
       - key: FRONTEND_URL
         sync: false
       - key: TRUSTED_HOSTS
-        value: ^malenia02-attendance-api-test\.onrender\.com$
+        value: ^dilg-attendance-api\.onrender\.com$
       - key: TRUSTED_PROXIES
         value: "*"
       - key: APP_TIMEZONE
@@ -39,16 +42,12 @@ services:
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        sync: false
+        value: "3306"
       - key: DB_DATABASE
         sync: false
       - key: DB_USERNAME
         sync: false
       - key: DB_PASSWORD
-        sync: false
-      - key: MYSQL_ATTR_SSL_CA
-        value: /tmp/dilg-mysql-ca.pem
-      - key: MYSQL_SSL_CA_BASE64
         sync: false
       - key: SESSION_DRIVER
         value: database
@@ -63,7 +62,9 @@ services:
       - key: SESSION_SAME_SITE
         value: lax
       - key: SESSION_COOKIE
-        value: dilg_attendance_test_session
+        value: dilg_attendance_session
+      - key: SESSION_DOMAIN
+        sync: false
       - key: SANCTUM_STATEFUL_DOMAINS
         sync: false
       - key: CORS_ALLOWED_ORIGINS
@@ -71,7 +72,7 @@ services:
       - key: CACHE_STORE
         value: database
       - key: CACHE_PREFIX
-        value: dilg_attendance_test_
+        value: dilg_attendance_
       - key: QUEUE_CONNECTION
         value: sync
       - key: FILESYSTEM_DISK
@@ -84,7 +85,3 @@ services:
         value: "50"
       - key: MAIL_MAILER
         value: log
-      - key: RUN_MIGRATIONS_ON_START
-        value: "true"
-      - key: EPHEMERAL_UPLOADS
-        value: "true"

@@ -306,7 +306,8 @@ rollback, and validation instructions are in
 For a split deployment with Laravel on Render and React on Vercel, use sibling
 subdomains under one parent domain and follow
 [docs/RENDER-VERCEL.md](docs/RENDER-VERCEL.md). The repository includes
-`render.yaml`, a production PHP Docker image, and `frontend/vercel.json`.
+the free-test `render.yaml`, the paid `render.production.yaml`, a production
+PHP Docker image, and `frontend/vercel.json`.
 
 ## Testing and quality checks
 

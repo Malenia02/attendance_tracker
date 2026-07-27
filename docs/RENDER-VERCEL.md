@@ -5,15 +5,17 @@ application on Vercel.
 
 ## Free test deployment
 
-For evaluation only, use the separate `render.free.yaml` Blueprint:
+For evaluation, the root `render.yaml` is the default free-test Blueprint.
+`render.free.yaml` is an identical explicit alias:
 
 ```text
 Blueprint Name: dilg-attendance-free-test
 Branch:         main
-Blueprint Path: render.free.yaml
+Blueprint Path: render.yaml
 ```
 
-This keeps the paid production `render.yaml` unchanged. The free service:
+The paid production configuration is preserved as
+`render.production.yaml`. The free service:
 
 - uses Render's Free web-service plan;
 - runs migrations during startup because pre-deploy commands are paid-only;
@@ -132,7 +134,7 @@ the frontend Content Security Policy.
 ## 3. Deploy Laravel to Render
 
 Push this repository to a private Git provider. In Render, create a Blueprint
-from the root `render.yaml`.
+from `render.production.yaml`.
 
 The Blueprint creates:
 
