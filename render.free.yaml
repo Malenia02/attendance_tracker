@@ -25,7 +25,7 @@ services:
       - key: FRONTEND_URL
         sync: false
       - key: TRUSTED_HOSTS
-        value: ^malenia02-attendance-api-test\.onrender\.com$
+        value: ^(malenia02-attendance-api-test\.onrender\.com|attendance-tracker-rho-one\.vercel\.app)$
       - key: TRUSTED_PROXIES
         value: "*"
       - key: APP_TIMEZONE

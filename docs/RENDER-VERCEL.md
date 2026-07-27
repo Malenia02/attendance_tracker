@@ -53,6 +53,7 @@ Enter the exact Vercel deployment URL in Render:
 FRONTEND_URL=https://your-project.vercel.app
 SANCTUM_STATEFUL_DOMAINS=your-project.vercel.app
 CORS_ALLOWED_ORIGINS=https://your-project.vercel.app
+TRUSTED_HOSTS=^(your-render-service\.onrender\.com|your-project\.vercel\.app)$
 ```
 
 Do not enter a value for `SESSION_DOMAIN` in proxy mode. In Vercel, set:
@@ -64,7 +65,8 @@ VITE_API_URL=/api
 The included Vercel rewrites proxy `/api/*` and `/sanctum/*` to the free
 Render test service. This keeps encrypted session cookies on the Vercel
 hostname and avoids unreliable third-party cookies between `vercel.app` and
-`onrender.com`.
+`onrender.com`. Both hostnames must be included in `TRUSTED_HOSTS` because
+Laravel validates the original Vercel hostname forwarded by the proxy.
 
 ## Required domain layout
 
