@@ -21,6 +21,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import QRCode from "qrcode";
 import DilgSeal from "../components/branding/DilgSeal";
 import { apiFetch } from "../lib/auth";
 
@@ -291,6 +292,8 @@ export default function QrAttendance() {
     try {
       const payload = await apiFetch(`/qr-attendance/personnel/${person.personnel_id}/regenerate`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
       }).then(readResponse);
 
       setData((current) => ({
@@ -537,7 +540,7 @@ function ScanResult({ result }) {
 }
 
 function PersonnelQrCard({ person, busy, onRegenerate }) {
-  const [image, setImage] = useState("");
+  const [renderedQr, setRenderedQr] = useState({ payload: null, image: "", error: "" });
   const [flipped, setFlipped] = useState(false);
   const personImage = person.photo_url;
 
@@ -548,21 +551,28 @@ function PersonnelQrCard({ person, busy, onRegenerate }) {
       return () => { active = false; };
     }
 
-    import("qrcode")
-      .then(({ default: QRCode }) => QRCode.toDataURL(person.qr_payload, {
+    QRCode.toDataURL(person.qr_payload, {
         width: 360,
         margin: 2,
         errorCorrectionLevel: "Q",
         color: { dark: "#09244f", light: "#ffffff" },
-      }))
-      .then((value) => {
-        if (active) setImage(value);
       })
-      .catch(() => {});
+      .then((value) => {
+        if (active) {
+          setRenderedQr({ payload: person.qr_payload, image: value, error: "" });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRenderedQr({ payload: person.qr_payload, image: "", error: "QR rendering failed" });
+        }
+      });
 
     return () => { active = false; };
   }, [person.qr_payload]);
 
+  const image = renderedQr.payload === person.qr_payload ? renderedQr.image : "";
+  const renderError = renderedQr.payload === person.qr_payload ? renderedQr.error : "";
   const credentialNumber = `DILG-GIP-${String(person.personnel_id).padStart(5, "0")}`;
 
   function handleFlip() {
@@ -618,7 +628,10 @@ function PersonnelQrCard({ person, busy, onRegenerate }) {
             {image ? (
               <img className="personnel-qr-image" src={image} alt={`Attendance QR for ${person.full_name}`} />
             ) : (
-              <div className="personnel-no-qr"><QrCode size={35} /><span>No QR generated</span></div>
+              <div className="personnel-no-qr">
+                <QrCode size={35} />
+                <span>{renderError || (person.qr_payload ? "Rendering QR…" : "No QR generated")}</span>
+              </div>
             )}
           </div>
           <small>Scan only at an authorized DILG kiosk</small>
