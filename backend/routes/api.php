@@ -13,7 +13,11 @@ use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\SystemUserController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum', 'session.active', 'throttle:api', 'api.audit'])->group(function (): void {
+// These routes are consumed by the first-party React SPA through a reverse
+// proxy. Load the web session explicitly so authentication does not depend on
+// an intermediary preserving Sanctum's Origin/Referer stateful-domain signal.
+// The web group also keeps CSRF validation active for every mutating request.
+Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api.audit'])->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
