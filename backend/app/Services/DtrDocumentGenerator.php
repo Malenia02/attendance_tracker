@@ -93,7 +93,13 @@ class DtrDocumentGenerator
         DOMNode $box,
         array $report
     ): void {
+        $version = (int) ($report['certification']['version_number'] ?? 1);
+
         foreach ($xpath->query('.//w:t', $box) as $textNode) {
+            if ($version > 1 && trim($textNode->textContent) === 'DAILY TIME RECORD') {
+                $textNode->nodeValue = "DAILY TIME RECORD - AMENDED V{$version}";
+            }
+
             if (trim($textNode->textContent) === '(Name)') {
                 $textNode->nodeValue = mb_strtoupper($report['full_name']);
                 break;

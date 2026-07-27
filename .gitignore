@@ -5,4 +5,6 @@
 **/node_modules/
 **/dist/
 **/vendor/
+backend/public/app/
+release/
 .codex-*/

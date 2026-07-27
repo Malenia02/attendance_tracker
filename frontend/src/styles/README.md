@@ -8,6 +8,8 @@ order because later feature files intentionally override shared foundations.
 - `core/theme.css` — light and dark theme tokens
 - `core/foundation.css` — global box sizing, application variables, body, form,
   and root defaults
+- `core/responsive.css` — final cross-page phone safeguards, safe-area spacing,
+  touch controls, compact modals, and small-screen overflow handling
 
 ## Layout
 
@@ -33,6 +35,7 @@ order because later feature files intentionally override shared foundations.
 - `pages/qr-attendance.css`
 - `pages/departments.css`
 - `pages/activity-logs.css`
+- `pages/error-page.css`
 
 When adding a style, prefer the narrowest applicable page file. Put it in a
 layout or shared component file only when the selector is intentionally reused.

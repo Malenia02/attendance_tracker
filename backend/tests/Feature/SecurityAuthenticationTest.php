@@ -117,7 +117,60 @@ class SecurityAuthenticationTest extends TestCase
             ->assertOk()
             ->assertHeader('X-Content-Type-Options', 'nosniff')
             ->assertHeader('X-Frame-Options', 'DENY')
+            ->assertHeader('Cross-Origin-Resource-Policy', 'same-site')
             ->assertHeader('Referrer-Policy', 'no-referrer');
+    }
+
+    public function test_external_frontend_receives_credentialed_cors_headers(): void
+    {
+        config([
+            'cors.allowed_origins' => ['https://attendance.example.gov.ph'],
+        ]);
+
+        $this->withHeaders([
+            'Origin' => 'https://attendance.example.gov.ph',
+            'Access-Control-Request-Method' => 'GET',
+        ])->options('/sanctum/csrf-cookie')
+            ->assertNoContent()
+            ->assertHeader(
+                'Access-Control-Allow-Origin',
+                'https://attendance.example.gov.ph'
+            )
+            ->assertHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
+    public function test_external_frontend_deployment_redirects_browser_routes(): void
+    {
+        config([
+            'app.frontend_deployment' => 'external',
+            'app.frontend_url' => 'https://attendance.example.gov.ph',
+        ]);
+
+        $this->get('/dashboard')
+            ->assertRedirect('https://attendance.example.gov.ph');
+    }
+
+    public function test_inactive_account_session_is_revoked_on_the_next_api_request(): void
+    {
+        $user = $this->createUser('revoked-session-user', 'Active');
+        $this->actingAs($user);
+        $user->forceFill(['status' => 'Inactive'])->save();
+
+        $this->getJson('/api/auth/me')
+            ->assertUnauthorized()
+            ->assertJsonPath(
+                'message',
+                'Your session is no longer active. Please sign in again.'
+            );
+
+    }
+
+    public function test_unauthenticated_api_request_returns_json_without_accept_header(): void
+    {
+        $this->get('/api/auth/me')
+            ->assertUnauthorized()
+            ->assertHeader('Content-Type', 'application/json')
+            ->assertJsonPath('message', 'Unauthenticated.');
     }
 
     private function createUser(string $username, string $status): User

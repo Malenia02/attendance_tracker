@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
+  Archive,
   BadgeCheck,
   CalendarRange,
   CheckCircle2,
@@ -14,13 +15,14 @@ import {
   FileCheck2,
   FileClock,
   PencilLine,
+  RefreshCw,
   Search,
   ShieldCheck,
   TimerReset,
   Users,
   X,
 } from "lucide-react";
-import { apiFetch } from "../lib/auth";
+import { apiFetch, getStoredUser } from "../lib/auth";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 
 function currentMonthKey() {
@@ -54,6 +56,7 @@ async function readResponse(response) {
 
 export default function DtrMonitoring() {
   const navigate = useNavigate();
+  const currentUser = getStoredUser();
   const [month, setMonth] = useState(currentMonthKey);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({
@@ -70,6 +73,9 @@ export default function DtrMonitoring() {
     can_correct_attendance: false,
     can_generate: false,
     can_manage_others: false,
+    can_request_reopen: false,
+    can_approve_reopen: false,
+    current_user_id: currentUser?.user_id || null,
   });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -98,6 +104,9 @@ export default function DtrMonitoring() {
           can_correct_attendance: payload.can_correct_attendance,
           can_generate: payload.can_generate,
           can_manage_others: payload.can_manage_others,
+          can_request_reopen: payload.can_request_reopen,
+          can_approve_reopen: payload.can_approve_reopen,
+          current_user_id: payload.current_user_id,
         });
         setSelectedIds((current) => current.filter(
           (id) => payload.data.some(
@@ -186,6 +195,59 @@ export default function DtrMonitoring() {
       return false;
     } finally {
       setExceptionBusy(false);
+    }
+  }
+
+  async function requestReopen(row, reason, affectedDates) {
+    setBusyId(row.personnel_id);
+    setError("");
+
+    try {
+      const payload = await apiFetch(`/dtr/${row.personnel_id}/reopen-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month,
+          reason,
+          affected_dates: affectedDates,
+        }),
+      }).then(readResponse);
+
+      setNotice(payload.message);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 4500);
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function reviewReopen(row, reopenRequestId, decision, reviewRemarks = null) {
+    setBusyId(row.personnel_id);
+    setError("");
+
+    try {
+      const payload = await apiFetch(`/dtr/reopen-requests/${reopenRequestId}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          review_remarks: reviewRemarks,
+        }),
+      }).then(readResponse);
+
+      setNotice(payload.message);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 5000);
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -391,7 +453,7 @@ export default function DtrMonitoring() {
             </select>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
               <option value="">All DTR statuses</option>
-              {["Draft", "Submitted", "Certified", "Returned"].map((status) => (
+              {["Draft", "Submitted", "Certified", "Returned", "Reopened"].map((status) => (
                 <option key={status}>{status}</option>
               ))}
             </select>
@@ -508,12 +570,19 @@ export default function DtrMonitoring() {
           monthLabel={meta.month_label}
           canCertify={meta.can_certify}
           canCorrect={meta.can_correct_attendance}
+          canRequestReopen={meta.can_request_reopen}
+          canApproveReopen={meta.can_approve_reopen}
+          currentUserId={meta.current_user_id}
           busy={busyId === selected.personnel_id}
           exceptionBusy={exceptionBusy}
           onClose={() => setSelected(null)}
           onStatus={(status, remarks) => updateStatus(selected, status, remarks)}
           onCorrect={(day, values) => correctAttendance(selected, day, values)}
           onVerifyBulk={verifyAttendanceBulk}
+          onRequestReopen={(reason, dates) => requestReopen(selected, reason, dates)}
+          onReviewReopen={(requestId, decision, remarks) => (
+            reviewReopen(selected, requestId, decision, remarks)
+          )}
           onReview={(date) => navigate(
             `/attendance?date=${date}&personnel=${selected.personnel_id}&correction=1`,
           )}
@@ -528,16 +597,26 @@ function DtrDetails({
   monthLabel,
   canCertify,
   canCorrect,
+  canRequestReopen,
+  canApproveReopen,
+  currentUserId,
   busy,
   exceptionBusy,
   onClose,
   onStatus,
   onCorrect,
   onVerifyBulk,
+  onRequestReopen,
+  onReviewReopen,
   onReview,
 }) {
   const [showReturnForm, setShowReturnForm] = useState(false);
+  const [showReopenForm, setShowReopenForm] = useState(false);
   const [returnReason, setReturnReason] = useState("");
+  const [reopenReason, setReopenReason] = useState("");
+  const [affectedDates, setAffectedDates] = useState([]);
+  const [rejectionRequestId, setRejectionRequestId] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState("");
   const [correctionDay, setCorrectionDay] = useState(null);
   const problemDays = row.daily_records.filter((day) => (
     ["Missing", "Incomplete"].includes(day.status)
@@ -549,6 +628,15 @@ function DtrDetails({
     && !["Missing", "Incomplete"].includes(day.status)
   ));
   const latestHistory = row.certification.history?.slice(0, 4) || [];
+  const reopenRequests = row.certification.reopen_requests || [];
+  const archivedVersions = row.certification.versions || [];
+  const pendingReopen = reopenRequests.find((request) => request.status === "Pending");
+
+  function toggleAffectedDate(date) {
+    setAffectedDates((current) => current.includes(date)
+      ? current.filter((value) => value !== date)
+      : [...current, date].sort());
+  }
 
   async function saveInlineCorrection(values) {
     const correctedDate = correctionDay.date;
@@ -566,7 +654,10 @@ function DtrDetails({
       <section className="dtr-detail-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header>
           <div>
-            <span>DTR detail · {monthLabel}</span>
+            <span>
+              DTR detail · {monthLabel} · Version {row.certification.version_number}
+              {row.certification.is_amended ? " (Amended)" : ""}
+            </span>
             <h2>{row.full_name}</h2>
             <p>{row.employee_number} · {row.department?.name || "No assigned office"}</p>
           </div>
@@ -586,6 +677,55 @@ function DtrDetails({
               <strong>Correction required</strong>
               <p>{row.certification.return_reason || "This DTR was returned for attendance correction."}</p>
             </div>
+          </div>
+        )}
+
+        {row.certification.status === "Reopened" && (
+          <div className="dtr-reopen-notice">
+            <RefreshCw size={19} />
+            <div>
+              <strong>Amendment in progress · Version {row.certification.version_number}</strong>
+              <p>
+                Only the approved dates may be corrected. Submit the amended DTR after the
+                changes have been independently verified.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {pendingReopen && (
+          <div className="dtr-reopen-request">
+            <div>
+              <span>Pending reopening request</span>
+              <strong>{pendingReopen.reason}</strong>
+              <small>
+                {pendingReopen.requested_by} · {pendingReopen.affected_dates.length} affected
+                date{pendingReopen.affected_dates.length === 1 ? "" : "s"}
+              </small>
+            </div>
+            {canApproveReopen && Number(pendingReopen.requested_by_id) !== Number(currentUserId) && (
+              <div className="dtr-reopen-review-actions">
+                <button
+                  type="button"
+                  className="reject-reopen"
+                  disabled={busy}
+                  onClick={() => setRejectionRequestId(pendingReopen.id)}
+                >
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  className="approve-reopen"
+                  disabled={busy}
+                  onClick={() => onReviewReopen(pendingReopen.id, "Approved")}
+                >
+                  Approve reopening
+                </button>
+              </div>
+            )}
+            {Number(pendingReopen.requested_by_id) === Number(currentUserId) && (
+              <em>Independent approval by another administrator is required.</em>
+            )}
           </div>
         )}
 
@@ -677,6 +817,22 @@ function DtrDetails({
           </div>
         )}
 
+        {!!archivedVersions.length && (
+          <div className="dtr-version-history">
+            <strong><Archive size={13} /> Immutable certified versions</strong>
+            {archivedVersions.map((version) => (
+              <div key={version.id}>
+                <span>Version {version.version_number}</span>
+                <small>
+                  Certified {new Date(version.certified_at).toLocaleDateString("en-PH")}
+                  {" · "}Archived by {version.archived_by}
+                </small>
+                <code title="Certified snapshot fingerprint">{version.hash_prefix}…</code>
+              </div>
+            ))}
+          </div>
+        )}
+
         {showReturnForm && (
           <div className="dtr-return-form">
             <label htmlFor="dtr-return-reason">Reason for returning this DTR</label>
@@ -708,6 +864,103 @@ function DtrDetails({
           </div>
         )}
 
+        {showReopenForm && (
+          <div className="dtr-reopen-form">
+            <header>
+              <div>
+                <strong>Request certified DTR reopening</strong>
+                <span>
+                  Signed Version {row.certification.version_number} remains unchanged until approval.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReopenForm(false)}
+                aria-label="Close reopening form"
+              >
+                <X size={15} />
+              </button>
+            </header>
+            <label htmlFor="dtr-reopen-reason">Reason for amendment</label>
+            <textarea
+              id="dtr-reopen-reason"
+              value={reopenReason}
+              onChange={(event) => setReopenReason(event.target.value)}
+              maxLength={1000}
+              placeholder="Explain what was certified incorrectly and why it must be corrected..."
+              autoFocus
+            />
+            <fieldset>
+              <legend>Affected dates ({affectedDates.length} selected)</legend>
+              <div>
+                {row.daily_records.map((day) => (
+                  <label key={day.date}>
+                    <input
+                      type="checkbox"
+                      checked={affectedDates.includes(day.date)}
+                      onChange={() => toggleAffectedDate(day.date)}
+                    />
+                    <span>{day.day} {day.day_number}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <footer>
+              <button type="button" onClick={() => setShowReopenForm(false)}>Cancel</button>
+              <button
+                type="button"
+                className="submit-reopen"
+                disabled={busy || reopenReason.trim().length < 10 || !affectedDates.length}
+                onClick={async () => {
+                  const submitted = await onRequestReopen(reopenReason.trim(), affectedDates);
+                  if (submitted) {
+                    setShowReopenForm(false);
+                    setReopenReason("");
+                    setAffectedDates([]);
+                  }
+                }}
+              >
+                Submit for approval
+              </button>
+            </footer>
+          </div>
+        )}
+
+        {rejectionRequestId && (
+          <div className="dtr-return-form">
+            <label htmlFor="dtr-reopen-rejection">Reason for rejecting the reopening request</label>
+            <textarea
+              id="dtr-reopen-rejection"
+              value={rejectionReason}
+              onChange={(event) => setRejectionReason(event.target.value)}
+              maxLength={1000}
+              placeholder="Explain why this DTR should remain certified..."
+              autoFocus
+            />
+            <div>
+              <button type="button" onClick={() => setRejectionRequestId(null)}>Cancel</button>
+              <button
+                type="button"
+                className="confirm-return"
+                disabled={busy || !rejectionReason.trim()}
+                onClick={async () => {
+                  const reviewed = await onReviewReopen(
+                    rejectionRequestId,
+                    "Rejected",
+                    rejectionReason.trim(),
+                  );
+                  if (reviewed) {
+                    setRejectionRequestId(null);
+                    setRejectionReason("");
+                  }
+                }}
+              >
+                Reject request
+              </button>
+            </div>
+          </div>
+        )}
+
         {correctionDay && (
           <AttendanceCorrectionModal
             key={correctionDay.date}
@@ -731,7 +984,7 @@ function DtrDetails({
             </strong>
           </div>
           <div className="dtr-detail-actions">
-            {["Draft", "Returned"].includes(row.certification.status) && (
+            {["Draft", "Returned", "Reopened"].includes(row.certification.status) && (
               <button
                 type="button"
                 className="submit"
@@ -740,7 +993,7 @@ function DtrDetails({
                 onClick={() => onStatus("Submitted")}
               >
                 <FileCheck2 size={15} />
-                {row.certification.status === "Returned" ? "Resubmit DTR" : "Submit DTR"}
+                {row.certification.status === "Draft" ? "Submit DTR" : "Submit amended DTR"}
               </button>
             )}
             {row.certification.status === "Submitted" && canCertify && (
@@ -757,6 +1010,16 @@ function DtrDetails({
                   <ShieldCheck size={15} /> Certify
                 </button>
               </>
+            )}
+            {row.certification.status === "Certified" && canRequestReopen && !pendingReopen && (
+              <button
+                type="button"
+                className="reopen"
+                disabled={busy}
+                onClick={() => setShowReopenForm(true)}
+              >
+                <RefreshCw size={15} /> Request reopening
+              </button>
             )}
           </div>
         </footer>

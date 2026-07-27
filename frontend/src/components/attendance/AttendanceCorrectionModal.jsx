@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, ShieldCheck, X } from "lucide-react";
 
 function timeInputValue(value) {
   if (!value) return "";
@@ -28,6 +28,7 @@ export default function AttendanceCorrectionModal({
     afternoon_time_out: timeInputValue(record.afternoon_time_out),
   });
   const [reason, setReason] = useState("");
+  const missingTimeOutEntries = record.missing_time_out_entries || [];
 
   function submit(event) {
     event.preventDefault();
@@ -58,6 +59,19 @@ export default function AttendanceCorrectionModal({
           </div>
           <button type="button" onClick={onClose} aria-label="Close correction form"><X size={18} /></button>
         </header>
+
+        {!!missingTimeOutEntries.length && (
+          <div className="attendance-correction-exception">
+            <AlertTriangle size={17} />
+            <div>
+              <strong>Missing time-out requires documented correction</strong>
+              <span>
+                Enter the actual {missingTimeOutEntries.map((entry) => entry.label.toLowerCase()).join(" and ")}.
+                Do not use the scheduled end time unless it is supported by an approved record.
+              </span>
+            </div>
+          </div>
+        )}
 
         <label>
           Record type
@@ -104,13 +118,14 @@ export default function AttendanceCorrectionModal({
 
         <div className="attendance-correction-note">
           <ShieldCheck size={16} />
-          This correction will be verified automatically and recorded with your account in Activity Logs.
+          This edit will be recorded with your account in Activity Logs. A different authorized reviewer
+          must verify it before DTR certification.
         </div>
 
         <footer>
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" className="save" disabled={busy || reason.trim().length < 10}>
-            {busy ? "Saving…" : "Save correction"}
+            {busy ? "Saving…" : "Save for review"}
           </button>
         </footer>
       </form>

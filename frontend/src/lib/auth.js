@@ -1,5 +1,12 @@
 const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+const API_ORIGIN = API_BASE.endsWith("/api")
+  ? API_BASE.slice(0, -4)
+  : API_BASE.replace(/\/api\/?$/, "");
 const USER_KEY = "dilg_auth_user";
+const SESSION_CHECK_TTL_MS = 30_000;
+const SESSION_CHECK_TIMEOUT_MS = 8_000;
+let sessionVerificationPromise = null;
+let lastSessionVerificationAt = 0;
 
 export function getStoredUser() {
   const value = sessionStorage.getItem(USER_KEY);
@@ -17,15 +24,18 @@ export function getStoredUser() {
 export function storeAuth(user) {
   clearAuth();
   sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  lastSessionVerificationAt = Date.now();
 }
 
 export function updateStoredUser(user) {
   sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  lastSessionVerificationAt = Date.now();
 }
 
 export function clearAuth() {
   localStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(USER_KEY);
+  lastSessionVerificationAt = 0;
 }
 
 function xsrfToken() {
@@ -37,7 +47,7 @@ function xsrfToken() {
 }
 
 export async function initializeCsrf() {
-  return fetch("/sanctum/csrf-cookie", {
+  return fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, {
     credentials: "include",
     headers: { Accept: "application/json" },
   });
@@ -65,4 +75,53 @@ export async function apiFetch(path, options = {}) {
   }
 
   return response;
+}
+
+export function verifySession({ force = false } = {}) {
+  const storedUser = getStoredUser();
+
+  if (
+    !force
+    && storedUser
+    && Date.now() - lastSessionVerificationAt < SESSION_CHECK_TTL_MS
+  ) {
+    return Promise.resolve(storedUser);
+  }
+
+  if (sessionVerificationPromise) {
+    return sessionVerificationPromise;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    SESSION_CHECK_TIMEOUT_MS,
+  );
+
+  sessionVerificationPromise = apiFetch("/auth/me", { signal: controller.signal })
+    .then(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const error = new Error(payload.message || "Your session is no longer valid.");
+        error.status = response.status;
+        throw error;
+      }
+
+      updateStoredUser(payload.user);
+      return payload.user;
+    })
+    .catch((error) => {
+      if (error.name === "AbortError") {
+        throw new Error("Session verification timed out. Check the server connection.");
+      }
+
+      throw error;
+    })
+    .finally(() => {
+      window.clearTimeout(timeoutId);
+      sessionVerificationPromise = null;
+    });
+
+  return sessionVerificationPromise;
 }

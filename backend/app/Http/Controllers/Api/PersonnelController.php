@@ -279,7 +279,11 @@ class PersonnelController extends Controller
             'contact_number' => $personnel->contact_number,
             'address' => $personnel->address,
             'photo_url' => $personnel->photo
-                ? route('personnel.photo', ['personnel' => $personnel], false)
+                ? route(
+                    'personnel.photo',
+                    ['personnel' => $personnel],
+                    config('app.frontend_deployment') === 'external'
+                )
                     .'?v='.($personnel->updated_at?->timestamp ?? 0)
                 : null,
             'status' => $personnel->status,

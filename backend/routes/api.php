@@ -6,13 +6,14 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DtrController;
+use App\Http\Controllers\Api\DtrReopenController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\SystemUserController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum', 'throttle:api', 'api.audit'])->group(function (): void {
+Route::middleware(['auth:sanctum', 'session.active', 'throttle:api', 'api.audit'])->group(function (): void {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
@@ -20,6 +21,13 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'api.audit'])->group(function
 
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/options', [AttendanceController::class, 'options']);
+    Route::get('/attendance/correction-requests', [AttendanceController::class, 'correctionRequests']);
+    Route::post('/attendance/correction-requests', [AttendanceController::class, 'submitCorrectionRequest'])
+        ->middleware('throttle:5,1');
+    Route::patch(
+        '/attendance/correction-requests/{correctionRequest}/review',
+        [AttendanceController::class, 'reviewCorrectionRequest']
+    )->middleware(['role:Administrator,HR', 'throttle:20,1']);
     Route::post('/attendance/time-log', [AttendanceController::class, 'recordTime'])
         ->middleware('throttle:12,1');
     Route::patch('/attendance/{attendance}/verify', [AttendanceController::class, 'verify']);
@@ -42,6 +50,10 @@ Route::middleware(['auth:sanctum', 'throttle:api', 'api.audit'])->group(function
         ->middleware('throttle:5,1');
     Route::patch('/dtr/{personnel}/status', [DtrController::class, 'updateStatus'])
         ->middleware('throttle:20,1');
+    Route::post('/dtr/{personnel}/reopen-requests', [DtrReopenController::class, 'store'])
+        ->middleware(['role:Administrator,HR', 'throttle:5,1']);
+    Route::patch('/dtr/reopen-requests/{reopenRequest}/review', [DtrReopenController::class, 'review'])
+        ->middleware(['role:Administrator', 'throttle:10,1']);
 
     Route::get('/holidays', [HolidayController::class, 'index']);
     Route::get('/holidays/options', [HolidayController::class, 'options']);

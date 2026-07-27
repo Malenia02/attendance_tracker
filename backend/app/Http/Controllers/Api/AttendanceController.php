@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceChangeLog;
+use App\Models\AttendanceCorrectionRequest;
 use App\Models\AttendanceRecord;
 use App\Models\DtrCertification;
 use App\Models\Holiday;
@@ -16,6 +17,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class AttendanceController extends Controller
@@ -154,6 +156,7 @@ class AttendanceController extends Controller
                 'half_day' => $allRows->where('display_status', 'Half Day')->count(),
                 'late' => $allRows->where('is_late', true)->count(),
                 'incomplete' => $allRows->where('display_status', 'Incomplete')->count(),
+                'missing_time_out' => $allRows->where('has_missing_time_out', true)->count(),
                 'not_started' => $allRows->where('display_status', 'Not Started')->count(),
             ],
         ]);
@@ -181,6 +184,330 @@ class AttendanceController extends Controller
                     'full_name' => $person->full_name,
                 ]),
             'status_filters' => self::STATUS_FILTERS,
+        ]);
+    }
+
+    public function correctionRequests(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'date' => ['nullable', 'date'],
+            'status' => ['nullable', Rule::in(['Pending', 'Approved', 'Rejected', 'Cancelled'])],
+        ]);
+        $user = $request->user();
+        $date = Carbon::parse($validated['date'] ?? now()->toDateString())->toDateString();
+        $managerRoles = ['Administrator', 'HR', 'Supervisor'];
+        $visiblePersonnelIds = in_array($user->user_role, $managerRoles, true)
+            ? PersonnelAccess::scope(Personnel::query(), $user)->select('personnel_id')
+            : Personnel::query()->whereKey($user->personnel_id ?? -1)->select('personnel_id');
+
+        $requests = AttendanceCorrectionRequest::query()
+            ->with([
+                'personnel:personnel_id,department_id,employee_number,first_name,middle_name,last_name,suffix',
+                'personnel.department:department_id,department_code,department_name',
+                'submittedBy:user_id,username',
+                'reviewedBy:user_id,username',
+            ])
+            ->whereDate('attendance_date', $date)
+            ->whereIn('personnel_id', $visiblePersonnelIds)
+            ->when(
+                $validated['status'] ?? null,
+                fn ($query, string $status) => $query->where('request_status', $status)
+            )
+            ->orderByRaw("CASE WHEN request_status = 'Pending' THEN 0 ELSE 1 END")
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (AttendanceCorrectionRequest $correctionRequest) => $this->formatCorrectionRequest($correctionRequest));
+
+        return response()->json([
+            'data' => $requests,
+            'can_review' => in_array($user->user_role, ['Administrator', 'HR'], true),
+        ]);
+    }
+
+    public function submitCorrectionRequest(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'attendance_date' => ['required', 'date', 'before_or_equal:today'],
+            'missing_field' => ['required', Rule::in(['morning_time_out', 'afternoon_time_out'])],
+            'proposed_time' => ['required', 'date_format:H:i'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
+        $user = $request->user();
+
+        if (! $user->personnel_id) {
+            return response()->json([
+                'message' => 'Your account is not linked to a personnel record.',
+            ], 422);
+        }
+
+        $date = Carbon::parse($validated['attendance_date'])->toDateString();
+        $attendance = AttendanceRecord::query()
+            ->with('schedule')
+            ->where('personnel_id', $user->personnel_id)
+            ->whereDate('attendance_date', $date)
+            ->first();
+
+        if (! $attendance) {
+            return response()->json([
+                'message' => 'No attendance record exists for this date.',
+            ], 422);
+        }
+
+        $referenceTime = $attendance->attendance_date->isToday()
+            ? now()
+            : $attendance->attendance_date->copy()->endOfDay();
+        $missingFields = collect(
+            $this->missingTimeOutEntries($attendance, $attendance->schedule, $referenceTime)
+        )->pluck('field');
+
+        if (! $missingFields->contains($validated['missing_field'])) {
+            return response()->json([
+                'message' => 'That time-out is not currently flagged as missing.',
+            ], 422);
+        }
+
+        if ($timeError = $this->validateProposedTime(
+            $attendance,
+            $validated['missing_field'],
+            $validated['proposed_time'],
+            now()
+        )) {
+            return response()->json(['message' => $timeError], 422);
+        }
+
+        $result = DB::transaction(function () use (
+            $attendance,
+            $validated,
+            $date,
+            $user,
+            $request
+        ): array {
+            $lockedAttendance = AttendanceRecord::query()
+                ->whereKey($attendance->attendance_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $pendingKey = $lockedAttendance->attendance_id.':'.$validated['missing_field'];
+            $existing = AttendanceCorrectionRequest::query()
+                ->where('pending_key', $pendingKey)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing) {
+                return ['error' => 'A correction request for this missing time-out is already pending.'];
+            }
+
+            $correctionRequest = AttendanceCorrectionRequest::create([
+                'attendance_id' => $lockedAttendance->attendance_id,
+                'personnel_id' => $lockedAttendance->personnel_id,
+                'submitted_by' => $user->user_id,
+                'attendance_date' => $date,
+                'missing_field' => $validated['missing_field'],
+                'proposed_time' => $validated['proposed_time'],
+                'reason' => $validated['reason'],
+                'request_status' => 'Pending',
+                'pending_key' => $pendingKey,
+                'ip_address' => $request->ip(),
+                'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+            ]);
+
+            return ['request' => $correctionRequest];
+        });
+
+        if (isset($result['error'])) {
+            return response()->json(['message' => $result['error']], 422);
+        }
+
+        return response()->json([
+            'message' => 'Your missing time-out explanation was submitted for HR review.',
+            'data' => $this->formatCorrectionRequest(
+                $result['request']->load(['personnel.department', 'submittedBy', 'reviewedBy'])
+            ),
+        ], 201);
+    }
+
+    public function reviewCorrectionRequest(
+        Request $request,
+        AttendanceCorrectionRequest $correctionRequest
+    ): JsonResponse {
+        if (! in_array($request->user()->user_role, ['Administrator', 'HR'], true)) {
+            return response()->json([
+                'message' => 'Only an administrator or HR user may review correction requests.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'action' => ['required', Rule::in(['Approved', 'Rejected'])],
+            'review_remarks' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if ($validated['action'] === 'Rejected' && strlen(trim($validated['review_remarks'] ?? '')) < 10) {
+            return response()->json([
+                'message' => 'Provide a rejection reason of at least 10 characters.',
+            ], 422);
+        }
+
+        $correctionRequest->loadMissing(['personnel', 'attendance.schedule']);
+
+        if (
+            ! $correctionRequest->personnel
+            || ! PersonnelAccess::canAccess($request->user(), $correctionRequest->personnel)
+        ) {
+            return response()->json([
+                'message' => 'This request is outside your authorized office scope.',
+            ], 403);
+        }
+
+        if ($correctionRequest->request_status !== 'Pending') {
+            return response()->json([
+                'message' => 'This correction request has already been reviewed.',
+            ], 422);
+        }
+
+        if ($validated['action'] === 'Approved') {
+            $certification = DtrCertification::query()
+                ->where('personnel_id', $correctionRequest->personnel_id)
+                ->where('dtr_year', $correctionRequest->attendance_date->year)
+                ->where('dtr_month', $correctionRequest->attendance_date->month)
+                ->first();
+            $certificationStatus = $certification?->certification_status;
+
+            if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
+                return response()->json([
+                    'message' => $certificationStatus === 'Certified'
+                        ? 'This DTR is certified and locked. It must be formally reopened before approving the request.'
+                        : 'Return the submitted DTR before approving this correction request.',
+                ], 422);
+            }
+
+            if (! $this->isAuthorizedReopenedDate(
+                $certification,
+                $correctionRequest->attendance_date->toDateString()
+            )) {
+                return response()->json([
+                    'message' => 'This date was not included in the approved DTR reopening request.',
+                ], 422);
+            }
+        }
+
+        $result = DB::transaction(function () use (
+            $correctionRequest,
+            $validated,
+            $request
+        ): array {
+            $lockedRequest = AttendanceCorrectionRequest::query()
+                ->whereKey($correctionRequest->attendance_correction_request_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedRequest->request_status !== 'Pending') {
+                return ['error' => 'This correction request has already been reviewed.'];
+            }
+
+            $attendance = AttendanceRecord::query()
+                ->with('schedule')
+                ->whereKey($lockedRequest->attendance_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($validated['action'] === 'Approved') {
+                $missingFields = collect($this->missingTimeOutEntries(
+                    $attendance,
+                    $attendance->schedule,
+                    $attendance->attendance_date->isToday()
+                        ? now()
+                        : $attendance->attendance_date->copy()->endOfDay()
+                ))->pluck('field');
+
+                if (! $missingFields->contains($lockedRequest->missing_field)) {
+                    return ['error' => 'The missing time-out has already been resolved or is no longer eligible.'];
+                }
+
+                if ($timeError = $this->validateProposedTime(
+                    $attendance,
+                    $lockedRequest->missing_field,
+                    $lockedRequest->proposed_time,
+                    now()
+                )) {
+                    return ['error' => $timeError];
+                }
+
+                $trackedFields = [
+                    'morning_time_in',
+                    'morning_time_out',
+                    'afternoon_time_in',
+                    'afternoon_time_out',
+                    'attendance_status',
+                    'total_work_minutes',
+                    'late_minutes',
+                    'undertime_minutes',
+                    'is_verified',
+                    'verified_by',
+                    'verified_at',
+                    'remarks',
+                    'record_source',
+                ];
+                $oldValues = $attendance->only($trackedFields);
+                $attendance->{$lockedRequest->missing_field} = Carbon::parse(
+                    $attendance->attendance_date->toDateString().' '.$lockedRequest->proposed_time,
+                    config('app.timezone')
+                );
+                $attendance->record_source = 'Manual';
+                $attendance->remarks = Str::limit(
+                    'Correction request #'.$lockedRequest->attendance_correction_request_id
+                        .': '.$lockedRequest->reason,
+                    255,
+                    ''
+                );
+                $attendance->is_verified = false;
+                $attendance->verified_by = null;
+                $attendance->verified_at = null;
+                $this->recalculate(
+                    $attendance,
+                    $attendance->schedule,
+                    $attendance->attendance_date->copy()->endOfDay()
+                );
+                $attendance->save();
+
+                AttendanceChangeLog::create([
+                    'attendance_id' => $attendance->attendance_id,
+                    'changed_by' => $request->user()->user_id,
+                    'action_type' => 'Updated',
+                    'old_values' => $oldValues,
+                    'new_values' => $attendance->only($trackedFields),
+                    'reason' => Str::limit(
+                        'Approved employee correction request #'
+                            .$lockedRequest->attendance_correction_request_id
+                            .'. '.$lockedRequest->reason,
+                        255,
+                        ''
+                    ),
+                ]);
+            }
+
+            $lockedRequest->forceFill([
+                'request_status' => $validated['action'],
+                'pending_key' => null,
+                'reviewed_by' => $request->user()->user_id,
+                'reviewed_at' => now(),
+                'review_remarks' => trim($validated['review_remarks'] ?? '') ?: null,
+            ])->save();
+
+            return ['request' => $lockedRequest];
+        });
+
+        if (isset($result['error'])) {
+            return response()->json(['message' => $result['error']], 422);
+        }
+
+        $approved = $validated['action'] === 'Approved';
+
+        return response()->json([
+            'message' => $approved
+                ? 'Correction request approved and applied. A different authorized reviewer must verify the attendance record.'
+                : 'Correction request rejected. The employee can review the decision and submit a new request.',
+            'data' => $this->formatCorrectionRequest(
+                $result['request']->load(['personnel.department', 'submittedBy', 'reviewedBy'])
+            ),
         ]);
     }
 
@@ -313,7 +640,7 @@ class AttendanceController extends Controller
             ], 403);
         }
 
-        $attendance->loadMissing('personnel');
+        $attendance->loadMissing(['personnel', 'schedule']);
 
         if (! $attendance->personnel || ! PersonnelAccess::canAccess($request->user(), $attendance->personnel)) {
             return response()->json([
@@ -321,11 +648,12 @@ class AttendanceController extends Controller
             ], 403);
         }
 
-        $certificationStatus = DtrCertification::query()
+        $certification = DtrCertification::query()
             ->where('personnel_id', $attendance->personnel_id)
             ->where('dtr_year', $attendance->attendance_date->year)
             ->where('dtr_month', $attendance->attendance_date->month)
-            ->value('certification_status');
+            ->first();
+        $certificationStatus = $certification?->certification_status;
 
         if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
             return response()->json([
@@ -333,6 +661,25 @@ class AttendanceController extends Controller
                     ? 'This DTR is certified and locked.'
                     : 'Return the submitted DTR before changing attendance verification.',
             ], 422);
+        }
+
+        if (! $this->isAuthorizedReopenedDate(
+            $certification,
+            $attendance->attendance_date->toDateString()
+        )) {
+            return response()->json([
+                'message' => 'This date was not included in the approved DTR reopening request.',
+            ], 422);
+        }
+
+        if ($verificationError = $this->verificationBlockReason(
+            $attendance,
+            $request->user()->user_id,
+            $attendance->attendance_date->isToday()
+                ? now()
+                : $attendance->attendance_date->copy()->endOfDay()
+        )) {
+            return response()->json(['message' => $verificationError], 422);
         }
 
         DB::transaction(function () use ($attendance, $request): void {
@@ -396,11 +743,12 @@ class AttendanceController extends Controller
                 ], 403);
             }
 
-            $certificationStatus = DtrCertification::query()
+            $certification = DtrCertification::query()
                 ->where('personnel_id', $record->personnel_id)
                 ->where('dtr_year', $record->attendance_date->year)
                 ->where('dtr_month', $record->attendance_date->month)
-                ->value('certification_status');
+                ->first();
+            $certificationStatus = $certification?->certification_status;
 
             if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
                 return response()->json([
@@ -408,14 +756,21 @@ class AttendanceController extends Controller
                 ], 422);
             }
 
-            if ($this->determineAttendanceStatus(
-                $record,
-                $record->schedule,
-                $record->attendance_date->copy()->endOfDay()
-            ) === 'Incomplete') {
+            if (! $this->isAuthorizedReopenedDate(
+                $certification,
+                $record->attendance_date->toDateString()
+            )) {
                 return response()->json([
-                    'message' => 'Incomplete entries must be corrected before bulk verification.',
+                    'message' => 'One or more dates were not included in the approved DTR reopening request.',
                 ], 422);
+            }
+
+            if ($verificationError = $this->verificationBlockReason(
+                $record,
+                $request->user()->user_id,
+                $record->attendance_date->copy()->endOfDay()
+            )) {
+                return response()->json(['message' => $verificationError], 422);
             }
         }
 
@@ -481,6 +836,13 @@ class AttendanceController extends Controller
         ]);
         $date = Carbon::parse($validated['attendance_date'])->toDateString();
         $personnel = Personnel::query()->where('status', 'Active')->findOrFail($validated['personnel_id']);
+
+        if (! PersonnelAccess::canAccess($request->user(), $personnel)) {
+            return response()->json([
+                'message' => 'This personnel record is outside your authorized office scope.',
+            ], 403);
+        }
+
         $certification = DtrCertification::query()
             ->where('personnel_id', $personnel->personnel_id)
             ->where('dtr_year', Carbon::parse($date)->year)
@@ -496,6 +858,12 @@ class AttendanceController extends Controller
         if ($certification?->certification_status === 'Submitted') {
             return response()->json([
                 'message' => 'Return the submitted DTR for correction before changing its attendance records.',
+            ], 422);
+        }
+
+        if (! $this->isAuthorizedReopenedDate($certification, $date)) {
+            return response()->json([
+                'message' => 'This date was not included in the approved DTR reopening request.',
             ], 422);
         }
 
@@ -537,16 +905,19 @@ class AttendanceController extends Controller
                 'late_minutes',
                 'undertime_minutes',
                 'is_verified',
+                'verified_by',
+                'verified_at',
                 'remarks',
+                'record_source',
             ];
             $oldValues = $isNew ? null : $record->only($trackedFields);
 
             $record->schedule_id = $schedule?->schedule_id;
             $record->record_source = 'Manual';
             $record->remarks = $validated['reason'];
-            $record->is_verified = true;
-            $record->verified_by = $user->user_id;
-            $record->verified_at = now();
+            $record->is_verified = false;
+            $record->verified_by = null;
+            $record->verified_at = null;
 
             if ($validated['record_type'] === 'Time Entries') {
                 foreach ([
@@ -590,7 +961,7 @@ class AttendanceController extends Controller
         });
 
         return response()->json([
-            'message' => 'Attendance correction saved, verified, and recorded in the audit trail.',
+            'message' => 'Attendance correction saved and audited. A different authorized reviewer must verify it before DTR certification.',
             'data' => $this->formatAttendance(
                 $result,
                 $result->schedule,
@@ -625,6 +996,78 @@ class AttendanceController extends Controller
 
         if ($afternoonIn && $afternoonOut && $afternoonOut <= $afternoonIn) {
             return 'Afternoon time out must be later than afternoon time in.';
+        }
+
+        if ($morningOut && $afternoonIn && $afternoonIn < $morningOut) {
+            return 'Afternoon time in cannot be earlier than morning time out.';
+        }
+
+        return null;
+    }
+
+    private function validateProposedTime(
+        AttendanceRecord $record,
+        string $missingField,
+        string $proposedTime,
+        Carbon $referenceTime
+    ): ?string {
+        $timeInField = $missingField === 'morning_time_out'
+            ? 'morning_time_in'
+            : 'afternoon_time_in';
+        $timeIn = $record->{$timeInField};
+
+        if (! $timeIn) {
+            return 'A proposed time-out requires its matching recorded time-in.';
+        }
+
+        $proposed = Carbon::parse(
+            $record->attendance_date->toDateString().' '.$proposedTime,
+            config('app.timezone')
+        );
+
+        if (! $proposed->greaterThan($timeIn)) {
+            return 'The proposed time-out must be later than the recorded time-in.';
+        }
+
+        if (
+            $missingField === 'morning_time_out'
+            && $record->afternoon_time_in
+            && $proposed->greaterThan($record->afternoon_time_in)
+        ) {
+            return 'The proposed morning time-out cannot be later than the recorded afternoon time-in.';
+        }
+
+        if ($record->attendance_date->isToday() && $proposed->greaterThan($referenceTime)) {
+            return 'The proposed time-out cannot be in the future.';
+        }
+
+        return null;
+    }
+
+    private function verificationBlockReason(
+        AttendanceRecord $record,
+        int $reviewerId,
+        Carbon $referenceTime
+    ): ?string {
+        if ($this->determineAttendanceStatus(
+            $record,
+            $record->schedule,
+            $referenceTime
+        ) === 'Incomplete') {
+            return 'Incomplete entries, including missing time-outs, must be corrected before verification.';
+        }
+
+        if ($record->record_source !== 'Manual') {
+            return null;
+        }
+
+        $latestCorrection = $record->changeLogs()
+            ->whereIn('action_type', ['Created', 'Updated'])
+            ->latest('attendance_change_log_id')
+            ->first();
+
+        if ($latestCorrection && (int) $latestCorrection->changed_by === $reviewerId) {
+            return 'A different authorized reviewer must verify this manual correction.';
         }
 
         return null;
@@ -886,6 +1329,54 @@ class AttendanceController extends Controller
         return $morningComplete ? 'Morning' : 'Afternoon';
     }
 
+    private function missingTimeOutEntries(
+        AttendanceRecord $record,
+        ?WorkSchedule $schedule,
+        Carbon $referenceTime
+    ): array {
+        $checks = [
+            [
+                'time_in' => 'morning_time_in',
+                'time_out' => 'morning_time_out',
+                'window_end' => $schedule?->morning_time_out_end,
+                'label' => 'Morning time-out',
+            ],
+            [
+                'time_in' => 'afternoon_time_in',
+                'time_out' => 'afternoon_time_out',
+                'window_end' => $schedule?->afternoon_time_out_end,
+                'label' => 'Afternoon time-out',
+            ],
+        ];
+        $missing = [];
+
+        foreach ($checks as $check) {
+            if (! $record->{$check['time_in']} || $record->{$check['time_out']}) {
+                continue;
+            }
+
+            if ($check['window_end']) {
+                $windowEnd = Carbon::parse(
+                    $record->attendance_date->toDateString().' '.$check['window_end'],
+                    $referenceTime->getTimezone()
+                );
+
+                if (! $referenceTime->greaterThan($windowEnd)) {
+                    continue;
+                }
+            } elseif ($referenceTime->toDateString() <= $record->attendance_date->toDateString()) {
+                continue;
+            }
+
+            $missing[] = [
+                'field' => $check['time_out'],
+                'label' => $check['label'],
+            ];
+        }
+
+        return $missing;
+    }
+
     private function formatDailyPersonnel(
         Personnel $personnel,
         ?AttendanceRecord $record,
@@ -917,6 +1408,8 @@ class AttendanceController extends Controller
             'attendance_complete' => false,
             'day_closed' => false,
             'half_day_period' => null,
+            'has_missing_time_out' => false,
+            'missing_time_out_entries' => [],
             ...$this->formatEligibility(
                 $allowAction
                     ? $this->determineAvailableAction(null, $schedule, $referenceTime, $isSpecialWorkingDay)
@@ -949,6 +1442,11 @@ class AttendanceController extends Controller
         $schedule ??= $record->schedule;
         $referenceTime ??= now();
         $displayStatus = $this->determineAttendanceStatus($record, $schedule, $referenceTime);
+        $missingTimeOutEntries = $this->missingTimeOutEntries(
+            $record,
+            $schedule,
+            $referenceTime
+        );
         $eligibility = $allowAction
             ? $this->determineAvailableAction($record, $schedule, $referenceTime, $isSpecialWorkingDay)
             : ['action' => null, 'message' => 'Historical attendance is view only.'];
@@ -974,6 +1472,8 @@ class AttendanceController extends Controller
             'attendance_complete' => $record->is_complete,
             'day_closed' => in_array($displayStatus, ['Present', 'Half Day'], true),
             'half_day_period' => $this->halfDayPeriod($record, $displayStatus),
+            'has_missing_time_out' => $missingTimeOutEntries !== [],
+            'missing_time_out_entries' => $missingTimeOutEntries,
             ...$this->formatEligibility($eligibility),
             'schedule' => $this->formatSchedule($schedule),
         ];
@@ -1015,5 +1515,49 @@ class AttendanceController extends Controller
             'afternoon_time_out_end' => $schedule->afternoon_time_out_end,
             'required_minutes_per_day' => $schedule->required_minutes_per_day,
         ];
+    }
+
+    private function formatCorrectionRequest(
+        AttendanceCorrectionRequest $correctionRequest
+    ): array {
+        return [
+            'request_id' => $correctionRequest->attendance_correction_request_id,
+            'attendance_id' => $correctionRequest->attendance_id,
+            'personnel_id' => $correctionRequest->personnel_id,
+            'attendance_date' => $correctionRequest->attendance_date->toDateString(),
+            'missing_field' => $correctionRequest->missing_field,
+            'missing_label' => $correctionRequest->missing_field === 'morning_time_out'
+                ? 'Morning time-out'
+                : 'Afternoon time-out',
+            'proposed_time' => Carbon::parse($correctionRequest->proposed_time)->format('H:i'),
+            'reason' => $correctionRequest->reason,
+            'status' => $correctionRequest->request_status,
+            'review_remarks' => $correctionRequest->review_remarks,
+            'submitted_at' => $correctionRequest->created_at?->toISOString(),
+            'reviewed_at' => $correctionRequest->reviewed_at?->toISOString(),
+            'submitted_by' => $correctionRequest->submittedBy?->username,
+            'reviewed_by' => $correctionRequest->reviewedBy?->username,
+            'personnel' => $correctionRequest->personnel ? [
+                'employee_number' => $correctionRequest->personnel->employee_number,
+                'full_name' => $correctionRequest->personnel->full_name,
+                'department_code' => $correctionRequest->personnel->department?->department_code,
+            ] : null,
+        ];
+    }
+
+    private function isAuthorizedReopenedDate(
+        ?DtrCertification $certification,
+        string $attendanceDate
+    ): bool {
+        if (! $certification || $certification->certification_status !== 'Reopened') {
+            return true;
+        }
+
+        $approvedRequest = $certification->reopenRequests()
+            ->where('request_status', 'Approved')
+            ->latest('reviewed_at')
+            ->first();
+
+        return in_array($attendanceDate, $approvedRequest?->affected_dates ?? [], true);
     }
 }

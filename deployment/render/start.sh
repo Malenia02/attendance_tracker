@@ -1,0 +1,71 @@
+#!/usr/bin/env sh
+set -eu
+umask 027
+
+APP_PORT="${PORT:-10000}"
+
+missing_variables=""
+
+for variable in \
+    APP_KEY \
+    APP_URL \
+    FRONTEND_URL \
+    DB_CONNECTION \
+    DB_HOST \
+    DB_DATABASE \
+    DB_USERNAME \
+    DTR_SIGNING_KEY \
+    QR_SIGNING_KEY
+do
+    if [ -z "$(printenv "${variable}" 2>/dev/null || true)" ]; then
+        missing_variables="${missing_variables} ${variable}"
+    fi
+done
+
+if [ -n "${missing_variables}" ]; then
+    echo "ERROR: Required production environment variables are missing:${missing_variables}" >&2
+    echo "Configure them in the hosting provider before starting this image. Values are intentionally not printed." >&2
+    exit 1
+fi
+
+case "${DB_CONNECTION}" in
+    mysql|mariadb)
+        ;;
+    *)
+        echo "ERROR: DB_CONNECTION must be mysql or mariadb for this production image; received '${DB_CONNECTION}'." >&2
+        exit 1
+        ;;
+esac
+
+sed -ri "s/^Listen [0-9]+$/Listen ${APP_PORT}/" /etc/apache2/ports.conf
+sed -ri "s/<VirtualHost \\*:[0-9]+>/<VirtualHost *:${APP_PORT}>/" /etc/apache2/sites-available/000-default.conf
+
+mkdir -p \
+    storage/app/private/personnel-photos \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache
+
+chown www-data:www-data \
+    storage \
+    storage/app \
+    storage/app/private \
+    storage/framework \
+    storage/framework/cache \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache
+
+php artisan config:clear
+php artisan production:check
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan production:check
+
+exec apache2-foreground

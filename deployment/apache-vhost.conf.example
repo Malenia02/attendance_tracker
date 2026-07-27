@@ -1,0 +1,22 @@
+<VirtualHost *:80>
+    ServerName attendance.example.gov.ph
+    Redirect permanent / https://attendance.example.gov.ph/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName attendance.example.gov.ph
+    DocumentRoot "/var/www/dilg-attendance/backend/public"
+
+    SSLEngine on
+    SSLCertificateFile /etc/letsencrypt/live/attendance.example.gov.ph/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/attendance.example.gov.ph/privkey.pem
+
+    <Directory "/var/www/dilg-attendance/backend/public">
+        AllowOverride All
+        Options -Indexes +FollowSymLinks
+        Require all granted
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/dilg-attendance-error.log
+    CustomLog ${APACHE_LOG_DIR}/dilg-attendance-access.log combined
+</VirtualHost>

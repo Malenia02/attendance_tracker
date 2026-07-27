@@ -11,6 +11,7 @@ import DtrMonitoring from "../pages/DtrMonitoring";
 import QrAttendance from "../pages/QrAttendance";
 import Departments from "../pages/Departments";
 import ActivityLogs from "../pages/ActivityLogs";
+import ErrorPage from "../pages/ErrorPage";
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -40,7 +41,7 @@ export default function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/login" replace />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
 
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="attendance" element={<Attendance />} />
@@ -77,7 +78,7 @@ export default function AppRoutes() {
           }
         />
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<ErrorPage code={404} embedded />} />
       </Route>
     </Routes>
   );

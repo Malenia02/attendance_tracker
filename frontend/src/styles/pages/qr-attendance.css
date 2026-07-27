@@ -763,7 +763,39 @@
     var(--bg-card-soft);
 }
 
+.personnel-card-pair {
+  min-width: 0;
+  position: relative;
+  outline: none;
+  cursor: pointer;
+  perspective: 1400px;
+}
+
+.personnel-card-flipper {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 0.72s cubic-bezier(0.2, 0.72, 0.2, 1);
+  will-change: transform;
+}
+
+.personnel-card-pair.is-flipped .personnel-card-flipper {
+  transform: rotateY(180deg);
+}
+
+.personnel-card-pair:focus-visible {
+  border-radius: 16px;
+  box-shadow: 0 0 0 4px rgba(65, 84, 241, 0.2);
+}
+
+.personnel-card-pair:hover .personnel-qr-card {
+  border-color: rgba(21, 132, 119, 0.5);
+  box-shadow:
+    0 23px 48px rgba(9, 36, 79, 0.18),
+    0 3px 8px rgba(9, 36, 79, 0.1);
+}
+
 .personnel-qr-card {
+  grid-area: 1 / 1;
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -775,6 +807,17 @@
     0 18px 42px rgba(9, 36, 79, 0.14),
     0 2px 6px rgba(9, 36, 79, 0.08);
   color: #09244f;
+  backface-visibility: hidden;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  -webkit-backface-visibility: hidden;
+}
+
+.personnel-qr-card-front {
+  transform: rotateY(0deg);
+}
+
+.personnel-qr-card-back {
+  transform: rotateY(180deg);
 }
 
 .personnel-qr-card::before {
@@ -804,7 +847,7 @@
 
 .personnel-qr-card > header {
   min-height: 57px;
-  padding: 10px 15px;
+  padding: 8px 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -823,8 +866,8 @@
 }
 
 .qr-card-brand > span {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
@@ -869,19 +912,11 @@
   text-align: right;
 }
 
-.qr-card-classification span,
 .qr-card-classification small {
   display: block;
 }
 
-.qr-card-classification span {
-  font-size: 7px;
-  font-weight: 900;
-  letter-spacing: 1.8px;
-}
-
 .qr-card-classification small {
-  margin-top: 3px;
   color: rgba(255, 255, 255, 0.7);
   font-size: 5.5px;
   letter-spacing: 0.7px;
@@ -1003,7 +1038,7 @@
 .personnel-card-name > strong {
   margin-top: 5px;
   color: #09244f;
-  font-size: 13px;
+  font-size: 20px;
   font-weight: 900;
   line-height: 1.35;
 }
@@ -1139,8 +1174,8 @@
 }
 
 .personnel-qr-card > footer {
-  min-height: 45px;
-  padding: 8px 15px;
+  min-height: 60px;
+  padding: 9px 18px;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1202,6 +1237,172 @@
   font-size: 7px;
   font-weight: 750;
   cursor: pointer;
+}
+
+.personnel-qr-card-back {
+  background:
+    radial-gradient(circle at 78% 22%, rgba(21, 132, 119, 0.075), transparent 30%),
+    #ffffff;
+}
+
+.personnel-qr-card-back::before {
+  content: none;
+}
+
+.personnel-qr-card-back > header {
+  background:
+    radial-gradient(circle at 18% 100%, rgba(92, 213, 191, 0.2), transparent 31%),
+    linear-gradient(120deg, #09234d 0%, #0b4b68 50%, #12695f 100%);
+}
+
+.personnel-card-back-body {
+  position: relative;
+  z-index: 0;
+  min-height: 176px;
+  padding: 14px 15px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(125px, 0.75fr);
+  gap: 14px;
+  overflow: hidden;
+}
+
+.personnel-card-back-watermark {
+  position: absolute;
+  top: 50%;
+  left: 47%;
+  z-index: 0;
+  width: 155px;
+  height: 155px;
+  opacity: 0.035;
+  transform: translate(-50%, -50%);
+  filter: grayscale(1);
+}
+
+.personnel-card-rules,
+.personnel-card-return {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.personnel-card-rules > span {
+  color: #176c65;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.personnel-card-rules ol {
+  margin: 9px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  counter-reset: card-rule;
+}
+
+.personnel-card-rules li {
+  position: relative;
+  min-height: 22px;
+  padding-left: 28px;
+  color: #405c78;
+  font-size: 6.5px;
+  line-height: 1.45;
+  counter-increment: card-rule;
+}
+
+.personnel-card-rules li::before {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #0e4972, #168174);
+  content: counter(card-rule, decimal-leading-zero);
+  font-family: "Courier New", monospace;
+  font-size: 6px;
+  font-weight: 800;
+}
+
+.personnel-card-privacy {
+  margin-top: 9px;
+  padding: 7px 8px;
+  color: #617990;
+  border-left: 2px solid #1b9485;
+  border-radius: 0 5px 5px 0;
+  background: rgba(20, 129, 116, 0.055);
+  font-size: 5.5px;
+  line-height: 1.45;
+}
+
+.personnel-card-return {
+  padding: 11px;
+  align-self: stretch;
+  border: 1px solid #d5e1e8;
+  border-radius: 9px;
+  background: rgba(248, 251, 253, 0.9);
+  box-shadow: 0 6px 16px rgba(9, 36, 79, 0.07);
+}
+
+.personnel-card-return-heading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #157469;
+}
+
+.personnel-card-return-heading span {
+  font-size: 5.5px;
+  font-weight: 900;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+}
+
+.personnel-card-return > strong {
+  margin-top: 9px;
+  display: block;
+  color: #102f55;
+  font-size: 7.5px;
+  line-height: 1.35;
+}
+
+.personnel-card-return > p {
+  margin: 5px 0 0;
+  color: #667d93;
+  font-size: 5.8px;
+  line-height: 1.5;
+}
+
+.personnel-card-signature {
+  margin-top: 21px;
+  text-align: center;
+}
+
+.personnel-card-signature > span {
+  display: block;
+  border-top: 1px solid #899cad;
+}
+
+.personnel-card-signature > small {
+  margin-top: 4px;
+  display: block;
+  color: #8192a4;
+  font-size: 5px;
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+}
+
+.personnel-card-property {
+  margin-left: auto;
+  color: #60768c;
+  font-size: 5.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
 
 .qr-history-panel {
@@ -1371,6 +1572,10 @@
     padding-top: 12px;
     border-top: 1px solid #dfe8ef;
   }
+
+  .personnel-card-back-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media print {
@@ -1418,14 +1623,36 @@
     width: 100%;
     padding: 0 !important;
     display: grid;
-    grid-template-columns: repeat(2, 90mm);
-    grid-auto-rows: 57mm;
+    grid-template-columns: 186mm;
     justify-content: center;
     gap: 6mm;
     background: #ffffff !important;
   }
 
+  .personnel-card-pair {
+    width: 186mm;
+    display: block;
+    outline: 0;
+    cursor: default;
+    perspective: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .personnel-card-flipper {
+    width: 186mm;
+    display: grid;
+    grid-template-columns: repeat(2, 90mm);
+    grid-auto-rows: 57mm;
+    gap: 6mm;
+    transform: none !important;
+    transform-style: flat;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   .personnel-qr-card {
+    grid-area: auto;
     width: 90mm;
     height: 57mm;
     min-height: 57mm;
@@ -1433,10 +1660,13 @@
     border: 0.25mm solid #8fa9b8;
     border-radius: 3mm;
     box-shadow: none;
+    backface-visibility: visible;
     break-inside: avoid;
     page-break-inside: avoid;
     print-color-adjust: exact;
+    transform: none !important;
     -webkit-print-color-adjust: exact;
+    -webkit-backface-visibility: visible;
   }
 
   .personnel-qr-card::before {
@@ -1448,7 +1678,7 @@
   .personnel-qr-card > header {
     min-height: 10.5mm;
     height: 10.5mm;
-    padding: 1.5mm 3mm;
+    padding: 1mm 3mm;
     gap: 2mm;
   }
 
@@ -1457,9 +1687,9 @@
   }
 
   .qr-card-brand > span {
-    width: 6.5mm;
-    height: 6.5mm;
-    border-radius: 1.6mm;
+    width: 8mm;
+    height: 8mm;
+    border-radius: 50%;
   }
 
   .qr-card-brand > span svg {
@@ -1486,12 +1716,7 @@
     padding-left: 2mm;
   }
 
-  .qr-card-classification span {
-    font-size: 4.2pt;
-  }
-
   .qr-card-classification small {
-    margin-top: 0.5mm;
     font-size: 3.2pt;
   }
 
@@ -1596,6 +1821,85 @@
     display: none;
   }
 
+  .personnel-card-back-body {
+    min-height: 34mm;
+    height: 34mm;
+    padding: 2mm 3mm 1.5mm;
+    grid-template-columns: minmax(0, 1.25fr) minmax(25mm, 0.75fr);
+    gap: 2.5mm;
+  }
+
+  .personnel-card-back-watermark {
+    width: 31mm;
+    height: 31mm;
+  }
+
+  .personnel-card-rules > span {
+    font-size: 3.2pt;
+  }
+
+  .personnel-card-rules ol {
+    margin-top: 1.4mm;
+    gap: 1.1mm;
+  }
+
+  .personnel-card-rules li {
+    min-height: 4.2mm;
+    padding-left: 5.5mm;
+    font-size: 3.5pt;
+  }
+
+  .personnel-card-rules li::before {
+    width: 4mm;
+    height: 4mm;
+    border-radius: 1.2mm;
+    font-size: 3.1pt;
+  }
+
+  .personnel-card-privacy {
+    margin-top: 1.2mm;
+    padding: 1mm 1.3mm;
+    border-left-width: 0.5mm;
+    font-size: 3pt;
+  }
+
+  .personnel-card-return {
+    padding: 1.7mm;
+    border-radius: 1.8mm;
+  }
+
+  .personnel-card-return-heading {
+    gap: 0.8mm;
+  }
+
+  .personnel-card-return-heading svg {
+    width: 2.5mm;
+    height: 2.5mm;
+  }
+
+  .personnel-card-return-heading span {
+    font-size: 3pt;
+  }
+
+  .personnel-card-return > strong {
+    margin-top: 1.5mm;
+    font-size: 4pt;
+  }
+
+  .personnel-card-return > p {
+    margin-top: 0.8mm;
+    font-size: 3.1pt;
+  }
+
+  .personnel-card-signature {
+    margin-top: 3.3mm;
+  }
+
+  .personnel-card-signature > small {
+    margin-top: 0.6mm;
+    font-size: 2.7pt;
+  }
+
   .personnel-qr-card > footer {
     min-height: 8.5mm;
     height: 8.5mm;
@@ -1625,6 +1929,10 @@
     font-size: 3.1pt;
   }
 
+  .personnel-card-property {
+    font-size: 3.1pt;
+  }
+
   .personnel-qr-card > footer .personnel-qr-action {
     display: none;
   }
@@ -1633,8 +1941,10 @@
 @media (prefers-reduced-motion: reduce) {
   .qr-page,
   .qr-summary-grid article,
-  .qr-live-time > span i {
+  .qr-live-time > span i,
+  .personnel-card-flipper {
     animation: none;
+    transition: none;
   }
 }
 

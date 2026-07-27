@@ -60,7 +60,7 @@ class QrAttendanceController extends Controller
             'recent_scans' => $recentLogs,
             'personnel' => $canManageCodes
                 ? Personnel::query()
-                    ->with('department:department_id,department_code,department_name')
+                    ->with('department:department_id,department_code,department_name,office_location')
                     ->where('status', 'Active')
                     ->orderBy('last_name')
                     ->orderBy('first_name')
@@ -435,12 +435,17 @@ class QrAttendanceController extends Controller
             'personnel_type' => $personnel->personnel_type,
             'position_title' => $personnel->position_title,
             'photo_url' => $personnel->photo
-                ? route('personnel.photo', ['personnel' => $personnel], false)
+                ? route(
+                    'personnel.photo',
+                    ['personnel' => $personnel],
+                    config('app.frontend_deployment') === 'external'
+                )
                     .'?v='.($personnel->updated_at?->timestamp ?? 0)
                 : null,
             'department' => $personnel->department ? [
                 'code' => $personnel->department->department_code,
                 'name' => $personnel->department->department_name,
+                'location' => $personnel->department->office_location,
             ] : null,
         ];
     }

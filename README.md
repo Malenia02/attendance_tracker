@@ -278,6 +278,36 @@ general API, and QR scan routes have separate rate limits. Repeated login
 failures trigger a temporary account lock. Passwords are hashed and validated
 using Laravel's password rules.
 
+## Production deployment
+
+Production runs as one same-origin application. Build React into Laravel before
+uploading:
+
+```powershell
+cd frontend
+npm ci
+npm run build:laravel
+
+cd ..\backend
+composer install --no-dev --prefer-dist --optimize-autoloader
+php artisan migrate --force
+php artisan production:check
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+```
+
+Point the domain document root to `backend/public`; do not expose the repository
+root or the Laravel `.env` file. HTTPS is required for secure cookies, phone
+camera scanning, and GPS. Complete Apache, Nginx, shared-hosting, backup,
+rollback, and validation instructions are in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+For a split deployment with Laravel on Render and React on Vercel, use sibling
+subdomains under one parent domain and follow
+[docs/RENDER-VERCEL.md](docs/RENDER-VERCEL.md). The repository includes
+`render.yaml`, a production PHP Docker image, and `frontend/vercel.json`.
+
 ## Testing and quality checks
 
 Backend:

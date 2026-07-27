@@ -1,0 +1,606 @@
+/*
+ * Cross-page phone safeguards.
+ * Page-specific layouts stay in their named stylesheets; this file only
+ * normalizes behavior shared by multiple pages at compact viewport widths.
+ */
+
+@media (max-width: 620px) {
+  html,
+  body,
+  #root,
+  .app-shell,
+  .main-wrapper,
+  .main-content {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  body {
+    min-width: 0;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  /*
+   * A 16px field font prevents Safari from zooming the whole interface when
+   * a user focuses a form control.
+   */
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+    font-size: 16px !important;
+  }
+
+  input[type="date"],
+  input[type="month"],
+  input[type="time"] {
+    min-width: 0;
+  }
+
+  .topbar {
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-left: max(10px, env(safe-area-inset-left));
+    gap: 6px;
+  }
+
+  .header-brand {
+    gap: 7px;
+  }
+
+  .header-brand-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .topbar-left {
+    gap: 6px;
+  }
+
+  .topbar-actions {
+    margin-left: auto;
+    gap: 0;
+  }
+
+  .square-button {
+    width: 38px;
+    height: 42px;
+  }
+
+  .topbar-user {
+    margin-left: 1px;
+  }
+
+  .topbar-avatar {
+    width: 34px;
+    height: 34px;
+  }
+
+  .sidebar {
+    width: min(300px, calc(100vw - 44px));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  .sidebar-backdrop {
+    touch-action: none;
+  }
+
+  .main-content {
+    padding:
+      calc(var(--topbar-height) + 16px)
+      max(12px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  .page-title {
+    margin-bottom: 18px;
+  }
+
+  .page-title h1 {
+    font-size: 22px;
+    line-height: 1.2;
+  }
+
+  .page-title > p {
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .breadcrumb {
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+
+  .panel,
+  .calendar-card,
+  .selected-date-card,
+  .upcoming-card {
+    max-width: 100%;
+  }
+
+  .users-page-title {
+    gap: 13px;
+  }
+
+  .users-page-title > button,
+  .users-page-title > a {
+    width: 100%;
+  }
+
+  .users-notice {
+    margin-bottom: 14px;
+    padding: 11px 12px;
+    align-items: flex-start;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .user-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .user-summary-card {
+    min-height: 84px;
+    padding: 11px;
+    gap: 8px;
+  }
+
+  .user-summary-icon {
+    width: 37px;
+    height: 37px;
+  }
+
+  .user-summary-card > div > strong {
+    font-size: 19px;
+  }
+
+  .user-summary-card div > span {
+    font-size: 10px;
+  }
+
+  .users-toolbar,
+  .attendance-records-header,
+  .dtr-panel-header,
+  .activity-filter-heading,
+  .departments-toolbar,
+  .qr-cards-toolbar,
+  .qr-history-heading {
+    padding: 14px;
+  }
+
+  .users-table-wrap {
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .users-table {
+    min-width: 760px;
+  }
+
+  .users-table th,
+  .users-table td {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .users-table-footer {
+    padding: 12px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .primary-action,
+  .secondary-action,
+  .users-toolbar button {
+    min-height: 44px;
+  }
+
+  .modal-backdrop {
+    padding:
+      max(8px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+
+  .user-modal,
+  .department-modal,
+  .holiday-modal,
+  .activity-modal {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px;
+  }
+
+  .user-modal-header {
+    padding: 16px;
+  }
+
+  .user-modal-header h2 {
+    font-size: 17px;
+  }
+
+  .user-modal-header p {
+    line-height: 1.45;
+  }
+
+  .user-form {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .user-form input,
+  .user-form select {
+    min-height: 46px;
+  }
+
+  .user-modal-actions {
+    position: sticky;
+    z-index: 3;
+    bottom: -16px;
+    margin: 2px -16px -16px;
+    padding:
+      12px
+      16px
+      max(12px, env(safe-area-inset-bottom));
+  }
+
+  .user-modal-actions button {
+    min-height: 44px;
+    flex: 1;
+  }
+
+  .activity-detail-body {
+    max-height: calc(100dvh - 86px);
+    padding: 14px;
+  }
+
+  .activity-changes {
+    overflow-x: auto;
+  }
+
+  .activity-changes table {
+    min-width: 470px;
+  }
+
+  .ops-dashboard-hero,
+  .attendance-hero,
+  .holiday-hero,
+  .dtr-hero,
+  .departments-hero,
+  .activity-hero,
+  .qr-hero {
+    min-height: auto;
+    padding: 20px 17px;
+    border-radius: 12px;
+  }
+
+  .ops-dashboard-hero h1,
+  .attendance-hero h1,
+  .holiday-hero h1,
+  .dtr-hero h1,
+  .departments-hero h1,
+  .activity-hero h1,
+  .qr-hero h1 {
+    font-size: clamp(22px, 7vw, 28px);
+    line-height: 1.18;
+  }
+
+  .ops-dashboard-hero p,
+  .attendance-hero p,
+  .holiday-hero p,
+  .dtr-hero p,
+  .departments-hero p,
+  .activity-hero p,
+  .qr-hero p {
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
+  .ops-quick-actions {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .ops-quick-actions button {
+    min-height: 50px;
+  }
+
+  .ops-panel,
+  .attendance-clock-card,
+  .recent-time-card,
+  .qr-scanner-card,
+  .qr-result-card {
+    max-width: 100%;
+  }
+
+  .attendance-holiday-banner {
+    align-items: flex-start;
+  }
+
+  .attendance-records-controls,
+  .qr-camera-actions,
+  .qr-manual-entry > div {
+    width: 100%;
+  }
+
+  .attendance-records-controls > *,
+  .qr-camera-actions > * {
+    min-height: 44px;
+  }
+
+  .attendance-correction-modal {
+    width: 100%;
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
+  }
+
+  .attendance-correction-modal > footer {
+    position: sticky;
+    bottom: -16px;
+    margin-right: -16px;
+    margin-left: -16px;
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+    background: var(--bg-card);
+  }
+
+  .attendance-correction-modal > footer button {
+    min-height: 44px;
+    flex: 1;
+  }
+
+  .calendar-toolbar {
+    min-height: 0;
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .calendar-toolbar h2 {
+    font-size: 18px;
+  }
+
+  .calendar-controls {
+    width: 100%;
+  }
+
+  .calendar-controls button {
+    min-width: 42px;
+    height: 42px;
+  }
+
+  .calendar-controls .today-button {
+    flex: 1;
+  }
+
+  .calendar-duty-legend {
+    padding: 10px 12px;
+    gap: 8px 12px;
+  }
+
+  .weekday {
+    padding: 9px 2px;
+  }
+
+  .dtr-detail-drawer {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+  }
+
+  .dtr-detail-drawer > header {
+    padding:
+      max(15px, env(safe-area-inset-top))
+      15px
+      15px;
+  }
+
+  .dtr-detail-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dtr-detail-drawer > footer {
+    padding-bottom: max(15px, env(safe-area-inset-bottom));
+  }
+
+  .dtr-detail-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .dtr-detail-actions button {
+    min-height: 42px;
+    flex: 1 1 calc(50% - 7px);
+    justify-content: center;
+  }
+
+  .department-location-capture > div {
+    min-width: 0;
+  }
+
+  .department-location-capture span {
+    min-width: 0;
+  }
+
+  .department-location-capture small {
+    overflow-wrap: anywhere;
+  }
+
+  .activity-pagination button {
+    min-height: 42px;
+  }
+
+  .qr-tabs {
+    padding: 4px;
+    overflow-x: auto;
+  }
+
+  .qr-tabs button {
+    min-height: 42px;
+    flex: 1 0 auto;
+  }
+
+  .qr-reader-shell,
+  #qr-reader,
+  #qr-reader video {
+    min-height: min(310px, 74vw);
+  }
+
+  .qr-scan-corners {
+    width: min(250px, 70vw);
+    height: min(250px, 70vw);
+  }
+
+  .qr-cards-toolbar > div:last-child {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .qr-cards-toolbar button {
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .qr-print-grid {
+    padding: 12px;
+  }
+
+  .personnel-card-pair {
+    width: 100%;
+  }
+
+  .personnel-qr-card > footer {
+    flex-wrap: wrap;
+  }
+
+  .personnel-card-security,
+  .personnel-card-property {
+    margin-left: auto;
+  }
+
+  .error-page {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 390px) {
+  .topbar {
+    padding-right: 7px;
+    padding-left: 7px;
+  }
+
+  .square-button {
+    width: 35px;
+  }
+
+  .header-brand-mark,
+  .topbar-avatar {
+    width: 31px;
+    height: 31px;
+  }
+
+  .main-content {
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+
+  .user-summary-grid,
+  .attendance-summary-grid,
+  .holiday-summary-grid,
+  .dtr-summary-grid,
+  .department-summary-grid,
+  .activity-summary-grid,
+  .qr-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .user-summary-card,
+  .attendance-summary-grid article,
+  .holiday-summary-grid article,
+  .dtr-summary-grid article,
+  .department-summary-grid article,
+  .activity-summary-grid article,
+  .qr-summary-grid article {
+    min-width: 0;
+    padding: 10px;
+  }
+
+  .ops-quick-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-donut-row {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-day {
+    min-height: 52px;
+    padding: 3px;
+  }
+
+  .calendar-duty-legend span {
+    font-size: 7px;
+  }
+
+  .dtr-detail-metrics {
+    grid-template-columns: 1fr 1fr;
+    padding: 10px;
+  }
+
+  .dtr-detail-list {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .dtr-detail-list article {
+    grid-template-columns: 34px minmax(0, 1fr) 58px;
+  }
+
+  .dtr-day-meta {
+    display: none;
+  }
+
+  .personnel-qr-card > header {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .qr-card-brand strong {
+    white-space: normal;
+  }
+
+  .qr-card-classification {
+    display: none;
+  }
+
+  .personnel-card-security,
+  .personnel-card-property {
+    display: none;
+  }
+
+  .personnel-qr-card > footer .personnel-qr-action {
+    margin-left: auto;
+  }
+
+  .error-page-content {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}

@@ -114,29 +114,38 @@ class AttendanceRecord extends Model
         );
     }
 
+    public function correctionRequests(): HasMany
+    {
+        return $this->hasMany(
+            AttendanceCorrectionRequest::class,
+            'attendance_id',
+            'attendance_id'
+        );
+    }
+
     public function getIsCompleteAttribute(): bool
     {
-        return !empty($this->morning_time_in)
-            && !empty($this->morning_time_out)
-            && !empty($this->afternoon_time_in)
-            && !empty($this->afternoon_time_out);
+        return ! empty($this->morning_time_in)
+            && ! empty($this->morning_time_out)
+            && ! empty($this->afternoon_time_in)
+            && ! empty($this->afternoon_time_out);
     }
 
     public function getNextActionAttribute(): ?string
     {
-        if (!$this->morning_time_in) {
+        if (! $this->morning_time_in) {
             return 'morning_time_in';
         }
 
-        if (!$this->morning_time_out) {
+        if (! $this->morning_time_out) {
             return 'morning_time_out';
         }
 
-        if (!$this->afternoon_time_in) {
+        if (! $this->afternoon_time_in) {
             return 'afternoon_time_in';
         }
 
-        if (!$this->afternoon_time_out) {
+        if (! $this->afternoon_time_out) {
             return 'afternoon_time_out';
         }
 

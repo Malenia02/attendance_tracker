@@ -338,6 +338,19 @@
   font-weight: 600;
 }
 
+.auth-loading button {
+  height: 36px;
+  margin-top: 12px;
+  padding: 0 15px;
+  border: 1px solid rgba(65, 84, 241, 0.22);
+  border-radius: 7px;
+  color: var(--primary);
+  background: var(--bg-card);
+  font-size: 10px;
+  font-weight: 750;
+  box-shadow: 0 5px 16px rgba(1, 41, 112, 0.08);
+}
+
 .login-help {
   margin-top: 29px;
   padding: 18px 20px;

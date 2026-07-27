@@ -16,6 +16,7 @@ class DtrCertification extends Model
         'personnel_id',
         'dtr_year',
         'dtr_month',
+        'version_number',
         'prepared_by',
         'certified_by',
         'prepared_at',
@@ -29,6 +30,7 @@ class DtrCertification extends Model
     protected $casts = [
         'dtr_year' => 'integer',
         'dtr_month' => 'integer',
+        'version_number' => 'integer',
         'prepared_at' => 'datetime',
         'certified_at' => 'datetime',
         'certified_snapshot' => 'array',
@@ -65,6 +67,24 @@ class DtrCertification extends Model
     {
         return $this->hasMany(
             DtrStatusLog::class,
+            'dtr_certification_id',
+            'dtr_certification_id'
+        )->orderByDesc('created_at');
+    }
+
+    public function versions(): HasMany
+    {
+        return $this->hasMany(
+            DtrCertificationVersion::class,
+            'dtr_certification_id',
+            'dtr_certification_id'
+        )->orderByDesc('version_number');
+    }
+
+    public function reopenRequests(): HasMany
+    {
+        return $this->hasMany(
+            DtrReopenRequest::class,
             'dtr_certification_id',
             'dtr_certification_id'
         )->orderByDesc('created_at');

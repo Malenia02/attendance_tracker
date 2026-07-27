@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AttendanceChangeLog;
 use App\Models\AttendanceRecord;
 use App\Models\DtrCertification;
 use App\Models\DtrStatusLog;
@@ -33,7 +34,7 @@ class DtrController extends Controller
         $validated = $request->validate([
             'month' => ['nullable', 'date_format:Y-m'],
             'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Certified', 'Returned'])],
+            'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Certified', 'Returned', 'Reopened'])],
         ]);
 
         $month = Carbon::createFromFormat('Y-m-d', ($validated['month'] ?? now()->format('Y-m')).'-01')
@@ -62,7 +63,12 @@ class DtrController extends Controller
                     ->whereBetween('attendance_date', [$month->toDateString(), $monthEnd->toDateString()])
                     ->orderBy('attendance_date'),
                 'dtrCertifications' => fn ($query) => $query
-                    ->with('statusLogs.changedBy:user_id,username')
+                    ->with([
+                        'statusLogs.changedBy:user_id,username',
+                        'reopenRequests.requestedBy:user_id,username',
+                        'reopenRequests.reviewedBy:user_id,username',
+                        'versions.archivedBy:user_id,username',
+                    ])
                     ->where('dtr_year', $month->year)
                     ->where('dtr_month', $month->month),
             ])
@@ -104,6 +110,9 @@ class DtrController extends Controller
             'can_certify' => in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true),
             'can_correct_attendance' => in_array($user->user_role, ['Administrator', 'HR'], true),
             'can_generate' => $user->user_role === 'Administrator',
+            'can_request_reopen' => in_array($user->user_role, ['Administrator', 'HR'], true),
+            'can_approve_reopen' => $user->user_role === 'Administrator',
+            'current_user_id' => $user->user_id,
             'data' => $rows,
             'summary' => [
                 'personnel' => $rows->count(),
@@ -187,14 +196,17 @@ class DtrController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
             $previousStatus = $certification->certification_status ?? 'Draft';
+            $correctedByCertifier = $status === 'Certified'
+                && $this->certifierChangedAmendedAttendance($certification, $user->user_id);
             $transitionError = match (true) {
                 $previousStatus === 'Certified' => 'This DTR is certified and locked. A separate authorized reopening process is required.',
                 $status === $previousStatus => "This DTR is already {$status}.",
                 $status === 'Draft' => 'A submitted or returned DTR cannot be moved back to Draft.',
-                $status === 'Submitted' && ! in_array($previousStatus, ['Draft', 'Returned'], true) => 'Only draft or returned DTRs may be submitted.',
+                $status === 'Submitted' && ! in_array($previousStatus, ['Draft', 'Returned', 'Reopened'], true) => 'Only draft, returned, or reopened DTRs may be submitted.',
                 $status === 'Returned' && $previousStatus !== 'Submitted' => 'Only submitted DTRs may be returned for correction.',
                 $status === 'Certified' && $previousStatus !== 'Submitted' => 'The DTR must be submitted before certification.',
                 $status === 'Certified' && $certification->prepared_by === $user->user_id => 'The person who submitted a DTR cannot also certify it.',
+                $correctedByCertifier => 'The person who corrected an amended attendance entry cannot certify that DTR version.',
                 default => null,
             };
 
@@ -258,14 +270,20 @@ class DtrController extends Controller
 
         $certification = $result['certification'];
         $previousStatus = $result['previous_status'];
-        $wasResubmitted = $previousStatus === 'Returned' && $status === 'Submitted';
+        $wasResubmitted = in_array($previousStatus, ['Returned', 'Reopened'], true)
+            && $status === 'Submitted';
 
         return response()->json([
             'message' => $wasResubmitted
-                ? 'DTR corrections submitted for review.'
+                ? 'DTR corrections submitted for independent review.'
                 : 'DTR status updated to '.$status.'.',
             'certification' => $this->formatCertification(
-                $certification->fresh('statusLogs.changedBy:user_id,username')
+                $certification->fresh([
+                    'statusLogs.changedBy:user_id,username',
+                    'reopenRequests.requestedBy:user_id,username',
+                    'reopenRequests.reviewedBy:user_id,username',
+                    'versions.archivedBy:user_id,username',
+                ])
             ),
         ]);
     }
@@ -431,7 +449,10 @@ class DtrController extends Controller
             $personnelName = 'Personnel-'.$report['personnel_id'];
         }
 
-        return "DTR-{$personnelName}-{$month}.docx";
+        $version = (int) ($report['certification']['version_number'] ?? 1);
+        $amended = $version > 1 ? "-Amended-v{$version}" : '';
+
+        return "DTR-{$personnelName}-{$month}{$amended}.docx";
     }
 
     private function buildPersonnelRow(
@@ -619,16 +640,47 @@ class DtrController extends Controller
             ->values()
             ->all() ?? [];
         $latestReturn = collect($history)->firstWhere('to_status', 'Returned');
+        $reopenRequests = $certification?->reopenRequests
+            ?->map(fn ($reopenRequest) => [
+                'id' => $reopenRequest->dtr_reopen_request_id,
+                'status' => $reopenRequest->request_status,
+                'reason' => $reopenRequest->reason,
+                'affected_dates' => $reopenRequest->affected_dates,
+                'requested_by_id' => $reopenRequest->requested_by,
+                'requested_by' => $reopenRequest->requestedBy?->username ?? 'Former user',
+                'requested_at' => $reopenRequest->created_at?->toISOString(),
+                'reviewed_by' => $reopenRequest->reviewedBy?->username,
+                'reviewed_at' => $reopenRequest->reviewed_at?->toISOString(),
+                'review_remarks' => $reopenRequest->review_remarks,
+            ])
+            ->values()
+            ->all() ?? [];
+        $versions = $certification?->versions
+            ?->map(fn ($version) => [
+                'id' => $version->dtr_certification_version_id,
+                'version_number' => $version->version_number,
+                'certified_at' => $version->certified_at?->toISOString(),
+                'archived_at' => $version->archived_at?->toISOString(),
+                'archived_by' => $version->archivedBy?->username ?? 'Former user',
+                'archive_reason' => $version->archive_reason,
+                'hash_prefix' => substr($version->certified_hash, 0, 12),
+            ])
+            ->values()
+            ->all() ?? [];
 
         return [
             'id' => $certification?->dtr_certification_id,
             'status' => $certification?->certification_status ?? 'Draft',
+            'version_number' => $certification?->version_number ?? 1,
+            'is_amended' => ($certification?->version_number ?? 1) > 1,
             'remarks' => $certification?->remarks,
             'return_reason' => $latestReturn['remarks']
                 ?? ($certification?->certification_status === 'Returned' ? $certification?->remarks : null),
             'prepared_at' => $certification?->prepared_at?->toISOString(),
             'certified_at' => $certification?->certified_at?->toISOString(),
             'history' => $history,
+            'reopen_requests' => $reopenRequests,
+            'versions' => $versions,
         ];
     }
 
@@ -642,5 +694,33 @@ class DtrController extends Controller
 
         return $format($schedule->morning_start).'-'.$format($schedule->morning_end)
             .' / '.$format($schedule->afternoon_start).'-'.$format($schedule->afternoon_end);
+    }
+
+    private function certifierChangedAmendedAttendance(
+        DtrCertification $certification,
+        int $certifierId
+    ): bool {
+        if ($certification->version_number <= 1) {
+            return false;
+        }
+
+        $approvedReopening = $certification->reopenRequests()
+            ->where('request_status', 'Approved')
+            ->latest('reviewed_at')
+            ->first();
+        $affectedDates = $approvedReopening?->affected_dates ?? [];
+
+        if (! $approvedReopening || $affectedDates === []) {
+            return false;
+        }
+
+        return AttendanceChangeLog::query()
+            ->where('changed_by', $certifierId)
+            ->whereIn('action_type', ['Created', 'Updated'])
+            ->where('created_at', '>=', $approvedReopening->reviewed_at)
+            ->whereHas('attendance', fn ($query) => $query
+                ->where('personnel_id', $certification->personnel_id)
+                ->whereIn('attendance_date', $affectedDates))
+            ->exists();
     }
 }

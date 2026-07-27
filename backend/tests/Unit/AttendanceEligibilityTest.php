@@ -19,6 +19,8 @@ class AttendanceEligibilityTest extends TestCase
 
     private ReflectionMethod $recalculate;
 
+    private ReflectionMethod $missingTimeOutEntries;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -57,6 +59,10 @@ class AttendanceEligibilityTest extends TestCase
         $this->recalculate = new ReflectionMethod(
             AttendanceController::class,
             'recalculate'
+        );
+        $this->missingTimeOutEntries = new ReflectionMethod(
+            AttendanceController::class,
+            'missingTimeOutEntries'
         );
     }
 
@@ -102,7 +108,7 @@ class AttendanceEligibilityTest extends TestCase
         ]);
 
         $this->recalculate->invoke(
-            new AttendanceController(),
+            new AttendanceController,
             $record,
             $this->schedule,
             Carbon::parse('2026-07-23 07:35:00', 'Asia/Manila')
@@ -130,7 +136,7 @@ class AttendanceEligibilityTest extends TestCase
     public function test_optional_day_is_enabled_by_working_day_approval(): void
     {
         $result = $this->eligibility->invoke(
-            new AttendanceController(),
+            new AttendanceController,
             null,
             $this->schedule,
             Carbon::parse('2026-07-25 07:00:00', 'Asia/Manila'),
@@ -199,10 +205,53 @@ class AttendanceEligibilityTest extends TestCase
         $this->assertSame('Half Day', $status);
     }
 
+    public function test_morning_time_out_is_not_flagged_before_its_window_closes(): void
+    {
+        $record = new AttendanceRecord([
+            'attendance_date' => '2026-07-23',
+            'morning_time_in' => '2026-07-23 07:05:00',
+            'attendance_status' => 'Incomplete',
+        ]);
+
+        $missing = $this->checkMissingTimeOuts($record, '2026-07-23 12:15:00');
+
+        $this->assertSame([], $missing);
+    }
+
+    public function test_forgotten_morning_time_out_is_flagged_after_its_window_closes(): void
+    {
+        $record = new AttendanceRecord([
+            'attendance_date' => '2026-07-23',
+            'morning_time_in' => '2026-07-23 07:05:00',
+            'attendance_status' => 'Incomplete',
+        ]);
+
+        $missing = $this->checkMissingTimeOuts($record, '2026-07-23 12:31:00');
+
+        $this->assertSame('morning_time_out', $missing[0]['field']);
+        $this->assertSame('Morning time-out', $missing[0]['label']);
+    }
+
+    public function test_forgotten_afternoon_time_out_is_flagged_after_its_window_closes(): void
+    {
+        $record = new AttendanceRecord([
+            'attendance_date' => '2026-07-23',
+            'morning_time_in' => '2026-07-23 07:05:00',
+            'morning_time_out' => '2026-07-23 12:00:00',
+            'afternoon_time_in' => '2026-07-23 13:00:00',
+            'attendance_status' => 'Incomplete',
+        ]);
+
+        $missing = $this->checkMissingTimeOuts($record, '2026-07-23 19:01:00');
+
+        $this->assertCount(1, $missing);
+        $this->assertSame('afternoon_time_out', $missing[0]['field']);
+    }
+
     private function check(?AttendanceRecord $record, string $time): array
     {
         return $this->eligibility->invoke(
-            new AttendanceController(),
+            new AttendanceController,
             $record,
             $this->schedule,
             Carbon::parse($time, 'Asia/Manila')
@@ -212,7 +261,17 @@ class AttendanceEligibilityTest extends TestCase
     private function checkStatus(AttendanceRecord $record, string $time): string
     {
         return $this->attendanceStatus->invoke(
-            new AttendanceController(),
+            new AttendanceController,
+            $record,
+            $this->schedule,
+            Carbon::parse($time, 'Asia/Manila')
+        );
+    }
+
+    private function checkMissingTimeOuts(AttendanceRecord $record, string $time): array
+    {
+        return $this->missingTimeOutEntries->invoke(
+            new AttendanceController,
             $record,
             $this->schedule,
             Carbon::parse($time, 'Asia/Manila')

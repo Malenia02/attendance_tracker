@@ -1,0 +1,88 @@
+services:
+  - type: web
+    name: dilg-attendance-api
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./deployment/render/Dockerfile
+    dockerContext: .
+    preDeployCommand: php artisan migrate --force && php artisan production:check
+    healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: personnel-photos
+      mountPath: /var/www/html/storage/app/private
+      sizeGB: 1
+    envVars:
+      - key: APP_NAME
+        value: DILG GIP Attendance Tracker
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: FRONTEND_DEPLOYMENT
+        value: external
+      - key: FRONTEND_URL
+        sync: false
+      - key: TRUSTED_HOSTS
+        value: ^dilg-attendance-api\.onrender\.com$
+      - key: TRUSTED_PROXIES
+        value: "*"
+      - key: APP_TIMEZONE
+        value: Asia/Manila
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: LOG_LEVEL
+        value: warning
+      - key: DB_CONNECTION
+        value: mysql
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_LIFETIME
+        value: "120"
+      - key: SESSION_ENCRYPT
+        value: "true"
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      - key: SESSION_HTTP_ONLY
+        value: "true"
+      - key: SESSION_SAME_SITE
+        value: lax
+      - key: SESSION_COOKIE
+        value: dilg_attendance_session
+      - key: SESSION_DOMAIN
+        sync: false
+      - key: SANCTUM_STATEFUL_DOMAINS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CACHE_STORE
+        value: database
+      - key: CACHE_PREFIX
+        value: dilg_attendance_
+      - key: QUEUE_CONNECTION
+        value: sync
+      - key: FILESYSTEM_DISK
+        value: local
+      - key: DTR_SIGNING_KEY
+        generateValue: true
+      - key: QR_SIGNING_KEY
+        generateValue: true
+      - key: MAXIMUM_LOCATION_ACCURACY_METERS
+        value: "50"
+      - key: MAIL_MAILER
+        value: log

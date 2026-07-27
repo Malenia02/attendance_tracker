@@ -19,6 +19,7 @@ class DtrDocumentGeneratorTest extends TestCase
             'month_label' => 'July 2026',
             'official_hours' => '7:00-12:00 / 1:00-5:00',
             'saturday_hours' => 'N/A',
+            'certification' => ['version_number' => 2],
             'daily_records' => [
                 [
                     'day_number' => 1,
@@ -56,7 +57,7 @@ class DtrDocumentGeneratorTest extends TestCase
         try {
             app(DtrDocumentGenerator::class)->generate([$report], $path);
 
-            $archive = new ZipArchive();
+            $archive = new ZipArchive;
             $this->assertTrue($archive->open($path) === true);
             $documentXml = $archive->getFromName('word/document.xml');
             $archive->close();
@@ -70,6 +71,10 @@ class DtrDocumentGeneratorTest extends TestCase
             $this->assertStringContainsString('7:00-12:00', $documentXml);
             $this->assertStringContainsString('REST DAY', $documentXml);
             $this->assertStringContainsString('HOLIDAY', $documentXml);
+            $this->assertSame(
+                6,
+                substr_count($documentXml, 'DAILY TIME RECORD - AMENDED V2')
+            );
             $this->assertSame(186, substr_count($documentXml, 'w:hRule="exact"'));
             $this->assertStringContainsString('<w:noWrap', $documentXml);
         } finally {

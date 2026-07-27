@@ -44,6 +44,40 @@ CREATE TABLE `attendance_change_logs` (
   CONSTRAINT `fk_attendance_change_user` FOREIGN KEY (`changed_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `attendance_correction_requests`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `attendance_correction_requests` (
+  `attendance_correction_request_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `attendance_id` bigint(20) unsigned NOT NULL,
+  `personnel_id` bigint(20) unsigned NOT NULL,
+  `submitted_by` bigint(20) unsigned DEFAULT NULL,
+  `attendance_date` date NOT NULL,
+  `missing_field` enum('morning_time_out','afternoon_time_out') NOT NULL,
+  `proposed_time` time NOT NULL,
+  `reason` varchar(500) NOT NULL,
+  `request_status` enum('Pending','Approved','Rejected','Cancelled') NOT NULL DEFAULT 'Pending',
+  `pending_key` varchar(191) DEFAULT NULL,
+  `reviewed_by` bigint(20) unsigned DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `review_remarks` varchar(500) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(500) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`attendance_correction_request_id`),
+  UNIQUE KEY `attendance_correction_requests_pending_key_unique` (`pending_key`),
+  KEY `attendance_correction_requests_attendance_id_foreign` (`attendance_id`),
+  KEY `attendance_correction_requests_reviewed_by_foreign` (`reviewed_by`),
+  KEY `idx_attendance_correction_date_status` (`attendance_date`,`request_status`),
+  KEY `idx_attendance_correction_personnel_date` (`personnel_id`,`attendance_date`),
+  KEY `idx_attendance_correction_submitter` (`submitted_by`,`created_at`),
+  CONSTRAINT `attendance_correction_requests_attendance_id_foreign` FOREIGN KEY (`attendance_id`) REFERENCES `attendance_records` (`attendance_id`) ON UPDATE CASCADE,
+  CONSTRAINT `attendance_correction_requests_personnel_id_foreign` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`personnel_id`) ON UPDATE CASCADE,
+  CONSTRAINT `attendance_correction_requests_reviewed_by_foreign` FOREIGN KEY (`reviewed_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `attendance_correction_requests_submitted_by_foreign` FOREIGN KEY (`submitted_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `attendance_qr_tokens`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -153,6 +187,34 @@ CREATE TABLE `departments` (
   KEY `idx_department_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `dtr_certification_versions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `dtr_certification_versions` (
+  `dtr_certification_version_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `dtr_certification_id` bigint(20) unsigned NOT NULL,
+  `version_number` smallint(5) unsigned NOT NULL,
+  `prepared_by` bigint(20) unsigned DEFAULT NULL,
+  `certified_by` bigint(20) unsigned DEFAULT NULL,
+  `archived_by` bigint(20) unsigned DEFAULT NULL,
+  `prepared_at` datetime DEFAULT NULL,
+  `certified_at` datetime NOT NULL,
+  `archived_at` datetime NOT NULL,
+  `archive_reason` varchar(1000) NOT NULL,
+  `certified_snapshot` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`certified_snapshot`)),
+  `certified_hash` char(64) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`dtr_certification_version_id`),
+  UNIQUE KEY `uq_dtr_certification_version` (`dtr_certification_id`,`version_number`),
+  KEY `fk_dtr_version_prepared_by` (`prepared_by`),
+  KEY `fk_dtr_version_certified_by` (`certified_by`),
+  KEY `fk_dtr_version_archived_by` (`archived_by`),
+  CONSTRAINT `fk_dtr_version_archived_by` FOREIGN KEY (`archived_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_dtr_version_certification` FOREIGN KEY (`dtr_certification_id`) REFERENCES `dtr_certifications` (`dtr_certification_id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_dtr_version_certified_by` FOREIGN KEY (`certified_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_dtr_version_prepared_by` FOREIGN KEY (`prepared_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `dtr_certifications`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -161,11 +223,12 @@ CREATE TABLE `dtr_certifications` (
   `personnel_id` bigint(20) unsigned NOT NULL,
   `dtr_year` smallint(5) unsigned NOT NULL,
   `dtr_month` tinyint(3) unsigned NOT NULL,
+  `version_number` smallint(5) unsigned NOT NULL DEFAULT 1,
   `prepared_by` bigint(20) unsigned DEFAULT NULL,
   `certified_by` bigint(20) unsigned DEFAULT NULL,
   `prepared_at` datetime DEFAULT NULL,
   `certified_at` datetime DEFAULT NULL,
-  `certification_status` enum('Draft','Submitted','Certified','Returned') NOT NULL DEFAULT 'Draft',
+  `certification_status` enum('Draft','Submitted','Certified','Returned','Reopened') NOT NULL DEFAULT 'Draft',
   `remarks` varchar(255) DEFAULT NULL,
   `certified_snapshot` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`certified_snapshot`)),
   `certified_hash` char(64) DEFAULT NULL,
@@ -180,6 +243,36 @@ CREATE TABLE `dtr_certifications` (
   CONSTRAINT `fk_dtr_certified_by` FOREIGN KEY (`certified_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_dtr_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`personnel_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_dtr_prepared_by` FOREIGN KEY (`prepared_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `dtr_reopen_requests`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `dtr_reopen_requests` (
+  `dtr_reopen_request_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `dtr_certification_id` bigint(20) unsigned NOT NULL,
+  `requested_by` bigint(20) unsigned DEFAULT NULL,
+  `reviewed_by` bigint(20) unsigned DEFAULT NULL,
+  `reason` varchar(1000) NOT NULL,
+  `affected_dates` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`affected_dates`)),
+  `request_status` enum('Pending','Approved','Rejected') NOT NULL DEFAULT 'Pending',
+  `review_remarks` varchar(1000) DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `pending_key` varchar(64) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(500) DEFAULT NULL,
+  `request_id` char(36) NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`dtr_reopen_request_id`),
+  UNIQUE KEY `dtr_reopen_requests_request_id_unique` (`request_id`),
+  UNIQUE KEY `dtr_reopen_requests_pending_key_unique` (`pending_key`),
+  KEY `fk_dtr_reopen_requested_by` (`requested_by`),
+  KEY `fk_dtr_reopen_reviewed_by` (`reviewed_by`),
+  KEY `idx_dtr_reopen_history` (`dtr_certification_id`,`request_status`,`created_at`),
+  CONSTRAINT `fk_dtr_reopen_certification` FOREIGN KEY (`dtr_certification_id`) REFERENCES `dtr_certifications` (`dtr_certification_id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_dtr_reopen_requested_by` FOREIGN KEY (`requested_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_dtr_reopen_reviewed_by` FOREIGN KEY (`reviewed_by`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `dtr_status_logs`;
@@ -621,7 +714,7 @@ CREATE TABLE `work_schedules` (
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
-/*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`` SQL SECURITY DEFINER VIEW `monthly_attendance_summary_view` AS select `ar`.`personnel_id` AS `personnel_id`,year(`ar`.`attendance_date`) AS `attendance_year`,month(`ar`.`attendance_date`) AS `attendance_month`,count(0) AS `total_records`,sum(`ar`.`attendance_status` = 'Present') AS `days_present`,sum(`ar`.`attendance_status` = 'Absent') AS `days_absent`,sum(`ar`.`attendance_status` = 'Leave') AS `days_on_leave`,sum(`ar`.`attendance_status` = 'Holiday') AS `holidays`,sum(`ar`.`attendance_status` = 'Incomplete') AS `incomplete_records`,sum(`ar`.`total_work_minutes`) AS `total_work_minutes`,sum(`ar`.`late_minutes`) AS `total_late_minutes`,sum(`ar`.`undertime_minutes`) AS `total_undertime_minutes`,sum(`ar`.`overtime_minutes`) AS `total_overtime_minutes` from `attendance_records` `ar` group by `ar`.`personnel_id`,year(`ar`.`attendance_date`),month(`ar`.`attendance_date`) */;
+/*!50001 CREATE ALGORITHM=UNDEFINED SQL SECURITY INVOKER VIEW `monthly_attendance_summary_view` AS select `ar`.`personnel_id` AS `personnel_id`,year(`ar`.`attendance_date`) AS `attendance_year`,month(`ar`.`attendance_date`) AS `attendance_month`,count(0) AS `total_records`,sum(`ar`.`attendance_status` = 'Present') AS `days_present`,sum(`ar`.`attendance_status` = 'Absent') AS `days_absent`,sum(`ar`.`attendance_status` = 'Leave') AS `days_on_leave`,sum(`ar`.`attendance_status` = 'Holiday') AS `holidays`,sum(`ar`.`attendance_status` = 'Incomplete') AS `incomplete_records`,sum(`ar`.`total_work_minutes`) AS `total_work_minutes`,sum(`ar`.`late_minutes`) AS `total_late_minutes`,sum(`ar`.`undertime_minutes`) AS `total_undertime_minutes`,sum(`ar`.`overtime_minutes`) AS `total_overtime_minutes` from `attendance_records` `ar` group by `ar`.`personnel_id`,year(`ar`.`attendance_date`),month(`ar`.`attendance_date`) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -632,7 +725,7 @@ CREATE TABLE `work_schedules` (
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
-/*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`` SQL SECURITY DEFINER VIEW `personnel_details_view` AS select `p`.`personnel_id` AS `personnel_id`,`p`.`employee_number` AS `employee_number`,concat_ws(' ',`p`.`first_name`,nullif(`p`.`middle_name`,''),`p`.`last_name`,nullif(`p`.`suffix`,'')) AS `full_name`,`p`.`personnel_type` AS `personnel_type`,`p`.`position_title` AS `position_title`,`p`.`employment_start_date` AS `employment_start_date`,`p`.`employment_end_date` AS `employment_end_date`,`p`.`status` AS `status`,`d`.`department_code` AS `department_code`,`d`.`department_name` AS `department_name`,`d`.`office_location` AS `office_location` from (`personnel` `p` left join `departments` `d` on(`d`.`department_id` = `p`.`department_id`)) */;
+/*!50001 CREATE ALGORITHM=UNDEFINED SQL SECURITY INVOKER VIEW `personnel_details_view` AS select `p`.`personnel_id` AS `personnel_id`,`p`.`employee_number` AS `employee_number`,concat_ws(' ',`p`.`first_name`,nullif(`p`.`middle_name`,''),`p`.`last_name`,nullif(`p`.`suffix`,'')) AS `full_name`,`p`.`personnel_type` AS `personnel_type`,`p`.`position_title` AS `position_title`,`p`.`employment_start_date` AS `employment_start_date`,`p`.`employment_end_date` AS `employment_end_date`,`p`.`status` AS `status`,`d`.`department_code` AS `department_code`,`d`.`department_name` AS `department_name`,`d`.`office_location` AS `office_location` from (`personnel` `p` left join `departments` `d` on(`d`.`department_id` = `p`.`department_id`)) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -643,7 +736,7 @@ CREATE TABLE `work_schedules` (
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
-/*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`` SQL SECURITY DEFINER VIEW `printable_dtr_view` AS select `ar`.`attendance_id` AS `attendance_id`,`ar`.`personnel_id` AS `personnel_id`,`p`.`employee_number` AS `employee_number`,concat_ws(' ',`p`.`first_name`,nullif(`p`.`middle_name`,''),`p`.`last_name`,nullif(`p`.`suffix`,'')) AS `full_name`,`p`.`personnel_type` AS `personnel_type`,`p`.`position_title` AS `position_title`,`d`.`department_name` AS `department_name`,`ar`.`attendance_date` AS `attendance_date`,date_format(`ar`.`morning_time_in`,'%h:%i %p') AS `morning_time_in`,date_format(`ar`.`morning_time_out`,'%h:%i %p') AS `morning_time_out`,date_format(`ar`.`afternoon_time_in`,'%h:%i %p') AS `afternoon_time_in`,date_format(`ar`.`afternoon_time_out`,'%h:%i %p') AS `afternoon_time_out`,date_format(`ar`.`overtime_time_in`,'%h:%i %p') AS `overtime_time_in`,date_format(`ar`.`overtime_time_out`,'%h:%i %p') AS `overtime_time_out`,`ar`.`attendance_status` AS `attendance_status`,`ar`.`total_work_minutes` AS `total_work_minutes`,`ar`.`late_minutes` AS `late_minutes`,`ar`.`undertime_minutes` AS `undertime_minutes`,`ar`.`overtime_minutes` AS `overtime_minutes`,`ar`.`remarks` AS `remarks`,`ar`.`is_verified` AS `is_verified` from ((`attendance_records` `ar` join `personnel` `p` on(`p`.`personnel_id` = `ar`.`personnel_id`)) left join `departments` `d` on(`d`.`department_id` = `p`.`department_id`)) */;
+/*!50001 CREATE ALGORITHM=UNDEFINED SQL SECURITY INVOKER VIEW `printable_dtr_view` AS select `ar`.`attendance_id` AS `attendance_id`,`ar`.`personnel_id` AS `personnel_id`,`p`.`employee_number` AS `employee_number`,concat_ws(' ',`p`.`first_name`,nullif(`p`.`middle_name`,''),`p`.`last_name`,nullif(`p`.`suffix`,'')) AS `full_name`,`p`.`personnel_type` AS `personnel_type`,`p`.`position_title` AS `position_title`,`d`.`department_name` AS `department_name`,`ar`.`attendance_date` AS `attendance_date`,date_format(`ar`.`morning_time_in`,'%h:%i %p') AS `morning_time_in`,date_format(`ar`.`morning_time_out`,'%h:%i %p') AS `morning_time_out`,date_format(`ar`.`afternoon_time_in`,'%h:%i %p') AS `afternoon_time_in`,date_format(`ar`.`afternoon_time_out`,'%h:%i %p') AS `afternoon_time_out`,date_format(`ar`.`overtime_time_in`,'%h:%i %p') AS `overtime_time_in`,date_format(`ar`.`overtime_time_out`,'%h:%i %p') AS `overtime_time_out`,`ar`.`attendance_status` AS `attendance_status`,`ar`.`total_work_minutes` AS `total_work_minutes`,`ar`.`late_minutes` AS `late_minutes`,`ar`.`undertime_minutes` AS `undertime_minutes`,`ar`.`overtime_minutes` AS `overtime_minutes`,`ar`.`remarks` AS `remarks`,`ar`.`is_verified` AS `is_verified` from ((`attendance_records` `ar` join `personnel` `p` on(`p`.`personnel_id` = `ar`.`personnel_id`)) left join `departments` `d` on(`d`.`department_id` = `p`.`department_id`)) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -662,3 +755,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (5,'2026_07_23_1300
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (6,'2026_07_25_140000_add_scanned_by_to_qr_scan_logs',4);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (7,'2026_07_25_180000_create_dtr_status_logs_table',5);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (8,'2026_07_25_190000_harden_attendance_security',6);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (9,'2026_07_26_150000_create_attendance_correction_requests_table',7);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (10,'2026_07_26_170000_create_dtr_reopening_workflow',8);

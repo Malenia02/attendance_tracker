@@ -81,6 +81,34 @@ class User extends Authenticatable
         );
     }
 
+    public function submittedAttendanceCorrectionRequests(): HasMany
+    {
+        return $this->hasMany(
+            AttendanceCorrectionRequest::class,
+            'submitted_by',
+            'user_id'
+        );
+    }
+
+    public function reviewedAttendanceCorrectionRequests(): HasMany
+    {
+        return $this->hasMany(
+            AttendanceCorrectionRequest::class,
+            'reviewed_by',
+            'user_id'
+        );
+    }
+
+    public function submittedDtrReopenRequests(): HasMany
+    {
+        return $this->hasMany(DtrReopenRequest::class, 'requested_by', 'user_id');
+    }
+
+    public function reviewedDtrReopenRequests(): HasMany
+    {
+        return $this->hasMany(DtrReopenRequest::class, 'reviewed_by', 'user_id');
+    }
+
     public function accessTokens(): HasMany
     {
         return $this->hasMany(

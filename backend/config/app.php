@@ -54,6 +54,22 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost')),
+
+    'frontend_deployment' => env('FRONTEND_DEPLOYMENT', 'embedded'),
+
+    'trusted_hosts' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('TRUSTED_HOSTS', ''))
+    ))),
+
+    'trusted_proxies' => env('TRUSTED_PROXIES', '127.0.0.1,::1') === '*'
+        ? '*'
+        : array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('TRUSTED_PROXIES', '127.0.0.1,::1'))
+        ))),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

@@ -23,3 +23,6 @@
 @import "./styles/pages/qr-attendance.css";
 @import "./styles/pages/departments.css";
 @import "./styles/pages/activity-logs.css";
+
+/* Cross-page phone and small-screen safeguards */
+@import "./styles/core/responsive.css";

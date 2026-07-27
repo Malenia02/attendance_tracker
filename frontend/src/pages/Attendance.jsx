@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
   BadgeCheck,
   CalendarDays,
   CheckCircle2,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
+import AttendanceCorrectionRequestModal from "../components/attendance/AttendanceCorrectionRequestModal";
 
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -80,6 +82,7 @@ export default function Attendance() {
     half_day: 0,
     late: 0,
     incomplete: 0,
+    missing_time_out: 0,
     not_started: 0,
   });
   const [options, setOptions] = useState({
@@ -102,6 +105,9 @@ export default function Attendance() {
   const [editingRecord, setEditingRecord] = useState(null);
   const [correctionBusy, setCorrectionBusy] = useState(false);
   const [correctionDismissed, setCorrectionDismissed] = useState(false);
+  const [correctionRequests, setCorrectionRequests] = useState([]);
+  const [requestModal, setRequestModal] = useState(null);
+  const [requestBusy, setRequestBusy] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -153,6 +159,19 @@ export default function Attendance() {
     return () => controller.abort();
   }, [selectedDate, refreshKey]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+
+    apiFetch(`/attendance/correction-requests?date=${selectedDate}`, { signal: controller.signal })
+      .then(readResponse)
+      .then((payload) => setCorrectionRequests(payload.data))
+      .catch((error) => {
+        if (error.name !== "AbortError") setPageError(error.message);
+      });
+
+    return () => controller.abort();
+  }, [selectedDate, refreshKey]);
+
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -166,10 +185,23 @@ export default function Attendance() {
       return matchesSearch && matchesStatus;
     });
   }, [records, search, statusFilter]);
+  const missingTimeOutRecords = useMemo(
+    () => records.filter((record) => record.has_missing_time_out),
+    [records],
+  );
 
   const selectedRecord = records.find(
     (record) => String(record.personnel_id) === String(selectedPersonnelId),
   );
+  const selectedPendingRequest = correctionRequests.find(
+    (request) => request.attendance_id === selectedRecord?.attendance_id
+      && request.status === "Pending",
+  );
+  const selectedLatestRequest = correctionRequests.find(
+    (request) => request.attendance_id === selectedRecord?.attendance_id,
+  );
+  const currentPersonnelId = currentUser?.personnel?.personnel_id;
+  const selectedRecordIsOwn = Number(currentPersonnelId) === Number(selectedRecord?.personnel_id);
   const isToday = selectedDate === today;
   const nextAction = selectedRecord?.next_action_label;
   const completed = Boolean(selectedRecord?.attendance_complete);
@@ -262,6 +294,57 @@ export default function Attendance() {
     }
   }
 
+  async function submitCorrectionRequest(values) {
+    setRequestBusy(true);
+    setPageError("");
+
+    try {
+      const payload = await apiFetch("/attendance/correction-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attendance_date: selectedDate,
+          ...values,
+        }),
+      }).then(readResponse);
+
+      setNotice(payload.message);
+      setRequestModal(null);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 5000);
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setRequestBusy(false);
+    }
+  }
+
+  async function reviewCorrectionRequest(values) {
+    if (!requestModal?.request) return;
+    setRequestBusy(true);
+    setPageError("");
+
+    try {
+      const payload = await apiFetch(
+        `/attendance/correction-requests/${requestModal.request.request_id}/review`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(values),
+        },
+      ).then(readResponse);
+
+      setNotice(payload.message);
+      setRequestModal(null);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 5500);
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setRequestBusy(false);
+    }
+  }
+
   const summaryCards = [
     { label: "Active Personnel", value: summary.total, icon: Users, tone: "blue" },
     { label: "Timed In", value: summary.timed_in, icon: UserCheck, tone: "green" },
@@ -269,6 +352,7 @@ export default function Attendance() {
     { label: "Half Day", value: summary.half_day, icon: Coffee, tone: "cyan" },
     { label: "Late", value: summary.late, icon: Clock3, tone: "red" },
     { label: "Incomplete", value: summary.incomplete, icon: TimerReset, tone: "orange" },
+    { label: "Missing Time-out", value: summary.missing_time_out, icon: AlertTriangle, tone: "orange" },
   ];
 
   return (
@@ -305,6 +389,85 @@ export default function Attendance() {
           </article>
         ))}
       </div>
+
+      {!!missingTimeOutRecords.length && (
+        <section className="attendance-exception-panel" aria-labelledby="missing-time-out-title">
+          <header>
+            <span><AlertTriangle size={20} /></span>
+            <div>
+              <strong id="missing-time-out-title">Missing time-out queue</strong>
+              <small>
+                These entries remain incomplete and cannot be verified or included in a certified DTR.
+              </small>
+            </div>
+            <b>{missingTimeOutRecords.length}</b>
+          </header>
+          <div className="attendance-exception-list">
+            {missingTimeOutRecords.map((record) => {
+              const pendingRequest = correctionRequests.find(
+                (request) => request.attendance_id === record.attendance_id
+                  && request.status === "Pending",
+              );
+              const latestRequest = correctionRequests.find(
+                (request) => request.attendance_id === record.attendance_id,
+              );
+              const isOwnRecord = Number(currentPersonnelId) === Number(record.personnel_id);
+
+              return (
+                <article key={record.personnel_id}>
+                  <span className="attendance-exception-avatar">
+                    {record.full_name.split(" ").map((part) => part[0]).slice(0, 2).join("")}
+                  </span>
+                  <div>
+                    <strong>{record.full_name}</strong>
+                    <small>
+                      {record.missing_time_out_entries.map((entry) => entry.label).join(" and ")}
+                      {" · "}{record.employee_number}
+                    </small>
+                    {pendingRequest && <em>Employee explanation submitted · Pending HR review</em>}
+                    {!pendingRequest && latestRequest?.status === "Rejected" && (
+                      <em className="rejected">
+                        Previous request rejected: {latestRequest.review_remarks}
+                      </em>
+                    )}
+                  </div>
+                  {pendingRequest && canCorrect ? (
+                    <button
+                      type="button"
+                      onClick={() => setRequestModal({
+                        mode: "review",
+                        record,
+                        request: pendingRequest,
+                      })}
+                    >
+                      <ShieldCheck size={14} />Review request
+                    </button>
+                  ) : pendingRequest ? (
+                    <em>Pending HR review</em>
+                  ) : isOwnRecord ? (
+                    <button
+                      type="button"
+                      onClick={() => setRequestModal({ mode: "submit", record })}
+                    >
+                      <Clock3 size={14} />Submit reason
+                    </button>
+                  ) : canCorrect ? (
+                    <button type="button" onClick={() => setEditingRecord(record)}>
+                      <PencilLine size={14} />HR override
+                    </button>
+                  ) : (
+                    <em>Awaiting employee explanation</em>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+          <footer>
+            <ShieldCheck size={15} />
+            The system never guesses an exit time. HR must enter the documented time and reason.
+          </footer>
+        </section>
+      )}
 
       <div className="attendance-workspace">
         <div className="attendance-clock-card">
@@ -347,6 +510,50 @@ export default function Attendance() {
                   <em className="late-flag">Late · {selectedRecord.late_minutes}m</em>
                 )}
               </div>
+
+              {selectedRecord.has_missing_time_out && (
+                <div className="attendance-missing-timeout-alert">
+                  <AlertTriangle size={18} />
+                  <div>
+                    <strong>Missing time-out detected</strong>
+                    <span>
+                      {selectedRecord.missing_time_out_entries.map((entry) => entry.label).join(" and ")}
+                      {" "}must be corrected before this entry can be verified.
+                    </span>
+                    {selectedPendingRequest && (
+                      <em>Your explanation has been submitted and is pending HR review.</em>
+                    )}
+                    {!selectedPendingRequest && selectedLatestRequest?.status === "Rejected" && (
+                      <em className="rejected">
+                        Previous request rejected: {selectedLatestRequest.review_remarks}
+                      </em>
+                    )}
+                  </div>
+                  {selectedPendingRequest && canCorrect ? (
+                    <button
+                      type="button"
+                      onClick={() => setRequestModal({
+                        mode: "review",
+                        record: selectedRecord,
+                        request: selectedPendingRequest,
+                      })}
+                    >
+                      Review request
+                    </button>
+                  ) : selectedPendingRequest ? null : selectedRecordIsOwn ? (
+                    <button
+                      type="button"
+                      onClick={() => setRequestModal({ mode: "submit", record: selectedRecord })}
+                    >
+                      Submit reason
+                    </button>
+                  ) : canCorrect ? (
+                    <button type="button" onClick={() => setEditingRecord(selectedRecord)}>
+                      HR override
+                    </button>
+                  ) : null}
+                </div>
+              )}
 
               <div className="time-stepper">
                 {timeSteps.map(({ key, label, icon: Icon }, index) => {
@@ -504,6 +711,11 @@ export default function Attendance() {
                     <span className={`attendance-status ${statusClass(record.display_status)}`}>
                       {record.display_status}
                     </span>
+                    {record.has_missing_time_out && (
+                      <small className="missing-timeout-row-flag">
+                        {record.missing_time_out_entries.map((entry) => entry.label).join(" and ")}
+                      </small>
+                    )}
                     {record.is_late && <small className="late-row-flag">Late by {record.late_minutes}m</small>}
                     {record.half_day_period && (
                       <small className="half-day-period">{record.half_day_period} session</small>
@@ -533,7 +745,7 @@ export default function Attendance() {
                             setEditingRecord(record);
                           }}
                         >
-                          <PencilLine size={13} /> Correct
+                          <PencilLine size={13} /> {record.has_missing_time_out ? "Resolve" : "Correct"}
                         </button>
                       )}
                     </div>
@@ -547,6 +759,20 @@ export default function Attendance() {
           Showing {filteredRecords.length} of {records.length} active personnel
         </div>
       </div>
+
+      {requestModal && (
+        <AttendanceCorrectionRequestModal
+          mode={requestModal.mode}
+          record={requestModal.record}
+          request={requestModal.request}
+          date={selectedDate}
+          busy={requestBusy}
+          onClose={() => setRequestModal(null)}
+          onSubmit={requestModal.mode === "review"
+            ? reviewCorrectionRequest
+            : submitCorrectionRequest}
+        />
+      )}
 
       {correctionRecord && (
         <AttendanceCorrectionModal

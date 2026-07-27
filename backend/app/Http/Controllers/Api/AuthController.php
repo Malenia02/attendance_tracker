@@ -191,7 +191,11 @@ class AuthController extends Controller
                 'employee_number' => $user->personnel->employee_number,
                 'email' => $user->personnel->email,
                 'photo_url' => $user->personnel->photo
-                    ? route('personnel.photo', ['personnel' => $user->personnel], false)
+                    ? route(
+                        'personnel.photo',
+                        ['personnel' => $user->personnel],
+                        config('app.frontend_deployment') === 'external'
+                    )
                         .'?v='.($user->personnel->updated_at?->timestamp ?? 0)
                     : null,
             ] : null,

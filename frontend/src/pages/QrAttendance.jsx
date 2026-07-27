@@ -452,10 +452,10 @@ export default function QrAttendance() {
       ) : (
         <div className="panel qr-cards-panel">
           <div className="qr-cards-toolbar">
-            <div><span>Printable credentials</span><h2>Personnel QR Cards</h2></div>
+            <div><span>Click any card to flip · printable front and back</span><h2>Personnel QR Cards</h2></div>
             <div>
               <label><Search size={16} /><input value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search personnel..." /></label>
-              <button type="button" onClick={() => window.print()}><Printer size={16} />Print cards</button>
+              <button type="button" onClick={() => window.print()}><Printer size={16} />Print front &amp; back</button>
             </div>
           </div>
           <div className="qr-print-grid">
@@ -538,6 +538,7 @@ function ScanResult({ result }) {
 
 function PersonnelQrCard({ person, busy, onRegenerate }) {
   const [image, setImage] = useState("");
+  const [flipped, setFlipped] = useState(false);
   const personImage = person.photo_url;
 
   useEffect(() => {
@@ -564,21 +565,30 @@ function PersonnelQrCard({ person, busy, onRegenerate }) {
 
   const credentialNumber = `DILG-GIP-${String(person.personnel_id).padStart(5, "0")}`;
 
+  function handleFlip() {
+    setFlipped((current) => !current);
+  }
+
+  function handleFlipKeyDown(event) {
+    if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return;
+
+    event.preventDefault();
+    handleFlip();
+  }
+
   return (
-    <article className="personnel-qr-card">
-      <header>
-        <div className="qr-card-brand">
-          <span><DilgSeal /></span>
-          <div>
-            <strong>Department of the Interior and Local Government</strong>
-            <small>GIP Attendance Management System</small>
-          </div>
-        </div>
-        <div className="qr-card-classification">
-          <span>OFFICIAL</span>
-          <small>PERSONNEL ID</small>
-        </div>
-      </header>
+    <div
+      className={`personnel-card-pair${flipped ? " is-flipped" : ""}`}
+      role="button"
+      tabIndex="0"
+      aria-label={`${flipped ? "Show front of" : "Show back of"} ${person.full_name}'s personnel card`}
+      aria-pressed={flipped}
+      onClick={handleFlip}
+      onKeyDown={handleFlipKeyDown}
+    >
+      <div className="personnel-card-flipper">
+        <article className="personnel-qr-card personnel-qr-card-front">
+          <QrCardHeader />
       <div className="qr-card-ribbon">
         <span>Authorized personnel credential</span>
         <span><i></i> Active</span>
@@ -620,11 +630,79 @@ function PersonnelQrCard({ person, busy, onRegenerate }) {
           <span><small>Credential number</small><strong>{credentialNumber}</strong></span>
         </div>
         <div className="personnel-card-security">Digitally signed attendance credential</div>
-        <button className="personnel-qr-action" type="button" onClick={onRegenerate} disabled={busy}>
+        <button
+          className="personnel-qr-action"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRegenerate();
+          }}
+          disabled={busy}
+        >
           {person.has_qr ? <RefreshCw size={13} /> : <QrCode size={13} />}
           {busy ? "Generating…" : person.has_qr ? "Regenerate" : "Generate"}
         </button>
       </footer>
-    </article>
+        </article>
+
+        <article className="personnel-qr-card personnel-qr-card-back">
+          <QrCardHeader />
+        <div className="qr-card-ribbon">
+          <span>Card care and security</span>
+          <span><i></i> Official use</span>
+        </div>
+        <div className="personnel-card-back-body">
+          <DilgSeal className="personnel-card-back-watermark" alt="" />
+          <div className="personnel-card-rules">
+            <span>Cardholder responsibilities</span>
+            <ol>
+              <li>Present this card only at an authorized DILG attendance kiosk.</li>
+              <li>Do not lend, copy, alter, or allow another person to use this credential.</li>
+              <li>Report a lost or damaged card to the issuing office immediately.</li>
+            </ol>
+            <div className="personnel-card-privacy">
+              Attendance scans are recorded with the kiosk operator, time, and verified office location.
+            </div>
+          </div>
+          <div className="personnel-card-return">
+            <div className="personnel-card-return-heading">
+              <MapPin size={13} />
+              <span>If found, return to</span>
+            </div>
+            <strong>{person.department?.name || "DILG Issuing Office"}</strong>
+            <p>{person.department?.location || "Return this card to the office that issued the credential."}</p>
+            <div className="personnel-card-signature">
+              <span></span>
+              <small>Authorized signature</small>
+            </div>
+          </div>
+        </div>
+        <footer>
+          <div className="personnel-card-serial">
+            <ShieldCheck size={15} />
+            <span><small>Credential number</small><strong>{credentialNumber}</strong></span>
+          </div>
+          <div className="personnel-card-property">This credential remains the property of DILG.</div>
+        </footer>
+        </article>
+      </div>
+    </div>
+  );
+}
+
+function QrCardHeader() {
+  return (
+    <header>
+      <div className="qr-card-brand">
+        <span><DilgSeal /></span>
+        <div>
+          <strong>Department of the Interior and Local Government</strong>
+          <small> Attendance Management System</small>
+        </div>
+      </div>
+      <div className="qr-card-classification">
+        <small>PERSONNEL ID</small>
+      </div>
+    </header>
   );
 }
