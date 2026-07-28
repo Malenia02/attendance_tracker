@@ -94,4 +94,12 @@ php artisan route:cache
 php artisan view:cache
 php artisan production:check
 
+# Artisan runs as root during container startup. With the restrictive umask
+# above, newly generated cache files would otherwise be unreadable by Apache's
+# www-data worker and Laravel would fail before its configuration is loaded.
+chown -R www-data:www-data \
+    bootstrap/cache \
+    storage/framework/cache \
+    storage/framework/views
+
 exec apache2-foreground
