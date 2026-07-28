@@ -28,6 +28,129 @@ import { apiFetch } from "../lib/auth";
 
 const DEVICE_KEY = "dilg_qr_kiosk_device";
 
+function createQrScanner(qrModule) {
+  return new qrModule.Html5Qrcode("qr-reader", {
+    formatsToSupport: [qrModule.Html5QrcodeSupportedFormats.QR_CODE],
+    useBarCodeDetectorIfSupported: true,
+    verbose: false,
+  });
+}
+
+async function detectQrWithBrowser(file) {
+  if (!("BarcodeDetector" in window) || typeof window.createImageBitmap !== "function") {
+    return "";
+  }
+
+  let bitmap;
+
+  try {
+    const supportedFormats = typeof window.BarcodeDetector.getSupportedFormats === "function"
+      ? await window.BarcodeDetector.getSupportedFormats()
+      : ["qr_code"];
+
+    if (!supportedFormats.includes("qr_code")) return "";
+
+    bitmap = await window.createImageBitmap(file);
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const results = await detector.detect(bitmap);
+
+    return results.find((result) => result.rawValue)?.rawValue || "";
+  } catch {
+    return "";
+  } finally {
+    bitmap?.close?.();
+  }
+}
+
+function canvasFile(canvas, name) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("The uploaded image could not be prepared for scanning."));
+        return;
+      }
+
+      resolve(new File([blob], name, { type: "image/png" }));
+    }, "image/png");
+  });
+}
+
+async function createFocusedQrCandidates(file) {
+  if (typeof window.createImageBitmap !== "function") return [];
+
+  const bitmap = await window.createImageBitmap(file);
+
+  try {
+    const cropSize = Math.max(1, Math.round(Math.min(bitmap.width, bitmap.height) * 0.78));
+    const maxX = Math.max(0, bitmap.width - cropSize);
+    const maxY = Math.max(0, bitmap.height - cropSize);
+    const positions = [
+      [maxX, maxY / 2],
+      [maxX / 2, maxY / 2],
+      [0, maxY / 2],
+      [maxX, 0],
+      [maxX, maxY],
+      [maxX / 2, 0],
+      [maxX / 2, maxY],
+      [0, 0],
+      [0, maxY],
+    ];
+    const outputSize = 900;
+    const candidates = [];
+
+    for (let index = 0; index < positions.length; index += 1) {
+      const [x, y] = positions[index];
+      const canvas = document.createElement("canvas");
+      canvas.width = outputSize;
+      canvas.height = outputSize;
+      const context = canvas.getContext("2d", { alpha: false });
+
+      if (!context) continue;
+
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, outputSize, outputSize);
+      context.imageSmoothingEnabled = false;
+      context.drawImage(
+        bitmap,
+        Math.round(x),
+        Math.round(y),
+        cropSize,
+        cropSize,
+        0,
+        0,
+        outputSize,
+        outputSize,
+      );
+      candidates.push(await canvasFile(canvas, `qr-focus-${index}.png`));
+    }
+
+    return candidates;
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+async function decodeQrPhoto(file, scanner) {
+  const nativeResult = await detectQrWithBrowser(file);
+  if (nativeResult) return nativeResult;
+
+  try {
+    return await scanner.scanFile(file, true);
+  } catch {
+    const candidates = await createFocusedQrCandidates(file);
+
+    for (const candidate of candidates) {
+      try {
+        return await scanner.scanFile(candidate, false);
+      } catch {
+        // Try the next focused region before rejecting the uploaded card.
+      }
+    }
+  }
+
+  throw new Error("No readable QR code was found.");
+}
+
 function getDeviceIdentifier() {
   let value = localStorage.getItem(DEVICE_KEY);
 
@@ -226,8 +349,8 @@ export default function QrAttendance() {
     }
 
     try {
-      const { Html5Qrcode } = await import("html5-qrcode");
-      const scanner = scannerRef.current || new Html5Qrcode("qr-reader");
+      const qrModule = await import("html5-qrcode");
+      const scanner = scannerRef.current || createQrScanner(qrModule);
       scannerRef.current = scanner;
       await scanner.start(
         { facingMode: "environment" },
@@ -267,10 +390,10 @@ export default function QrAttendance() {
         setCameraActive(false);
       }
 
-      const { Html5Qrcode } = await import("html5-qrcode");
-      const scanner = scannerRef.current || new Html5Qrcode("qr-reader");
+      const qrModule = await import("html5-qrcode");
+      const scanner = scannerRef.current || createQrScanner(qrModule);
       scannerRef.current = scanner;
-      const decodedText = await scanner.scanFile(file, true);
+      const decodedText = await decodeQrPhoto(file, scanner);
       await submitScan(decodedText);
     } catch {
       setError("No readable QR code was found in that photo. Use the original sharp image and keep the entire QR border visible.");
