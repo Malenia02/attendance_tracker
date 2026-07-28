@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
+import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 
 function currentMonthKey() {
@@ -666,7 +667,7 @@ function DtrDetails({
 
         <div className="dtr-detail-metrics">
           <div><small>Work time</small><strong>{formatMinutes(row.total_work_minutes)}</strong></div>
-          <div><small>Late total</small><strong>{row.late_minutes}m</strong></div>
+          <div><small>Late total</small><strong>{formatDuration(row.late_minutes)}</strong></div>
           <div><small>Completion</small><strong>{row.completion_percent}%</strong></div>
         </div>
 
@@ -775,7 +776,7 @@ function DtrDetails({
                 <span className={`dtr-day-status ${statusClass(day.status)}`}>{day.status}</span>
                 {day.is_authorized_duty_day && <small className="authorized">Authorized Duty Day</small>}
                 {day.holiday && <small className="holiday-name">{day.holiday}</small>}
-                {!!day.late_minutes && <small>Late {day.late_minutes}m</small>}
+                {!!day.late_minutes && <small>Late {formatDuration(day.late_minutes)}</small>}
               </div>
               <span className={`dtr-verification ${day.is_verified ? "verified" : ""}`}>
                 {day.is_verified ? <BadgeCheck size={13} /> : <TimerReset size={13} />}

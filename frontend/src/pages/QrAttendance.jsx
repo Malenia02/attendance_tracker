@@ -24,6 +24,7 @@ import {
 import QRCode from "qrcode";
 import DilgSeal from "../components/branding/DilgSeal";
 import { apiFetch } from "../lib/auth";
+import { formatDuration } from "../lib/duration";
 
 
 const DEVICE_KEY = "dilg_qr_kiosk_device";
@@ -656,7 +657,7 @@ function ScanResult({ result }) {
         </div>
       )}
       {!!result.attendance?.late_minutes && (
-        <div className="qr-late-alert"><Clock3 size={14} />Flagged late by {result.attendance.late_minutes} minutes</div>
+        <div className="qr-late-alert"><Clock3 size={14} />Flagged late by {formatDuration(result.attendance.late_minutes)}</div>
       )}
     </div>
   );

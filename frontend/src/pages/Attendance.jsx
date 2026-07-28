@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
+import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 import AttendanceCorrectionRequestModal from "../components/attendance/AttendanceCorrectionRequestModal";
 
@@ -524,7 +525,7 @@ export default function Attendance() {
                   {selectedRecord.display_status}
                 </em>
                 {selectedRecord.is_late && (
-                  <em className="late-flag">Late · {selectedRecord.late_minutes}m</em>
+                  <em className="late-flag">Late · {formatDuration(selectedRecord.late_minutes)}</em>
                 )}
               </div>
 
@@ -738,8 +739,8 @@ export default function Attendance() {
                   <td><strong className="work-time-value">{formatMinutes(record.total_work_minutes)}</strong></td>
                   <td>
                     <div className="attendance-metrics">
-                      <span className={record.late_minutes ? "warning" : ""}>Late {record.late_minutes}m</span>
-                      <span className={record.undertime_minutes ? "warning" : ""}>Under {record.undertime_minutes}m</span>
+                      <span className={record.late_minutes ? "warning" : ""}>Late {formatDuration(record.late_minutes)}</span>
+                      <span className={record.undertime_minutes ? "warning" : ""}>Under {formatDuration(record.undertime_minutes)}</span>
                     </div>
                   </td>
                   <td>
@@ -751,7 +752,7 @@ export default function Attendance() {
                         {record.missing_time_out_entries.map((entry) => entry.label).join(" and ")}
                       </small>
                     )}
-                    {record.is_late && <small className="late-row-flag">Late by {record.late_minutes}m</small>}
+                    {record.is_late && <small className="late-row-flag">Late by {formatDuration(record.late_minutes)}</small>}
                     {record.half_day_period && (
                       <small className="half-day-period">{record.half_day_period} session</small>
                     )}

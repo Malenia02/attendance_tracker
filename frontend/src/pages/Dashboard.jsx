@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
+import { formatDuration } from "../lib/duration";
 
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
@@ -346,7 +347,7 @@ export default function Dashboard() {
                 >
                   <span>{item.full_name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>
                   <div><strong>{item.full_name}</strong><small>{item.department} · {item.status}</small></div>
-                  {item.is_late && <em>{item.late_minutes}m late</em>}
+                  {item.is_late && <em>{formatDuration(item.late_minutes)} late</em>}
                   <ArrowRight size={13} />
                 </button>
               ))}
