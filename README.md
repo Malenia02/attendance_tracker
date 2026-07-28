@@ -331,6 +331,19 @@ npm audit
 
 ## Common troubleshooting
 
+### Render cannot resolve the Aiven database host
+
+An error containing `php_network_getaddresses`, `getaddrinfo`, or `Name or
+service not known` means DNS resolution failed before Laravel could authenticate
+or run a query. In Aiven, confirm that the MySQL service is **Running**, then
+copy the current **Host** from its connection details into Render's `DB_HOST`.
+Enter only the hostname—do not include `mysql://`, `https://`, the port, quotes,
+or spaces. Keep the Aiven port in `DB_PORT`.
+
+The Render startup script retries database migrations and readiness checks for
+short DNS or managed-database interruptions. If all retries fail, correct the
+environment value and choose **Manual Deploy → Deploy latest commit**.
+
 ### White screen
 
 Check the Vite terminal and browser console, then run:

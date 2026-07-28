@@ -86,5 +86,7 @@ services:
         value: log
       - key: RUN_MIGRATIONS_ON_START
         value: "true"
+      - key: DB_STARTUP_MAX_ATTEMPTS
+        value: "10"
       - key: EPHEMERAL_UPLOADS
         value: "true"

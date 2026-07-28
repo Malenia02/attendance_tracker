@@ -4,6 +4,40 @@ umask 027
 
 APP_PORT="${PORT:-10000}"
 
+run_with_retry() {
+    description="$1"
+    shift
+    attempt=1
+    delay_seconds=5
+    max_attempts="${DB_STARTUP_MAX_ATTEMPTS:-10}"
+
+    case "${max_attempts}" in
+        ''|*[!0-9]*|0)
+            max_attempts=10
+            ;;
+    esac
+
+    while true; do
+        if "$@"; then
+            return 0
+        fi
+
+        if [ "${attempt}" -ge "${max_attempts}" ]; then
+            echo "ERROR: ${description} failed after ${attempt} attempts." >&2
+            echo "Confirm the managed database is running and that DB_HOST is the hostname only (without https://, a port, or spaces)." >&2
+            return 1
+        fi
+
+        echo "WARNING: ${description} failed (attempt ${attempt}/${max_attempts}). Retrying in ${delay_seconds} seconds." >&2
+        attempt=$((attempt + 1))
+        sleep "${delay_seconds}"
+
+        if [ "${delay_seconds}" -lt 30 ]; then
+            delay_seconds=$((delay_seconds + 5))
+        fi
+    done
+}
+
 missing_variables=""
 
 for variable in \
@@ -80,15 +114,17 @@ php artisan config:clear
 
 if [ "${RUN_MIGRATIONS_ON_START:-false}" = "true" ]; then
     echo "Running database migrations during startup (test/free deployment mode)."
-    php artisan migrate --force
+    run_with_retry "Database migration" php artisan migrate --force
 fi
+
+run_with_retry "Database readiness check" php artisan migrate:status --no-ansi
 
 if [ "${EPHEMERAL_UPLOADS:-false}" = "true" ]; then
     echo "WARNING: Personnel photos use ephemeral storage and can be lost whenever the service restarts or redeploys." >&2
 fi
 
 php artisan production:check
-php artisan optimize:clear
+run_with_retry "Application cache clearing" php artisan optimize:clear
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
