@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  CheckCircle2,
+  Circle,
   CircleUserRound,
   KeyRound,
   LockKeyhole,
@@ -45,6 +47,36 @@ async function readResponse(response) {
   return payload;
 }
 
+function evaluatePassword(password, confirmation) {
+  return [
+    {
+      id: "length",
+      label: "12 to 72 characters",
+      met: password.length >= 12 && password.length <= 72,
+    },
+    {
+      id: "case",
+      label: "At least one uppercase and one lowercase letter",
+      met: /\p{Lu}/u.test(password) && /\p{Ll}/u.test(password),
+    },
+    {
+      id: "number",
+      label: "At least one number",
+      met: /\p{N}/u.test(password),
+    },
+    {
+      id: "symbol",
+      label: "At least one symbol, such as ! @ # $ %",
+      met: /[\p{P}\p{S}]/u.test(password),
+    },
+    {
+      id: "match",
+      label: "Password confirmation matches",
+      met: password.length > 0 && password === confirmation,
+    },
+  ];
+}
+
 export default function SystemUsers() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [users, setUsers] = useState([]);
@@ -63,6 +95,17 @@ export default function SystemUsers() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [notice, setNotice] = useState("");
+  const passwordChecks = useMemo(
+    () => evaluatePassword(form.password, form.password_confirmation),
+    [form.password, form.password_confirmation],
+  );
+  const passwordChangeStarted = Boolean(form.password || form.password_confirmation);
+  const passwordReady = editingUser && !passwordChangeStarted
+    ? true
+    : passwordChecks.every((requirement) => requirement.met);
+  const passwordProgress = Math.round(
+    (passwordChecks.filter((requirement) => requirement.met).length / passwordChecks.length) * 100,
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -402,18 +445,69 @@ export default function SystemUsers() {
 
               <div className="form-field">
                 <label htmlFor="user_password">Password {editingUser && <span>Leave blank to keep</span>}</label>
-                <input id="user_password" name="password" type="password" value={form.password} onChange={updateForm} minLength="8" required={!editingUser} autoComplete="new-password" />
+                <input
+                  id="user_password"
+                  name="password"
+                  type="password"
+                  value={form.password}
+                  onChange={updateForm}
+                  minLength="12"
+                  maxLength="72"
+                  required={!editingUser}
+                  autoComplete="new-password"
+                  aria-describedby="password-requirements"
+                />
                 {fieldErrors.password && <small className="field-error">{fieldErrors.password[0]}</small>}
               </div>
 
               <div className="form-field">
                 <label htmlFor="password_confirmation">Confirm password</label>
-                <input id="password_confirmation" name="password_confirmation" type="password" value={form.password_confirmation} onChange={updateForm} minLength="8" required={!editingUser || Boolean(form.password)} autoComplete="new-password" />
+                <input
+                  id="password_confirmation"
+                  name="password_confirmation"
+                  type="password"
+                  value={form.password_confirmation}
+                  onChange={updateForm}
+                  minLength="12"
+                  maxLength="72"
+                  required={!editingUser || Boolean(form.password)}
+                  autoComplete="new-password"
+                  aria-describedby="password-requirements"
+                />
               </div>
+
+              {(!editingUser || passwordChangeStarted) && (
+                <div
+                  id="password-requirements"
+                  className="password-requirements form-field-full"
+                  aria-live="polite"
+                >
+                  <div className="password-requirements-header">
+                    <div>
+                      <strong>Password requirements</strong>
+                      <small>The server also rejects passwords exposed in known data breaches.</small>
+                    </div>
+                    <span>{passwordProgress}%</span>
+                  </div>
+                  <div className="password-strength-track" aria-hidden="true">
+                    <i style={{ width: `${passwordProgress}%` }} />
+                  </div>
+                  <ul>
+                    {passwordChecks.map((requirement) => (
+                      <li className={requirement.met ? "met" : ""} key={requirement.id}>
+                        {requirement.met
+                          ? <CheckCircle2 size={15} />
+                          : <Circle size={15} />}
+                        <span>{requirement.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="user-modal-actions">
                 <button type="button" className="secondary-action" onClick={closeModal}>Cancel</button>
-                <button type="submit" className="primary-action" disabled={saving}>
+                <button type="submit" className="primary-action" disabled={saving || !passwordReady}>
                   {saving ? "Saving…" : editingUser ? "Save changes" : "Create user"}
                 </button>
               </div>
