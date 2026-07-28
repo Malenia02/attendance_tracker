@@ -51,7 +51,12 @@ const menuSections = [
         icon: Building2,
         roles: ["Administrator", "HR"],
       },
-      { label: "Schedules", path: "/schedules", icon: CalendarDays },
+      {
+        label: "Schedules",
+        path: "/schedules",
+        icon: CalendarDays,
+        roles: ["Administrator", "HR"],
+      },
     ],
   },
   {

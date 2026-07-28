@@ -22,6 +22,7 @@
 @import "./styles/pages/dtr-monitoring.css";
 @import "./styles/pages/qr-attendance.css";
 @import "./styles/pages/departments.css";
+@import "./styles/pages/schedules.css";
 @import "./styles/pages/activity-logs.css";
 
 /* Cross-page phone and small-screen safeguards */

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DtrReopenController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\QrAttendanceController;
+use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SystemUserController;
 use Illuminate\Support\Facades\Route;
 
@@ -66,6 +67,15 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
 
     Route::middleware('role:Administrator,HR')->group(function (): void {
         Route::apiResource('/departments', DepartmentController::class)
+            ->except(['show']);
+
+        Route::post('/schedules/assignments', [ScheduleController::class, 'assign'])
+            ->middleware('throttle:20,1');
+        Route::delete(
+            '/schedules/assignments/{personnelSchedule}',
+            [ScheduleController::class, 'destroyAssignment']
+        );
+        Route::apiResource('/schedules', ScheduleController::class)
             ->except(['show']);
 
         Route::post('/holidays', [HolidayController::class, 'store']);

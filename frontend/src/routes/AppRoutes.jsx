@@ -12,6 +12,7 @@ import QrAttendance from "../pages/QrAttendance";
 import Departments from "../pages/Departments";
 import ActivityLogs from "../pages/ActivityLogs";
 import ErrorPage from "../pages/ErrorPage";
+import Schedules from "../pages/Schedules";
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -49,15 +50,7 @@ export default function AppRoutes() {
         <Route path="departments" element={<Departments />} />
         <Route path="calendar" element={<HolidayCalendar />} />
 
-        <Route
-          path="schedules"
-          element={
-            <PlaceholderPage
-              title="Schedules"
-              description="Manage Monday to Thursday work schedules and working hours."
-            />
-          }
-        />
+        <Route path="schedules" element={<Schedules />} />
 
         <Route path="dtr" element={<DtrMonitoring />} />
 
