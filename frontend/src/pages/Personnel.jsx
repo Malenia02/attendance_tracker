@@ -20,7 +20,6 @@ import { apiFetch } from "../lib/auth";
 
 const emptyForm = {
   employee_number: "",
-  biometric_number: "",
   first_name: "",
   middle_name: "",
   last_name: "",
@@ -148,7 +147,6 @@ export default function Personnel() {
     setEditingRecord(record);
     setForm({
       employee_number: record.employee_number || "",
-      biometric_number: record.biometric_number || "",
       first_name: record.first_name || "",
       middle_name: record.middle_name || "",
       last_name: record.last_name || "",
@@ -505,9 +503,6 @@ export default function Personnel() {
               <FormField label="Address" name="address" form={form} errors={fieldErrors} onChange={updateForm} full />
 
               <h3 className="form-section-title">Employment information</h3>
-              <FormField label="Employee number" name="employee_number" form={form} errors={fieldErrors} onChange={updateForm} required />
-              <FormField label="Biometric number" name="biometric_number" form={form} errors={fieldErrors} onChange={updateForm} />
-
               <div className="form-field">
                 <label htmlFor="personnel_type">Personnel type</label>
                 <select id="personnel_type" name="personnel_type" value={form.personnel_type} onChange={updateForm} required>
@@ -518,7 +513,13 @@ export default function Personnel() {
 
               <div className="form-field">
                 <label htmlFor="department_id">Department</label>
-                <select id="department_id" name="department_id" value={form.department_id} onChange={updateForm}>
+                <select
+                  id="department_id"
+                  name="department_id"
+                  value={form.department_id}
+                  onChange={updateForm}
+                  required={form.personnel_type === "GIP"}
+                >
                   <option value="">Not assigned</option>
                   {options.departments.map((department) => (
                     <option key={department.department_id} value={department.department_id}>
@@ -528,6 +529,36 @@ export default function Personnel() {
                 </select>
                 <FieldError errors={fieldErrors} name="department_id" />
               </div>
+
+              {form.personnel_type === "GIP" ? (
+                <div className="form-field form-field-full">
+                  <label htmlFor="employee_number">Employee number</label>
+                  <input
+                    id="employee_number"
+                    value={
+                      editingRecord?.personnel_type === "GIP"
+                        ? editingRecord.employee_number
+                        : "Generated automatically when saved"
+                    }
+                    readOnly
+                    aria-describedby="employee-number-hint"
+                  />
+                  <small id="employee-number-hint" className="field-hint">
+                    Uses GIP, office code, employment year, and a permanent sequence number.
+                  </small>
+                  <FieldError errors={fieldErrors} name="employee_number" />
+                </div>
+              ) : (
+                <FormField
+                  label="Official employee number"
+                  name="employee_number"
+                  form={form}
+                  errors={fieldErrors}
+                  onChange={updateForm}
+                  required
+                  full
+                />
+              )}
 
               <FormField label="Position title" name="position_title" form={form} errors={fieldErrors} onChange={updateForm} full />
               <FormField label="Employment start" name="employment_start_date" type="date" form={form} errors={fieldErrors} onChange={updateForm} />

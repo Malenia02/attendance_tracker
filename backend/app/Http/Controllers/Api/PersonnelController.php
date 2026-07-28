@@ -8,6 +8,7 @@ use App\Models\Personnel;
 use App\Support\PersonnelAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -86,6 +87,11 @@ class PersonnelController extends Controller
     {
         $validated = $request->validate($this->rules());
         unset($validated['remove_photo']);
+        $generateEmployeeNumber = $validated['personnel_type'] === 'GIP';
+
+        if ($generateEmployeeNumber) {
+            $validated['employee_number'] = 'PENDING-'.Str::uuid();
+        }
 
         $photoPath = $this->storePhoto($request);
 
@@ -98,7 +104,17 @@ class PersonnelController extends Controller
         $validated['qr_login_code'] = Str::random(64);
 
         try {
-            $personnel = Personnel::create($validated);
+            $personnel = DB::transaction(function () use ($validated, $generateEmployeeNumber): Personnel {
+                $personnel = Personnel::create($validated);
+
+                if ($generateEmployeeNumber) {
+                    $personnel->forceFill([
+                        'employee_number' => $this->generatedGipEmployeeNumber($personnel),
+                    ])->save();
+                }
+
+                return $personnel;
+            });
         } catch (Throwable $exception) {
             if ($photoPath) {
                 Storage::disk('local')->delete($photoPath);
@@ -119,6 +135,14 @@ class PersonnelController extends Controller
     {
         $validated = $request->validate($this->rules($personnel));
         unset($validated['remove_photo']);
+        $wasGip = $personnel->personnel_type === 'GIP';
+        $willBeGip = $validated['personnel_type'] === 'GIP';
+
+        if ($willBeGip) {
+            // Generated GIP numbers are immutable. A department transfer must
+            // not silently change the identity printed on existing records.
+            unset($validated['employee_number']);
+        }
 
         $oldPhotoPath = $personnel->photo;
         $newPhotoPath = $this->storePhoto($request);
@@ -132,7 +156,15 @@ class PersonnelController extends Controller
         }
 
         try {
-            $personnel->update($validated);
+            DB::transaction(function () use ($personnel, $validated, $wasGip, $willBeGip): void {
+                $personnel->update($validated);
+
+                if ($willBeGip && ! $wasGip) {
+                    $personnel->forceFill([
+                        'employee_number' => $this->generatedGipEmployeeNumber($personnel),
+                    ])->save();
+                }
+            });
         } catch (Throwable $exception) {
             if ($newPhotoPath) {
                 Storage::disk('local')->delete($newPhotoPath);
@@ -211,7 +243,8 @@ class PersonnelController extends Controller
     {
         return [
             'employee_number' => [
-                'required',
+                'nullable',
+                'required_unless:personnel_type,GIP',
                 'string',
                 'max:50',
                 Rule::unique('personnel', 'employee_number')
@@ -231,7 +264,12 @@ class PersonnelController extends Controller
             'sex' => ['nullable', Rule::in(self::SEX_OPTIONS)],
             'personnel_type' => ['required', Rule::in(self::TYPES)],
             'position_title' => ['nullable', 'string', 'max:150'],
-            'department_id' => ['nullable', 'integer', 'exists:departments,department_id'],
+            'department_id' => [
+                'nullable',
+                'required_if:personnel_type,GIP',
+                'integer',
+                'exists:departments,department_id',
+            ],
             'employment_start_date' => ['nullable', 'date'],
             'employment_end_date' => ['nullable', 'date', 'after_or_equal:employment_start_date'],
             'email' => [
@@ -254,6 +292,26 @@ class PersonnelController extends Controller
             'remove_photo' => ['sometimes', 'boolean'],
             'status' => ['required', Rule::in(self::STATUSES)],
         ];
+    }
+
+    private function generatedGipEmployeeNumber(Personnel $personnel): string
+    {
+        $departmentCode = (string) Department::query()
+            ->whereKey($personnel->department_id)
+            ->value('department_code');
+        $officeCode = trim(
+            (string) preg_replace('/[^A-Z0-9]+/', '-', Str::upper($departmentCode)),
+            '-'
+        );
+        $officeCode = Str::limit($officeCode ?: 'OFFICE', 15, '');
+        $year = $personnel->employment_start_date?->year ?? now()->year;
+
+        return sprintf(
+            'GIP-%s-%d-%04d',
+            $officeCode,
+            $year,
+            $personnel->personnel_id
+        );
     }
 
     private function formatPersonnel(Personnel $personnel): array
