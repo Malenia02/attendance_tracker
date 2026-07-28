@@ -520,16 +520,16 @@ class AttendanceController extends Controller
         $user = $request->user();
         $trustedQrScan = $request->attributes->get('trusted_qr_scan') === true;
 
-        if (! $trustedQrScan && (int) $user->personnel_id !== (int) $validated['personnel_id']) {
-            return response()->json([
-                'message' => 'You may only record attendance for your own personnel account.',
-            ], 403);
-        }
-
         if (! $trustedQrScan && ! $user->personnel_id) {
             return response()->json([
-                'message' => 'Your account is not linked to a personnel record.',
+                'message' => 'Your account is not linked to a personnel record. Link this system user to your personnel profile, or use the authorized QR Attendance kiosk.',
             ], 422);
+        }
+
+        if (! $trustedQrScan && (int) $user->personnel_id !== (int) $validated['personnel_id']) {
+            return response()->json([
+                'message' => 'You may only record attendance for your own personnel account. Use QR Attendance for another personnel member.',
+            ], 403);
         }
 
         $personnel = Personnel::query()

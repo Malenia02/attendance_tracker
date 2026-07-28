@@ -548,6 +548,11 @@
   background: linear-gradient(120deg, #087f9c, #0ea5a8);
 }
 
+.time-action-button.restricted {
+  background: linear-gradient(120deg, #40506c, #52627e);
+  box-shadow: none;
+}
+
 .half-day-period {
   margin-top: 4px;
   display: block;

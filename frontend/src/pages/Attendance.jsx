@@ -200,8 +200,15 @@ export default function Attendance() {
   const selectedLatestRequest = correctionRequests.find(
     (request) => request.attendance_id === selectedRecord?.attendance_id,
   );
-  const currentPersonnelId = currentUser?.personnel?.personnel_id;
-  const selectedRecordIsOwn = Number(currentPersonnelId) === Number(selectedRecord?.personnel_id);
+  const currentPersonnelId = options.current_user_personnel_id;
+  const hasLinkedPersonnel = currentPersonnelId !== null
+    && currentPersonnelId !== undefined
+    && currentPersonnelId !== "";
+  const selectedRecordIsOwn = hasLinkedPersonnel
+    && selectedRecord?.personnel_id !== null
+    && selectedRecord?.personnel_id !== undefined
+    && String(currentPersonnelId) === String(selectedRecord.personnel_id);
+  const timeActionRestricted = !hasLinkedPersonnel || !selectedRecordIsOwn;
   const isToday = selectedDate === today;
   const nextAction = selectedRecord?.next_action_label;
   const completed = Boolean(selectedRecord?.attendance_complete);
@@ -224,6 +231,16 @@ export default function Attendance() {
 
   async function recordTime() {
     if (!selectedPersonnelId || !isToday || dayClosed || !selectedRecord?.next_action) return;
+
+    if (!selectedRecordIsOwn) {
+      setPageError(
+        hasLinkedPersonnel
+          ? "You may only record attendance for your own personnel account. Use QR Attendance for another personnel member."
+          : "Your system account is not linked to a personnel profile. Link it in System Users, or use the authorized QR Attendance kiosk.",
+      );
+      return;
+    }
+
     setActionBusy(true);
     setPageError("");
 
@@ -588,34 +605,52 @@ export default function Attendance() {
 
               <button
                 type="button"
-                className={`time-action-button ${dayClosed ? "complete" : ""} ${isHalfDay ? "half-day" : ""}`}
+                className={`time-action-button ${dayClosed ? "complete" : ""} ${isHalfDay ? "half-day" : ""} ${timeActionRestricted ? "restricted" : ""}`}
                 onClick={recordTime}
-                disabled={actionBusy || dayClosed || !isToday || !selectedRecord.next_action}
+                disabled={
+                  actionBusy
+                  || dayClosed
+                  || !isToday
+                  || !selectedRecord.next_action
+                  || timeActionRestricted
+                }
               >
                 <span className="action-rings"><i></i><i></i></span>
-                {dayClosed ? <CheckCircle2 size={24} /> : <Fingerprint size={25} />}
+                {timeActionRestricted
+                  ? <ShieldCheck size={24} />
+                  : dayClosed
+                    ? <CheckCircle2 size={24} />
+                    : <Fingerprint size={25} />}
                 <div>
                   <strong>
-                    {!isToday
-                      ? "View only"
-                      : actionBusy
-                        ? "Recording…"
-                        : isHalfDay
-                          ? `${selectedRecord.half_day_period} half day recorded`
-                          : completed
-                            ? "Attendance complete"
-                          : nextAction || "Not available right now"}
+                    {!hasLinkedPersonnel
+                      ? "Personnel profile link required"
+                      : !selectedRecordIsOwn
+                        ? "Protected personnel attendance"
+                        : !isToday
+                          ? "View only"
+                          : actionBusy
+                            ? "Recording…"
+                            : isHalfDay
+                              ? `${selectedRecord.half_day_period} half day recorded`
+                              : completed
+                                ? "Attendance complete"
+                                : nextAction || "Not available right now"}
                   </strong>
                   <small>
-                    {!isToday
-                      ? "Time entries can only be recorded for today"
-                      : isHalfDay
-                        ? `Completed ${selectedRecord.half_day_period?.toLowerCase()} attendance session`
-                        : completed
-                          ? "All required entries are saved"
-                        : selectedRecord.next_action
-                          ? "Tap to use the current server time"
-                          : selectedRecord.action_message}
+                    {!hasLinkedPersonnel
+                      ? "Link this user in System Users, or record through QR Attendance"
+                      : !selectedRecordIsOwn
+                        ? "Administrators cannot clock in or out on behalf of another person"
+                        : !isToday
+                          ? "Time entries can only be recorded for today"
+                          : isHalfDay
+                            ? `Completed ${selectedRecord.half_day_period?.toLowerCase()} attendance session`
+                            : completed
+                              ? "All required entries are saved"
+                              : selectedRecord.next_action
+                                ? "Tap to use the current server time"
+                                : selectedRecord.action_message}
                   </small>
                 </div>
               </button>

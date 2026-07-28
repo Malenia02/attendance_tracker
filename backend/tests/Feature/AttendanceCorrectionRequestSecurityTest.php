@@ -291,6 +291,58 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_unlinked_system_user_gets_a_clear_time_log_error(): void
+    {
+        $personnel = Personnel::create([
+            'employee_number' => 'TIME-0001',
+            'first_name' => 'Time',
+            'last_name' => 'Employee',
+            'status' => 'Active',
+        ]);
+        $administrator = $this->createUser('unlinked-admin', 'Administrator');
+
+        $this->actingAs($administrator)
+            ->postJson('/api/attendance/time-log', [
+                'personnel_id' => $personnel->personnel_id,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Your account is not linked to a personnel record. Link this system user to your personnel profile, or use the authorized QR Attendance kiosk.'
+            );
+    }
+
+    public function test_system_user_cannot_record_time_for_another_personnel_member(): void
+    {
+        $linkedPersonnel = Personnel::create([
+            'employee_number' => 'TIME-0002',
+            'first_name' => 'Linked',
+            'last_name' => 'Employee',
+            'status' => 'Active',
+        ]);
+        $otherPersonnel = Personnel::create([
+            'employee_number' => 'TIME-0003',
+            'first_name' => 'Other',
+            'last_name' => 'Employee',
+            'status' => 'Active',
+        ]);
+        $administrator = $this->createUser(
+            'linked-admin',
+            'Administrator',
+            $linkedPersonnel->personnel_id
+        );
+
+        $this->actingAs($administrator)
+            ->postJson('/api/attendance/time-log', [
+                'personnel_id' => $otherPersonnel->personnel_id,
+            ])
+            ->assertForbidden()
+            ->assertJsonPath(
+                'message',
+                'You may only record attendance for your own personnel account. Use QR Attendance for another personnel member.'
+            );
+    }
+
     private function createMissingTimeOutFixture(): array
     {
         $date = now()->subDay()->toDateString();
