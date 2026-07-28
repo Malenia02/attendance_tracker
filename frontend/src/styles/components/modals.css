@@ -44,6 +44,15 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.form-modal {
+  height: min(760px, calc(100dvh - 48px));
+}
+
+.form-modal > .user-form {
+  min-height: 0;
+  max-height: none;
+}
+
 :where(.user-modal-header, .app-modal-header) {
   position: relative;
   z-index: 4;
@@ -423,6 +432,10 @@
     width: 100%;
     max-height: calc(100dvh - 16px);
     border-radius: 18px 18px 12px 12px;
+  }
+
+  .form-modal {
+    height: calc(100dvh - 16px);
   }
 
   .schedule-modal,

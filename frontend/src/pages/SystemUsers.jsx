@@ -393,7 +393,7 @@ export default function SystemUsers() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>
-          <div className="user-modal" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
+          <div className="user-modal form-modal" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
             <div className="user-modal-header">
               <div>
                 <span className="modal-icon"><KeyRound size={20} /></span>

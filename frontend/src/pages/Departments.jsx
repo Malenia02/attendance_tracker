@@ -299,7 +299,7 @@ export default function Departments() {
         <div className="modal-backdrop department-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>
-          <div className="user-modal department-modal" role="dialog" aria-modal="true" aria-labelledby="department-modal-title">
+          <div className="user-modal form-modal department-modal" role="dialog" aria-modal="true" aria-labelledby="department-modal-title">
             <div className="user-modal-header">
               <div>
                 <span className="modal-icon"><Building2 size={21} /></span>

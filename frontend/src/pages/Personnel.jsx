@@ -455,7 +455,7 @@ export default function Personnel() {
             if (event.target === event.currentTarget) closeModal();
           }}
         >
-          <div className="user-modal personnel-modal" role="dialog" aria-modal="true" aria-labelledby="personnel-modal-title">
+          <div className="user-modal form-modal personnel-modal" role="dialog" aria-modal="true" aria-labelledby="personnel-modal-title">
             <div className="user-modal-header">
               <div>
                 <span className="modal-icon"><IdCard size={21} /></span>

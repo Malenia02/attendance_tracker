@@ -471,7 +471,7 @@ export default function HolidayCalendar() {
         <div className="modal-backdrop holiday-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>
-          <div className="user-modal holiday-modal" role="dialog" aria-modal="true" aria-labelledby="holiday-modal-title">
+          <div className="user-modal form-modal holiday-modal" role="dialog" aria-modal="true" aria-labelledby="holiday-modal-title">
             <div className="user-modal-header">
               <div>
                 <span className="modal-icon"><CalendarCheck size={21} /></span>
