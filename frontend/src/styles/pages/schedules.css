@@ -2,7 +2,7 @@
 .schedules-page {
   display: grid;
   gap: 18px;
-  animation: schedulePageIn 0.42s ease both;
+  animation: schedulePageIn 0.42s ease;
 }
 
 @keyframes schedulePageIn {
@@ -532,17 +532,75 @@
   justify-content: flex-end;
 }
 
-.schedule-modal {
-  width: min(860px, calc(100vw - 28px));
+.schedule-modal-backdrop {
+  padding: 24px;
+  place-items: center;
+  overflow: hidden;
+}
+
+.schedule-modal,
+.assignment-modal {
+  width: min(900px, calc(100vw - 48px));
+  height: min(820px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 13px;
 }
 
 .schedule-form,
 .assignment-form {
-  max-height: min(730px, calc(100dvh - 105px));
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
   padding: 18px 20px 20px;
   display: grid;
+  align-content: start;
   gap: 16px;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(112, 132, 171, 0.58) transparent;
+  scrollbar-width: thin;
+}
+
+.schedule-form::-webkit-scrollbar,
+.assignment-form::-webkit-scrollbar {
+  width: 8px;
+}
+
+.schedule-form::-webkit-scrollbar-track,
+.assignment-form::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.schedule-form::-webkit-scrollbar-thumb,
+.assignment-form::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(112, 132, 171, 0.58);
+  background-clip: padding-box;
+}
+
+.schedule-modal .user-modal-header,
+.assignment-modal .user-modal-header {
+  position: relative;
+  z-index: 4;
+  min-width: 0;
+  padding: 18px 20px;
+  background: var(--bg-card);
+}
+
+.schedule-modal .user-modal-actions,
+.assignment-modal .user-modal-actions {
+  position: sticky;
+  z-index: 4;
+  bottom: -20px;
+  margin: 2px -20px -20px;
+  padding: 14px 20px;
+  box-shadow: 0 -10px 24px rgba(1, 22, 61, 0.06);
 }
 
 .schedule-form-section {
@@ -571,12 +629,12 @@
 
 .schedule-form-section-title strong {
   color: var(--text);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .schedule-form-section-title small {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .schedule-form-grid,
@@ -609,7 +667,7 @@
 .assignment-form label,
 .attendance-window-card label {
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 750;
 }
 
@@ -633,7 +691,7 @@
   color: var(--text);
   background: var(--bg-card);
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .schedule-form input:focus,
@@ -714,7 +772,8 @@
 }
 
 .assignment-modal {
-  width: min(760px, calc(100vw - 28px));
+  width: min(780px, calc(100vw - 48px));
+  height: min(720px, calc(100dvh - 48px));
 }
 
 .assignment-picker-heading {
@@ -860,10 +919,31 @@
   .schedule-assignment-header > div:last-child { flex-direction: column; }
   .schedule-assignment-header label,
   .schedule-assignment-header select { width: 100%; min-height: 44px; }
+  .schedule-modal-backdrop {
+    padding:
+      max(8px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
   .schedule-modal,
-  .assignment-modal { width: 100%; max-height: calc(100dvh - 16px); }
+  .assignment-modal {
+    width: 100%;
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px;
+  }
   .schedule-form,
-  .assignment-form { max-height: calc(100dvh - 82px); padding: 14px; }
+  .assignment-form { padding: 14px; }
+  .schedule-modal .user-modal-actions,
+  .assignment-modal .user-modal-actions {
+    bottom: -14px;
+    margin: 2px -14px -14px;
+    padding:
+      12px
+      14px
+      max(12px, env(safe-area-inset-bottom));
+  }
   .schedule-form-grid,
   .schedule-time-grid { grid-template-columns: 1fr; }
   .schedule-day-picker { grid-template-columns: repeat(4, minmax(0, 1fr)); }
