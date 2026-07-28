@@ -71,6 +71,7 @@ export default function DtrMonitoring() {
   const [meta, setMeta] = useState({
     month_label: "",
     can_certify: false,
+    can_verify_attendance: false,
     can_correct_attendance: false,
     can_generate: false,
     can_manage_others: false,
@@ -102,6 +103,7 @@ export default function DtrMonitoring() {
         setMeta({
           month_label: payload.month_label,
           can_certify: payload.can_certify,
+          can_verify_attendance: payload.can_verify_attendance,
           can_correct_attendance: payload.can_correct_attendance,
           can_generate: payload.can_generate,
           can_manage_others: payload.can_manage_others,
@@ -570,6 +572,7 @@ export default function DtrMonitoring() {
           row={selected}
           monthLabel={meta.month_label}
           canCertify={meta.can_certify}
+          canVerify={meta.can_verify_attendance}
           canCorrect={meta.can_correct_attendance}
           canRequestReopen={meta.can_request_reopen}
           canApproveReopen={meta.can_approve_reopen}
@@ -597,6 +600,7 @@ function DtrDetails({
   row,
   monthLabel,
   canCertify,
+  canVerify,
   canCorrect,
   canRequestReopen,
   canApproveReopen,
@@ -623,8 +627,12 @@ function DtrDetails({
     ["Missing", "Incomplete"].includes(day.status)
     || (day.is_duty_day && !["Missing", "Holiday"].includes(day.status) && !day.is_verified)
   ));
+  const verificationOpen = ["Draft", "Returned", "Reopened"].includes(
+    row.certification.status,
+  );
   const verifiableDays = problemDays.filter((day) => (
-    day.attendance_id
+    verificationOpen
+    && day.attendance_id
     && !day.is_verified
     && !["Missing", "Incomplete"].includes(day.status)
   ));
@@ -739,7 +747,7 @@ function DtrDetails({
               </span>
             </div>
             <div className="dtr-correction-actions">
-              {!!verifiableDays.length && canCertify && (
+              {!!verifiableDays.length && canVerify && (
                 <button
                   type="button"
                   disabled={exceptionBusy}
@@ -782,7 +790,17 @@ function DtrDetails({
                 {day.is_verified ? <BadgeCheck size={13} /> : <TimerReset size={13} />}
                 {day.is_verified ? "Verified" : "Unverified"}
               </span>
-              {problemDays.some((problem) => problem.date === day.date) && (
+              {verifiableDays.some((candidate) => candidate.date === day.date) && canVerify ? (
+                <button
+                  type="button"
+                  className="dtr-review-day verify"
+                  disabled={exceptionBusy}
+                  onClick={() => onVerifyBulk([day.attendance_id])}
+                  aria-label={`Verify attendance for ${day.date}`}
+                >
+                  Verify <CheckCheck size={12} />
+                </button>
+              ) : problemDays.some((problem) => problem.date === day.date) && (
                 <button
                   type="button"
                   className="dtr-review-day"

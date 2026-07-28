@@ -816,6 +816,22 @@
   font-weight: 750;
 }
 
+.dtr-review-day.verify {
+  color: #157347;
+  border-color: rgba(21, 115, 71, 0.22);
+  background: rgba(21, 115, 71, 0.08);
+}
+
+.dtr-review-day.verify:hover {
+  border-color: rgba(21, 115, 71, 0.36);
+  background: rgba(21, 115, 71, 0.14);
+}
+
+.dtr-review-day:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .dtr-reopen-review-actions .reject-reopen {
   color: #b42318;
   border: 1px solid rgba(180, 35, 24, 0.2);

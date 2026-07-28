@@ -271,6 +271,51 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
         ]);
     }
 
+    public function test_hr_can_verify_another_personnel_attendance(): void
+    {
+        [, $attendance, $date] = $this->createMissingTimeOutFixture();
+        $attendance->forceFill([
+            'morning_time_out' => $date.' 12:00:00',
+            'afternoon_time_in' => $date.' 13:00:00',
+            'afternoon_time_out' => $date.' 17:00:00',
+            'attendance_status' => 'Present',
+        ])->save();
+        $hr = $this->createUser('hr-attendance-reviewer', 'HR');
+
+        $this->actingAs($hr)
+            ->patchJson("/api/attendance/{$attendance->attendance_id}/verify")
+            ->assertOk()
+            ->assertJsonPath('data.is_verified', true);
+
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $attendance->attendance_id,
+            'is_verified' => true,
+            'verified_by' => $hr->user_id,
+        ]);
+    }
+
+    public function test_hr_cannot_verify_own_attendance(): void
+    {
+        [$employee, $attendance] = $this->createMissingTimeOutFixture();
+        $personnelId = $employee->personnel_id;
+        $employee->delete();
+        $hr = $this->createUser('hr-own-attendance', 'HR', $personnelId);
+
+        $this->actingAs($hr)
+            ->patchJson("/api/attendance/{$attendance->attendance_id}/verify")
+            ->assertForbidden()
+            ->assertJsonPath(
+                'message',
+                'You cannot verify your own attendance record. A different authorized reviewer is required.'
+            );
+
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $attendance->attendance_id,
+            'is_verified' => false,
+            'verified_by' => null,
+        ]);
+    }
+
     public function test_personnel_user_cannot_review_a_request(): void
     {
         [$employee, , $date] = $this->createMissingTimeOutFixture();

@@ -35,7 +35,8 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     )->middleware(['role:Administrator,HR', 'throttle:20,1']);
     Route::post('/attendance/time-log', [AttendanceController::class, 'recordTime'])
         ->middleware('throttle:12,1');
-    Route::patch('/attendance/{attendance}/verify', [AttendanceController::class, 'verify']);
+    Route::patch('/attendance/{attendance}/verify', [AttendanceController::class, 'verify'])
+        ->middleware(['role:Administrator,HR,Supervisor', 'throttle:20,1']);
     Route::post('/attendance/verify-bulk', [AttendanceController::class, 'verifyBulk'])
         ->middleware(['role:Administrator,HR,Supervisor', 'throttle:20,1']);
     Route::post('/attendance/correction', [AttendanceController::class, 'correct'])

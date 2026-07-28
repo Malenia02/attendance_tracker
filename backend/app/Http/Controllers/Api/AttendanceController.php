@@ -648,6 +648,12 @@ class AttendanceController extends Controller
             ], 403);
         }
 
+        if ((int) $request->user()->personnel_id === (int) $attendance->personnel_id) {
+            return response()->json([
+                'message' => 'You cannot verify your own attendance record. A different authorized reviewer is required.',
+            ], 403);
+        }
+
         $certification = DtrCertification::query()
             ->where('personnel_id', $attendance->personnel_id)
             ->where('dtr_year', $attendance->attendance_date->year)
@@ -740,6 +746,12 @@ class AttendanceController extends Controller
             if (! $record->personnel || ! PersonnelAccess::canAccess($request->user(), $record->personnel)) {
                 return response()->json([
                     'message' => 'One or more attendance records are outside your assigned office scope.',
+                ], 403);
+            }
+
+            if ((int) $request->user()->personnel_id === (int) $record->personnel_id) {
+                return response()->json([
+                    'message' => 'You cannot verify your own attendance record. A different authorized reviewer is required.',
                 ], 403);
             }
 

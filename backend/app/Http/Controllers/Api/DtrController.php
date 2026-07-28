@@ -108,6 +108,7 @@ class DtrController extends Controller
             'timezone' => config('app.timezone'),
             'can_manage_others' => $canManageOthers,
             'can_certify' => in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true),
+            'can_verify_attendance' => in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true),
             'can_correct_attendance' => in_array($user->user_role, ['Administrator', 'HR'], true),
             'can_generate' => $user->user_role === 'Administrator',
             'can_request_reopen' => in_array($user->user_role, ['Administrator', 'HR'], true),
