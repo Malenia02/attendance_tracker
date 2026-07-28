@@ -40,33 +40,44 @@ export default function AttendanceCorrectionRequestModal({
   }
 
   return (
-    <div className="attendance-request-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop attendance-request-backdrop" role="presentation" onMouseDown={onClose}>
       <form
-        className="attendance-request-modal"
+        className="app-modal attendance-request-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="attendance-request-title"
         onSubmit={isReview ? (event) => event.preventDefault() : submitEmployeeRequest}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header>
-          <div>
-            <span>{isReview ? "HR correction review" : "Employee correction request"}</span>
-            <h2>{isReview ? request.personnel?.full_name : record.full_name}</h2>
-            <p>
-              {new Date(`${isReview ? request.attendance_date : date}T00:00:00`)
-                .toLocaleDateString("en-PH", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-            </p>
+        <header className="app-modal-header">
+          <div className="app-modal-heading">
+            <span className="app-modal-icon"><ShieldCheck size={20} /></span>
+            <div>
+              <span className="app-modal-eyebrow">
+                {isReview ? "HR correction review" : "Employee correction request"}
+              </span>
+              <h2 id="attendance-request-title">
+                {isReview ? request.personnel?.full_name : record.full_name}
+              </h2>
+              <p>
+                {new Date(`${isReview ? request.attendance_date : date}T00:00:00`)
+                  .toLocaleDateString("en-PH", {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+              </p>
+            </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close correction request">
             <X size={18} />
           </button>
         </header>
 
-        {isReview ? (
-          <>
+        <div className="app-modal-body">
+          {isReview ? (
+            <>
             <div className="attendance-request-review-grid">
               <div>
                 <small>Missing entry</small>
@@ -107,7 +118,7 @@ export default function AttendanceCorrectionRequestModal({
               remains unverified and requires a different authorized reviewer.
             </div>
 
-            <footer className="review-actions">
+            <footer className="app-modal-footer review-actions">
               <button type="button" onClick={onClose}>Cancel</button>
               <button
                 type="button"
@@ -132,9 +143,9 @@ export default function AttendanceCorrectionRequestModal({
                 <CheckCircle2 size={15} />{busy ? "Processing…" : "Approve"}
               </button>
             </footer>
-          </>
-        ) : (
-          <>
+            </>
+          ) : (
+            <>
             <div className="attendance-request-warning">
               <AlertTriangle size={18} />
               <div>
@@ -183,7 +194,7 @@ export default function AttendanceCorrectionRequestModal({
               Your account, submission time, IP address, and device information are recorded for audit.
             </div>
 
-            <footer>
+            <footer className="app-modal-footer">
               <button type="button" onClick={onClose}>Cancel</button>
               <button
                 type="submit"
@@ -193,8 +204,9 @@ export default function AttendanceCorrectionRequestModal({
                 {busy ? "Submitting…" : "Submit to HR"}
               </button>
             </footer>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </form>
     </div>
   );

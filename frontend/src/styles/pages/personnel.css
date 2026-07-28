@@ -83,6 +83,38 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.personnel-number-mode {
+  gap: 7px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card-soft);
+  cursor: pointer;
+}
+
+.personnel-number-mode > span:first-child {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personnel-number-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.user-form .personnel-number-toggle input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  padding: 0;
+  accent-color: var(--primary);
+}
+
 .personnel-photo-field {
   grid-column: 1 / -1;
   padding: 18px;

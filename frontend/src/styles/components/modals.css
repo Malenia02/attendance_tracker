@@ -1,0 +1,501 @@
+/* Shared modal design system */
+
+:where(
+  .modal-backdrop,
+  .attendance-correction-backdrop,
+  .attendance-request-backdrop
+) {
+  position: fixed;
+  inset: 0;
+  z-index: 1750;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(65, 84, 241, 0.14), transparent 36%),
+    rgba(6, 17, 38, 0.68);
+  backdrop-filter: blur(7px) saturate(115%);
+  animation: appModalBackdropIn 0.2s ease both;
+}
+
+:where(.user-modal, .app-modal) {
+  width: min(100%, 650px);
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, var(--primary) 14%);
+  border-radius: 16px;
+  color: var(--text-body);
+  background: var(--bg-card);
+  box-shadow:
+    0 30px 80px rgba(1, 22, 61, 0.3),
+    0 3px 12px rgba(1, 22, 61, 0.12);
+  animation: appModalIn 0.28s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+}
+
+.app-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.user-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+:where(.user-modal-header, .app-modal-header) {
+  position: relative;
+  z-index: 4;
+  min-width: 0;
+  padding: 19px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  background:
+    linear-gradient(135deg, rgba(65, 84, 241, 0.08), transparent 58%),
+    var(--bg-card);
+}
+
+:where(.user-modal-header, .app-modal-header) > :first-child,
+.app-modal-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-modal-heading > div {
+  min-width: 0;
+}
+
+:where(.modal-icon, .app-modal-icon) {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  border: 1px solid rgba(65, 84, 241, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(65, 84, 241, 0.15), rgba(65, 84, 241, 0.06));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.35);
+}
+
+:where(.user-modal-header, .app-modal-header) h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-main);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+:where(.user-modal-header, .app-modal-header) p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.app-modal-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--primary);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.65px;
+  text-transform: uppercase;
+}
+
+:where(.user-modal-header, .app-modal-header) > button,
+.dtr-detail-drawer > header > button {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-soft);
+  background: var(--bg-card-soft);
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+:where(.user-modal-header, .app-modal-header) > button:hover,
+.dtr-detail-drawer > header > button:hover {
+  color: var(--primary);
+  border-color: rgba(65, 84, 241, 0.28);
+  background: rgba(65, 84, 241, 0.08);
+  transform: rotate(4deg);
+}
+
+.user-modal:not(.schedule-modal, .assignment-modal) > .user-form,
+.activity-detail-body,
+.app-modal-body {
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(112, 132, 171, 0.58) transparent;
+}
+
+.app-modal-body {
+  padding: 22px;
+}
+
+:where(
+  .user-modal:not(.schedule-modal, .assignment-modal) > .user-form,
+  .activity-detail-body,
+  .app-modal-body
+)::-webkit-scrollbar {
+  width: 8px;
+}
+
+:where(
+  .user-modal:not(.schedule-modal, .assignment-modal) > .user-form,
+  .activity-detail-body,
+  .app-modal-body
+)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:where(
+  .user-modal:not(.schedule-modal, .assignment-modal) > .user-form,
+  .activity-detail-body,
+  .app-modal-body
+)::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(112, 132, 171, 0.58);
+  background-clip: padding-box;
+}
+
+.user-form {
+  padding: 22px;
+  gap: 17px;
+}
+
+:where(.user-form, .app-modal-body) label {
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+:where(.user-form, .app-modal-body) :is(input, select, textarea) {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: 0;
+  color: var(--text-body);
+  background: var(--bg-card-soft);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+:where(.user-form, .app-modal-body) :is(input, select) {
+  padding-right: 11px;
+  padding-left: 11px;
+}
+
+:where(.user-form, .app-modal-body) textarea {
+  min-height: 94px;
+  padding: 11px 12px;
+  resize: vertical;
+}
+
+:where(.user-form, .app-modal-body) :is(input, select, textarea):focus {
+  border-color: rgba(65, 84, 241, 0.58);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 3px rgba(65, 84, 241, 0.11);
+}
+
+:where(.user-modal-actions, .app-modal-footer) {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  padding: 15px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-card-soft) 94%, transparent), var(--bg-card-soft));
+  box-shadow: 0 -10px 26px rgba(1, 22, 61, 0.06);
+}
+
+.user-modal-actions {
+  grid-column: 1 / -1;
+  bottom: -22px;
+  margin: 4px -22px -22px;
+}
+
+.app-modal-footer button {
+  min-height: 40px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-soft);
+  background: var(--bg-card);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.app-modal-footer :is(.save, .submit, .approve) {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(120deg, #4154f1, #2675e8);
+  box-shadow: 0 8px 18px rgba(65, 84, 241, 0.2);
+}
+
+.app-modal-footer .reject {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.2);
+  background: rgba(180, 35, 24, 0.06);
+}
+
+.app-modal-footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.attendance-correction-modal,
+.attendance-request-modal {
+  width: min(100%, 610px);
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+}
+
+.attendance-correction-times {
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 11px;
+}
+
+.attendance-correction-modal .app-modal-body > label,
+.attendance-request-modal .app-modal-body > label {
+  margin-top: 13px;
+  display: grid;
+  gap: 7px;
+}
+
+.attendance-correction-modal .app-modal-body > label:first-child,
+.attendance-request-modal .app-modal-body > label:first-child {
+  margin-top: 0;
+}
+
+.attendance-correction-modal textarea {
+  margin-bottom: 0;
+}
+
+.attendance-request-modal .app-modal-body > .app-modal-footer {
+  bottom: -22px;
+  margin: 18px -22px -22px;
+}
+
+.dtr-modal-backdrop {
+  background:
+    radial-gradient(circle at 90% 8%, rgba(65, 84, 241, 0.12), transparent 32%),
+    rgba(6, 17, 38, 0.68);
+  backdrop-filter: blur(7px) saturate(115%);
+}
+
+.dtr-detail-drawer {
+  border-left: 1px solid color-mix(in srgb, var(--border) 86%, var(--primary) 14%);
+  background: var(--bg-main);
+  box-shadow: -28px 0 70px rgba(1, 22, 61, 0.25);
+}
+
+.dtr-detail-drawer > header {
+  padding: 19px 22px;
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(65, 84, 241, 0.08), transparent 58%),
+    var(--bg-card);
+}
+
+.dtr-detail-drawer > header h2 {
+  font-size: 18px;
+}
+
+.schedule-modal,
+.assignment-modal {
+  border-radius: 16px;
+}
+
+.schedule-modal .user-modal-header,
+.assignment-modal .user-modal-header {
+  background:
+    linear-gradient(135deg, rgba(65, 84, 241, 0.08), transparent 58%),
+    var(--bg-card);
+}
+
+.confirm-modal {
+  width: min(100%, 480px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.confirm-modal-icon {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.18);
+  background: rgba(245, 158, 11, 0.11);
+}
+
+.confirm-modal-body {
+  padding: 22px;
+}
+
+.confirm-modal-body p {
+  margin: 0;
+  color: var(--text-body);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.confirm-modal-body small {
+  display: block;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.confirm-modal-actions .confirm-danger,
+.confirm-modal-actions .confirm-warning {
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(180, 35, 24, 0.16);
+}
+
+.confirm-modal-actions .confirm-danger {
+  background: linear-gradient(120deg, #d92d20, #b42318);
+}
+
+.confirm-modal-actions .confirm-warning {
+  background: linear-gradient(120deg, #d97706, #b45309);
+}
+
+@keyframes appModalBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes appModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  :where(
+    .modal-backdrop,
+    .attendance-correction-backdrop,
+    .attendance-request-backdrop
+  ) {
+    padding:
+      max(8px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+    place-items: end center;
+  }
+
+  :where(.user-modal, .app-modal, .schedule-modal, .assignment-modal) {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: 18px 18px 12px 12px;
+  }
+
+  .schedule-modal,
+  .assignment-modal {
+    height: calc(100dvh - 16px);
+  }
+
+  :where(.user-modal-header, .app-modal-header) {
+    padding: 15px 16px;
+  }
+
+  :where(.modal-icon, .app-modal-icon) {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+    border-radius: 11px;
+  }
+
+  :where(.user-modal-header, .app-modal-header) h2 {
+    font-size: 16px;
+  }
+
+  .user-form,
+  .app-modal-body {
+    padding: 16px;
+  }
+
+  :where(.user-modal-actions, .app-modal-footer) {
+    padding:
+      12px
+      16px
+      max(12px, env(safe-area-inset-bottom));
+  }
+
+  .user-modal-actions {
+    bottom: -16px;
+    margin: 2px -16px -16px;
+  }
+
+  .attendance-request-modal .app-modal-body > .app-modal-footer {
+    bottom: -16px;
+    margin: 16px -16px -16px;
+  }
+
+  :where(.user-modal-actions, .app-modal-footer) button {
+    min-height: 44px;
+    flex: 1;
+  }
+
+  .attendance-correction-times,
+  .attendance-request-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dtr-detail-drawer {
+    width: 100%;
+    max-width: 100%;
+    border-left: 0;
+  }
+
+  .dtr-detail-drawer > header {
+    padding: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(
+    .modal-backdrop,
+    .attendance-correction-backdrop,
+    .attendance-request-backdrop,
+    .user-modal,
+    .app-modal
+  ) {
+    animation: none;
+  }
+}

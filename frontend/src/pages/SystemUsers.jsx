@@ -12,6 +12,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
+import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 
 const emptyForm = {
@@ -45,6 +46,7 @@ async function readResponse(response) {
 }
 
 export default function SystemUsers() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const [users, setUsers] = useState([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0, locked: 0 });
   const [options, setOptions] = useState({ roles: [], statuses: [], personnel: [] });
@@ -199,9 +201,12 @@ export default function SystemUsers() {
   }
 
   async function deleteUser(user) {
-    const confirmed = window.confirm(
-      `Delete the system account “${user.username}”? This action cannot be undone.`,
-    );
+    const confirmed = await confirm({
+      title: "Delete system account?",
+      message: `Delete the system account “${user.username}”?`,
+      note: "This removes the account’s access and cannot be undone.",
+      confirmLabel: "Delete account",
+    });
     if (!confirmed) return;
 
     setDeletingId(user.user_id);
@@ -416,6 +421,7 @@ export default function SystemUsers() {
           </div>
         </div>
       )}
+      {confirmationDialog}
     </section>
   );
 }

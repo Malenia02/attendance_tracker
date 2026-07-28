@@ -138,6 +138,60 @@ class PersonnelNumberingSecurityTest extends TestCase
             ->assertJsonValidationErrors('employee_number');
     }
 
+    public function test_other_personnel_types_can_use_automatic_numbering(): void
+    {
+        $department = $this->department();
+        $administrator = $this->administrator();
+        $types = [
+            'Regular' => 'REG',
+            'Contractual' => 'CON',
+            'Job Order' => 'JO',
+            'Casual' => 'CAS',
+            'Other' => 'OTH',
+        ];
+        $sequence = 1;
+
+        foreach ($types as $type => $prefix) {
+            $this->actingAs($administrator)
+                ->postJson('/api/personnel', [
+                    'auto_generate_employee_number' => true,
+                    'first_name' => $prefix,
+                    'last_name' => 'Employee',
+                    'personnel_type' => $type,
+                    'department_id' => $department->department_id,
+                    'employment_start_date' => '2026-07-01',
+                    'status' => 'Active',
+                ])
+                ->assertCreated()
+                ->assertJsonPath(
+                    'data.employee_number',
+                    sprintf('%s-ZSP-2026-%04d', $prefix, $sequence)
+                );
+
+            $sequence++;
+        }
+    }
+
+    public function test_non_gip_personnel_can_keep_an_official_employee_number(): void
+    {
+        $this->actingAs($this->administrator())
+            ->postJson('/api/personnel', [
+                'auto_generate_employee_number' => false,
+                'employee_number' => 'DILG-OFFICIAL-105',
+                'first_name' => 'Official',
+                'last_name' => 'Employee',
+                'personnel_type' => 'Regular',
+                'status' => 'Active',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.employee_number', 'DILG-OFFICIAL-105');
+
+        $this->assertDatabaseHas('personnel', [
+            'employee_number' => 'DILG-OFFICIAL-105',
+            'personnel_type' => 'Regular',
+        ]);
+    }
+
     private function department(): Department
     {
         return Department::create([

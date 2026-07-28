@@ -85,9 +85,10 @@ class PersonnelController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate($this->rules());
-        unset($validated['remove_photo']);
-        $generateEmployeeNumber = $validated['personnel_type'] === 'GIP';
+        $validated = $request->validate($this->rules($request));
+        $generateEmployeeNumber = $validated['personnel_type'] === 'GIP'
+            || $request->boolean('auto_generate_employee_number');
+        unset($validated['remove_photo'], $validated['auto_generate_employee_number']);
 
         if ($generateEmployeeNumber) {
             $validated['employee_number'] = 'PENDING-'.Str::uuid();
@@ -109,7 +110,7 @@ class PersonnelController extends Controller
 
                 if ($generateEmployeeNumber) {
                     $personnel->forceFill([
-                        'employee_number' => $this->generatedGipEmployeeNumber($personnel),
+                        'employee_number' => $this->generatedEmployeeNumber($personnel),
                     ])->save();
                 }
 
@@ -133,8 +134,8 @@ class PersonnelController extends Controller
 
     public function update(Request $request, Personnel $personnel): JsonResponse
     {
-        $validated = $request->validate($this->rules($personnel));
-        unset($validated['remove_photo']);
+        $validated = $request->validate($this->rules($request, $personnel));
+        unset($validated['remove_photo'], $validated['auto_generate_employee_number']);
         $wasGip = $personnel->personnel_type === 'GIP';
         $willBeGip = $validated['personnel_type'] === 'GIP';
 
@@ -161,7 +162,7 @@ class PersonnelController extends Controller
 
                 if ($willBeGip && ! $wasGip) {
                     $personnel->forceFill([
-                        'employee_number' => $this->generatedGipEmployeeNumber($personnel),
+                        'employee_number' => $this->generatedEmployeeNumber($personnel),
                     ])->save();
                 }
             });
@@ -239,12 +240,16 @@ class PersonnelController extends Controller
         );
     }
 
-    private function rules(?Personnel $personnel = null): array
+    private function rules(Request $request, ?Personnel $personnel = null): array
     {
+        $autoGenerateEmployeeNumber = $request->input('personnel_type') === 'GIP'
+            || $request->boolean('auto_generate_employee_number');
+
         return [
+            'auto_generate_employee_number' => ['sometimes', 'boolean'],
             'employee_number' => [
                 'nullable',
-                'required_unless:personnel_type,GIP',
+                Rule::requiredIf(! $autoGenerateEmployeeNumber),
                 'string',
                 'max:50',
                 Rule::unique('personnel', 'employee_number')
@@ -266,7 +271,7 @@ class PersonnelController extends Controller
             'position_title' => ['nullable', 'string', 'max:150'],
             'department_id' => [
                 'nullable',
-                'required_if:personnel_type,GIP',
+                Rule::requiredIf($autoGenerateEmployeeNumber),
                 'integer',
                 'exists:departments,department_id',
             ],
@@ -294,7 +299,7 @@ class PersonnelController extends Controller
         ];
     }
 
-    private function generatedGipEmployeeNumber(Personnel $personnel): string
+    private function generatedEmployeeNumber(Personnel $personnel): string
     {
         $departmentCode = (string) Department::query()
             ->whereKey($personnel->department_id)
@@ -305,9 +310,18 @@ class PersonnelController extends Controller
         );
         $officeCode = Str::limit($officeCode ?: 'OFFICE', 15, '');
         $year = $personnel->employment_start_date?->year ?? now()->year;
+        $prefix = match ($personnel->personnel_type) {
+            'GIP' => 'GIP',
+            'Regular' => 'REG',
+            'Contractual' => 'CON',
+            'Job Order' => 'JO',
+            'Casual' => 'CAS',
+            default => 'OTH',
+        };
 
         return sprintf(
-            'GIP-%s-%d-%04d',
+            '%s-%s-%d-%04d',
+            $prefix,
             $officeCode,
             $year,
             $personnel->personnel_id

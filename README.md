@@ -12,7 +12,7 @@ days unless an authorized office-specific working day is created.
 ## Main features
 
 - Modern role-aware dashboard
-- Personnel directory with private photo uploads and automatic GIP employee numbers
+- Personnel directory with private photo uploads and optional automatic employee numbers
 - Departments and offices with GPS coordinates and allowed radius
 - Morning and afternoon time in/time out
 - Automatic late, undertime, half-day, absence, holiday, and rest-day handling

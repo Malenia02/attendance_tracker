@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import DilgSeal from "../components/branding/DilgSeal";
+import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import { formatDuration } from "../lib/duration";
 
@@ -221,6 +222,7 @@ function getDevicePosition() {
 }
 
 export default function QrAttendance() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const [data, setData] = useState({
     summary: { active_personnel: 0, accepted_today: 0, rejected_today: 0, duplicates_today: 0 },
     recent_scans: [],
@@ -406,7 +408,13 @@ export default function QrAttendance() {
 
   async function regenerateCard(person) {
     const confirmation = person.has_qr
-      ? window.confirm(`Regenerate ${person.full_name}'s QR card? The previous printed card will stop working.`)
+      ? await confirm({
+        title: "Regenerate QR credential?",
+        message: `Generate a new secure QR card for ${person.full_name}?`,
+        note: "The previous printed card will stop working immediately.",
+        confirmLabel: "Regenerate QR",
+        tone: "warning",
+      })
       : true;
     if (!confirmation) return;
 
@@ -623,6 +631,7 @@ export default function QrAttendance() {
           </table>
         </div>
       </div>
+      {confirmationDialog}
     </section>
   );
 }

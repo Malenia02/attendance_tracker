@@ -16,6 +16,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 
 const days = [
@@ -96,6 +97,7 @@ function FieldError({ errors, name }) {
 }
 
 export default function Schedules() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const [schedules, setSchedules] = useState([]);
   const [personnel, setPersonnel] = useState([]);
   const [summary, setSummary] = useState({
@@ -254,7 +256,13 @@ export default function Schedules() {
   }
 
   async function deleteSchedule(schedule) {
-    if (!window.confirm(`Remove the schedule “${schedule.schedule_name}”?`)) return;
+    const confirmed = await confirm({
+      title: "Remove work schedule?",
+      message: `Remove the schedule “${schedule.schedule_name}”?`,
+      note: "Assigned personnel must be moved to another schedule before removal.",
+      confirmLabel: "Remove schedule",
+    });
+    if (!confirmed) return;
     setDeletingId(`schedule-${schedule.schedule_id}`);
     setPageError("");
 
@@ -325,7 +333,14 @@ export default function Schedules() {
 
   async function removeAssignment(person) {
     const assignment = person.current_assignment;
-    if (!assignment || !window.confirm(`Remove ${person.full_name}’s current schedule assignment?`)) return;
+    if (!assignment) return;
+    const confirmed = await confirm({
+      title: "Remove schedule assignment?",
+      message: `Remove ${person.full_name}’s current schedule assignment?`,
+      note: "Attendance rules will fall back to the applicable default schedule.",
+      confirmLabel: "Remove assignment",
+    });
+    if (!confirmed) return;
 
     setDeletingId(`assignment-${assignment.personnel_schedule_id}`);
     setPageError("");
@@ -636,6 +651,7 @@ export default function Schedules() {
           </div>
         </div>
       )}
+      {confirmationDialog}
     </section>
   );
 }

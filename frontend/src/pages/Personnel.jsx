@@ -16,10 +16,12 @@ import {
   Users,
   X,
 } from "lucide-react";
+import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 
 const emptyForm = {
   employee_number: "",
+  auto_generate_employee_number: "1",
   first_name: "",
   middle_name: "",
   last_name: "",
@@ -49,6 +51,7 @@ async function readResponse(response) {
 }
 
 export default function Personnel() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, gip: 0, other_staff: 0 });
   const [options, setOptions] = useState({
@@ -147,6 +150,7 @@ export default function Personnel() {
     setEditingRecord(record);
     setForm({
       employee_number: record.employee_number || "",
+      auto_generate_employee_number: "0",
       first_name: record.first_name || "",
       middle_name: record.middle_name || "",
       last_name: record.last_name || "",
@@ -182,7 +186,13 @@ export default function Personnel() {
 
   function updateForm(event) {
     const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+      ...(name === "personnel_type" && value === "GIP"
+        ? { auto_generate_employee_number: "1" }
+        : {}),
+    }));
     setFieldErrors((current) => ({ ...current, [name]: undefined }));
   }
 
@@ -269,7 +279,13 @@ export default function Personnel() {
   }
 
   async function deleteRecord(record) {
-    if (!window.confirm(`Delete the personnel record for ${record.full_name}?`)) return;
+    const confirmed = await confirm({
+      title: "Delete personnel record?",
+      message: `Delete the personnel record for ${record.full_name}?`,
+      note: "This action is permanent and may be blocked when attendance or DTR records exist.",
+      confirmLabel: "Delete personnel",
+    });
+    if (!confirmed) return;
 
     setDeletingId(record.personnel_id);
     setPageError("");
@@ -511,6 +527,26 @@ export default function Personnel() {
                 <FieldError errors={fieldErrors} name="personnel_type" />
               </div>
 
+              {!editingRecord && form.personnel_type !== "GIP" && (
+                <label className="form-field form-field-full personnel-number-mode">
+                  <span>Employee-number source</span>
+                  <span className="personnel-number-toggle">
+                    <input
+                      type="checkbox"
+                      checked={form.auto_generate_employee_number === "1"}
+                      onChange={(event) => setForm((current) => ({
+                        ...current,
+                        auto_generate_employee_number: event.target.checked ? "1" : "0",
+                      }))}
+                    />
+                    Generate an internal employee number automatically
+                  </span>
+                  <small className="field-hint">
+                    Turn this off when the employee already has an official DILG number.
+                  </small>
+                </label>
+              )}
+
               <div className="form-field">
                 <label htmlFor="department_id">Department</label>
                 <select
@@ -518,7 +554,10 @@ export default function Personnel() {
                   name="department_id"
                   value={form.department_id}
                   onChange={updateForm}
-                  required={form.personnel_type === "GIP"}
+                  required={
+                    form.personnel_type === "GIP"
+                    || (!editingRecord && form.auto_generate_employee_number === "1")
+                  }
                 >
                   <option value="">Not assigned</option>
                   {options.departments.map((department) => (
@@ -530,13 +569,14 @@ export default function Personnel() {
                 <FieldError errors={fieldErrors} name="department_id" />
               </div>
 
-              {form.personnel_type === "GIP" ? (
+              {form.personnel_type === "GIP"
+                || (!editingRecord && form.auto_generate_employee_number === "1") ? (
                 <div className="form-field form-field-full">
                   <label htmlFor="employee_number">Employee number</label>
                   <input
                     id="employee_number"
                     value={
-                      editingRecord?.personnel_type === "GIP"
+                      editingRecord
                         ? editingRecord.employee_number
                         : "Generated automatically when saved"
                     }
@@ -544,7 +584,7 @@ export default function Personnel() {
                     aria-describedby="employee-number-hint"
                   />
                   <small id="employee-number-hint" className="field-hint">
-                    Uses GIP, office code, employment year, and a permanent sequence number.
+                    Uses personnel type, office code, employment year, and a permanent sequence number.
                   </small>
                   <FieldError errors={fieldErrors} name="employee_number" />
                 </div>
@@ -582,6 +622,7 @@ export default function Personnel() {
           </div>
         </div>
       )}
+      {confirmationDialog}
     </section>
   );
 }

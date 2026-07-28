@@ -14,6 +14,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 
 const emptyForm = {
@@ -43,6 +44,7 @@ function FieldError({ errors, name }) {
 }
 
 export default function Departments() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const [departments, setDepartments] = useState([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, gps_configured: 0, personnel: 0 });
   const [search, setSearch] = useState("");
@@ -199,7 +201,13 @@ export default function Departments() {
   }
 
   async function deleteDepartment(department) {
-    if (!window.confirm(`Remove ${department.department_name}?`)) return;
+    const confirmed = await confirm({
+      title: "Remove department?",
+      message: `Remove ${department.department_name} from the office directory?`,
+      note: "The server will prevent removal if personnel or attendance records still depend on it.",
+      confirmLabel: "Remove department",
+    });
+    if (!confirmed) return;
 
     setDeletingId(department.department_id);
     setPageError("");
@@ -376,6 +384,7 @@ export default function Departments() {
           </div>
         </div>
       )}
+      {confirmationDialog}
     </section>
   );
 }

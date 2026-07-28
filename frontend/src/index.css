@@ -27,3 +27,7 @@
 
 /* Cross-page phone and small-screen safeguards */
 @import "./styles/core/responsive.css";
+
+/* Final shared modal contract. Keep this last so legacy page rules cannot
+   create conflicting dialog spacing or mobile behavior. */
+@import "./styles/components/modals.css";

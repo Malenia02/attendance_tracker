@@ -12,6 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch, getStoredUser } from "../lib/auth";
 
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -73,6 +74,7 @@ async function readResponse(response) {
 }
 
 export default function HolidayCalendar() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const today = useMemo(() => new Date(), []);
   const todayKey = dateKey(today);
   const currentUser = getStoredUser();
@@ -256,7 +258,13 @@ export default function HolidayCalendar() {
   }
 
   async function deleteHoliday(holiday) {
-    if (!window.confirm(`Remove “${holiday.holiday_name}” from the calendar?`)) return;
+    const confirmed = await confirm({
+      title: "Remove calendar entry?",
+      message: `Remove “${holiday.holiday_name}” from the attendance calendar?`,
+      note: "Attendance and DTR calculations may change for this date.",
+      confirmLabel: "Remove entry",
+    });
+    if (!confirmed) return;
 
     setDeletingId(holiday.holiday_id);
     setPageError("");
@@ -558,6 +566,7 @@ export default function HolidayCalendar() {
           </div>
         </div>
       )}
+      {confirmationDialog}
     </section>
   );
 }
