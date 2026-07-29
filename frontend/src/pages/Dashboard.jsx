@@ -144,7 +144,9 @@ export default function Dashboard() {
     { label: "DTR Monitoring", icon: ClipboardCheck, path: "/dtr" },
     ...(isAttendanceManager
       ? [{ label: "QR Kiosk", icon: QrCode, path: "/qr-attendance" }]
-      : []),
+      : currentUser?.user_role === "Personnel"
+        ? [{ label: "QR Attendance", icon: QrCode, path: "/qr-attendance" }]
+        : []),
     { label: "Calendar", icon: CalendarDays, path: "/calendar" },
   ];
 

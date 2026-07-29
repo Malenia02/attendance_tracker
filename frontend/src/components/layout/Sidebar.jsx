@@ -27,9 +27,10 @@ const menuSections = [
     items: [
       {
         label: "QR Attendance Kiosk",
+        personnelLabel: "QR Attendance",
         path: "/qr-attendance",
         icon: QrCode,
-        roles: ["Administrator", "HR", "Supervisor", "Encoder"],
+        roles: ["Administrator", "HR", "Supervisor", "Encoder", "Personnel"],
       },
       { label: "Daily Attendance", personnelLabel: "My Attendance", path: "/attendance", icon: Clock3 },
       { label: "DTR Monitoring", personnelLabel: "My DTR", path: "/dtr", icon: FileText },

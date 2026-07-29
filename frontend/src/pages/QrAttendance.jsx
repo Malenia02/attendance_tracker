@@ -201,23 +201,61 @@ function getDevicePosition() {
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
+    let bestPosition = null;
+    let watchId = null;
+    let settled = false;
+
+    const cleanup = () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      window.clearTimeout(timeoutId);
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const toPosition = (position) => ({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy,
         timestamp: position.timestamp,
-      }),
+      });
+    const timeoutId = window.setTimeout(() => {
+      if (bestPosition) {
+        finish(resolve, bestPosition);
+        return;
+      }
+
+      finish(reject, new Error("GPS location timed out."));
+    }, 12000);
+
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const candidate = toPosition(position);
+
+        if (!bestPosition || candidate.accuracy < bestPosition.accuracy) {
+          bestPosition = candidate;
+        }
+
+        if (candidate.accuracy <= 100) {
+          finish(resolve, candidate);
+        }
+      },
       (positionError) => {
+        if (positionError.code !== positionError.PERMISSION_DENIED && bestPosition) return;
+
         const message = positionError.code === positionError.PERMISSION_DENIED
           ? "Location permission was denied."
           : positionError.code === positionError.TIMEOUT
             ? "GPS location timed out."
             : "The device location could not be determined.";
-        reject(new Error(message));
+        finish(reject, new Error(message));
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
+
+    if (settled && watchId !== null) navigator.geolocation.clearWatch(watchId);
   });
 }
 
@@ -227,6 +265,8 @@ export default function QrAttendance() {
     summary: { active_personnel: 0, accepted_today: 0, rejected_today: 0, duplicates_today: 0 },
     recent_scans: [],
     personnel: [],
+    can_scan: false,
+    can_view_cards: false,
     can_manage_codes: false,
   });
   const [tab, setTab] = useState("scanner");
@@ -241,6 +281,7 @@ export default function QrAttendance() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [cardSearch, setCardSearch] = useState("");
+  const [selectedCardIds, setSelectedCardIds] = useState([]);
   const [regeneratingId, setRegeneratingId] = useState(null);
   const scannerRef = useRef(null);
   const scanBusyRef = useRef(false);
@@ -460,10 +501,39 @@ export default function QrAttendance() {
   const filteredPersonnel = useMemo(() => {
     const query = cardSearch.trim().toLowerCase();
     return data.personnel.filter((person) => !query
-      || person.full_name.toLowerCase().includes(query)
-      || person.employee_number.toLowerCase().includes(query)
-      || person.department?.code.toLowerCase().includes(query));
+      || String(person.full_name || "").toLowerCase().includes(query)
+      || String(person.employee_number || "").toLowerCase().includes(query)
+      || String(person.department?.code || "").toLowerCase().includes(query));
   }, [data.personnel, cardSearch]);
+
+  const selectedCardIdSet = useMemo(
+    () => new Set(selectedCardIds),
+    [selectedCardIds],
+  );
+  const visibleCardIdSet = useMemo(
+    () => new Set(filteredPersonnel.map((person) => person.personnel_id)),
+    [filteredPersonnel],
+  );
+  const allVisibleCardsSelected = filteredPersonnel.length > 0
+    && filteredPersonnel.every((person) => selectedCardIdSet.has(person.personnel_id));
+
+  function toggleCardSelection(personnelId) {
+    setSelectedCardIds((current) => current.includes(personnelId)
+      ? current.filter((id) => id !== personnelId)
+      : [...current, personnelId]);
+  }
+
+  function toggleVisibleCardSelection() {
+    const visibleIds = filteredPersonnel.map((person) => person.personnel_id);
+
+    setSelectedCardIds((current) => {
+      if (allVisibleCardsSelected) {
+        return current.filter((id) => !visibleCardIdSet.has(id));
+      }
+
+      return [...new Set([...current, ...visibleIds])];
+    });
+  }
 
   const cards = [
     { label: "Active Personnel", value: data.summary.active_personnel, icon: Users, tone: "blue" },
@@ -471,14 +541,19 @@ export default function QrAttendance() {
     { label: "Rejected Today", value: data.summary.rejected_today, icon: XCircle, tone: "red" },
     { label: "Duplicates", value: data.summary.duplicates_today, icon: RefreshCw, tone: "orange" },
   ];
+  const activeTab = data.can_scan ? tab : "cards";
 
   return (
     <section className="qr-page">
       <header className="qr-hero">
         <div>
-          <span><ShieldCheck size={14} /> Authorized attendance station</span>
-          <h1>QR Attendance Kiosk</h1>
-          <p>Scan signed personnel cards. The server validates schedules and records the correct attendance action.</p>
+          <span><ShieldCheck size={14} /> {data.can_scan ? "Authorized attendance station" : "Personal attendance credential"}</span>
+          <h1>{data.can_scan ? "QR Attendance Kiosk" : "My QR ID"}</h1>
+          <p>
+            {data.can_scan
+              ? "Scan signed personnel cards. The server validates schedules and records the correct attendance action."
+              : "View and print your secure personnel card. Attendance scans remain protected and recorded by authorized kiosks."}
+          </p>
         </div>
         <div className="qr-live-time">
           <span><i></i>Asia/Manila</span>
@@ -501,17 +576,19 @@ export default function QrAttendance() {
       </div>
 
       <div className="qr-tabs">
-        <button type="button" className={tab === "scanner" ? "active" : ""} onClick={() => setTab("scanner")}>
-          <ScanLine size={16} /> Scanner
-        </button>
-        {data.can_manage_codes && (
-          <button type="button" className={tab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>
-            <IdCard size={16} /> Personnel QR Cards
+        {data.can_scan && (
+          <button type="button" className={activeTab === "scanner" ? "active" : ""} onClick={() => setTab("scanner")}>
+            <ScanLine size={16} /> Scanner
+          </button>
+        )}
+        {data.can_view_cards && (
+          <button type="button" className={activeTab === "cards" ? "active" : ""} onClick={() => setTab("cards")}>
+            <IdCard size={16} /> {data.can_manage_codes ? "Personnel QR Cards" : "My QR ID"}
           </button>
         )}
       </div>
 
-      {tab === "scanner" ? (
+      {activeTab === "scanner" ? (
         <div className="qr-kiosk-layout">
           <div className="qr-scanner-card">
             <div className="qr-card-heading">
@@ -602,21 +679,84 @@ export default function QrAttendance() {
       ) : (
         <div className="panel qr-cards-panel">
           <div className="qr-cards-toolbar">
-            <div><span>Click any card to flip · printable front and back</span><h2>Personnel QR Cards</h2></div>
+            <div><span>Select an ID to print · click the card to flip</span><h2>Personnel QR Cards</h2></div>
             <div>
               <label><Search size={16} /><input value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search personnel..." /></label>
-              <button type="button" onClick={() => window.print()}><Printer size={16} />Print front &amp; back</button>
+            </div>
+          </div>
+          <div className="qr-print-selection-bar">
+            <div className="qr-print-selection-count">
+              <CheckCircle2 size={17} />
+              <span><strong>{selectedCardIds.length}</strong> {selectedCardIds.length === 1 ? "ID" : "IDs"} selected for printing</span>
+            </div>
+            <div className="qr-print-selection-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={toggleVisibleCardSelection}
+                disabled={!filteredPersonnel.length}
+              >
+                {allVisibleCardsSelected ? "Unselect visible" : `Select visible (${filteredPersonnel.length})`}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setSelectedCardIds([])}
+                disabled={!selectedCardIds.length}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => window.print()}
+                disabled={!selectedCardIds.length}
+              >
+                <Printer size={16} />Print selected
+              </button>
             </div>
           </div>
           <div className="qr-print-grid">
-            {filteredPersonnel.map((person) => (
-              <PersonnelQrCard
+            {data.personnel.map((person) => (
+              <div
                 key={person.personnel_id}
-                person={person}
-                busy={regeneratingId === person.personnel_id}
-                onRegenerate={() => regenerateCard(person)}
-              />
+                className={[
+                  "personnel-card-choice",
+                  selectedCardIdSet.has(person.personnel_id) ? "is-print-selected" : "",
+                  visibleCardIdSet.has(person.personnel_id) ? "" : "is-filtered-out",
+                ].filter(Boolean).join(" ")}
+              >
+                <button
+                  type="button"
+                  className="personnel-card-select"
+                  aria-pressed={selectedCardIdSet.has(person.personnel_id)}
+                  aria-label={`${selectedCardIdSet.has(person.personnel_id) ? "Remove" : "Select"} ${person.full_name} ${selectedCardIdSet.has(person.personnel_id) ? "from" : "for"} printing`}
+                  onClick={() => toggleCardSelection(person.personnel_id)}
+                >
+                  <span aria-hidden="true">
+                    {selectedCardIdSet.has(person.personnel_id) && <CheckCircle2 size={14} />}
+                  </span>
+                  {selectedCardIdSet.has(person.personnel_id) ? "Selected" : "Select ID"}
+                </button>
+                <PersonnelQrCard
+                  person={person}
+                  busy={regeneratingId === person.personnel_id}
+                  canRegenerate={data.can_manage_codes}
+                  onRegenerate={() => regenerateCard(person)}
+                />
+              </div>
             ))}
+            {!filteredPersonnel.length && (
+              <div className="qr-card-search-empty">
+                <Search size={24} />
+                <strong>{data.personnel.length ? "No personnel found" : "No personnel profile linked"}</strong>
+                <span>
+                  {data.personnel.length
+                    ? "Try a different name, employee number, or office code."
+                    : "Ask an Administrator to link this system account to your personnel record."}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -687,7 +827,7 @@ function ScanResult({ result }) {
   );
 }
 
-function PersonnelQrCard({ person, busy, onRegenerate }) {
+function PersonnelQrCard({ person, busy, canRegenerate, onRegenerate }) {
   const [renderedQr, setRenderedQr] = useState({ payload: null, image: "", error: "" });
   const [flipped, setFlipped] = useState(false);
   const personImage = person.photo_url;
@@ -791,18 +931,20 @@ function PersonnelQrCard({ person, busy, onRegenerate }) {
           <span><small>Credential number</small><strong>{credentialNumber}</strong></span>
         </div>
         <div className="personnel-card-security">Digitally signed attendance credential</div>
-        <button
-          className="personnel-qr-action"
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRegenerate();
-          }}
-          disabled={busy}
-        >
-          {person.has_qr ? <RefreshCw size={13} /> : <QrCode size={13} />}
-          {busy ? "Generating…" : person.has_qr ? "Regenerate" : "Generate"}
-        </button>
+        {canRegenerate && (
+          <button
+            className="personnel-qr-action"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRegenerate();
+            }}
+            disabled={busy}
+          >
+            {person.has_qr ? <RefreshCw size={13} /> : <QrCode size={13} />}
+            {busy ? "Generating…" : person.has_qr ? "Regenerate" : "Generate"}
+          </button>
+        )}
       </footer>
         </article>
 

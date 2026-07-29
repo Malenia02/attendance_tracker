@@ -11,7 +11,7 @@ final class QrChallengeRequest extends FormRequest
         return $this->user()
             && in_array(
                 $this->user()->user_role,
-                ['Administrator', 'HR', 'Supervisor', 'Encoder'],
+                ['Administrator', 'HR', 'Supervisor', 'Encoder', 'Personnel'],
                 true
             );
     }

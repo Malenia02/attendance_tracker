@@ -16,6 +16,6 @@ return [
 
     'maximum_location_accuracy_meters' => (float) env(
         'MAXIMUM_LOCATION_ACCURACY_METERS',
-        50
+        100
     ),
 ];

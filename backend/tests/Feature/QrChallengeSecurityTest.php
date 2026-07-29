@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -16,8 +17,17 @@ class QrChallengeSecurityTest extends TestCase
         Schema::create('personnel', function (Blueprint $table): void {
             $table->id('personnel_id');
             $table->unsignedBigInteger('department_id')->nullable();
+            $table->string('employee_number')->unique();
             $table->string('first_name')->default('Test');
+            $table->string('middle_name')->nullable();
             $table->string('last_name')->default('User');
+            $table->string('suffix')->nullable();
+            $table->string('personnel_type')->default('GIP');
+            $table->string('position_title')->nullable();
+            $table->string('photo')->nullable();
+            $table->string('qr_login_code')->nullable();
+            $table->string('status')->default('Active');
+            $table->timestamps();
         });
 
         Schema::create('system_users', function (Blueprint $table): void {
@@ -141,5 +151,43 @@ class QrChallengeSecurityTest extends TestCase
             'is_active' => false,
         ]);
         $this->assertDatabaseCount('qr_scan_logs', 1);
+    }
+
+    public function test_personnel_can_view_their_qr_card_and_start_a_scoped_scan(): void
+    {
+        $personnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'GIP-TEST-001',
+            'first_name' => 'Juan',
+            'last_name' => 'Dela Cruz',
+            'personnel_type' => 'GIP',
+            'qr_login_code' => hash('sha256', 'personnel-test-card'),
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = User::create([
+            'personnel_id' => $personnelId,
+            'username' => 'personnel-user',
+            'password_hash' => bcrypt('ValidPassword!123'),
+            'user_role' => 'Personnel',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/api/qr-attendance')
+            ->assertOk()
+            ->assertJsonPath('can_scan', true)
+            ->assertJsonPath('can_view_cards', true)
+            ->assertJsonPath('can_manage_codes', false)
+            ->assertJsonCount(1, 'personnel')
+            ->assertJsonPath('personnel.0.personnel_id', $personnelId);
+
+        $this->actingAs($user)
+            ->postJson('/api/qr-attendance/challenge', [
+                'device_identifier' => 'personnel-device-001',
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonStructure(['challenge', 'expires_at']);
     }
 }

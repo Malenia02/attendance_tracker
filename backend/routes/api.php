@@ -42,8 +42,10 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::post('/attendance/correction', [AttendanceController::class, 'correct'])
         ->middleware(['role:Administrator,HR', 'throttle:20,1']);
 
-    Route::middleware('role:Administrator,HR,Supervisor,Encoder')->group(function (): void {
-        Route::get('/qr-attendance', [QrAttendanceController::class, 'index']);
+    Route::get('/qr-attendance', [QrAttendanceController::class, 'index'])
+        ->middleware('role:Administrator,HR,Supervisor,Encoder,Personnel');
+
+    Route::middleware('role:Administrator,HR,Supervisor,Encoder,Personnel')->group(function (): void {
         Route::post('/qr-attendance/challenge', [QrAttendanceController::class, 'challenge'])
             ->middleware('throttle:qr-challenge');
         Route::post('/qr-attendance/scan', [QrAttendanceController::class, 'scan'])

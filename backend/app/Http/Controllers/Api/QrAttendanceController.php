@@ -21,21 +21,27 @@ use Symfony\Component\HttpFoundation\InputBag;
 
 class QrAttendanceController extends Controller
 {
-    private const KIOSK_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder'];
+    private const PAGE_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder', 'Personnel'];
+
+    private const KIOSK_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder', 'Personnel'];
 
     private const CODE_MANAGER_ROLES = ['Administrator', 'HR'];
 
     public function index(Request $request): JsonResponse
     {
-        if (! in_array($request->user()->user_role, self::KIOSK_ROLES, true)) {
-            return response()->json(['message' => 'You do not have access to the QR attendance kiosk.'], 403);
+        $user = $request->user();
+
+        if (! in_array($user->user_role, self::PAGE_ROLES, true)) {
+            return response()->json(['message' => 'You do not have access to QR attendance.'], 403);
         }
 
-        $canManageCodes = in_array($request->user()->user_role, self::CODE_MANAGER_ROLES, true);
+        $canScan = in_array($user->user_role, self::KIOSK_ROLES, true);
+        $canManageCodes = in_array($user->user_role, self::CODE_MANAGER_ROLES, true);
+        $canViewCards = $canManageCodes || $user->user_role === 'Personnel';
         $today = now()->toDateString();
         $visiblePersonnelIds = PersonnelAccess::scope(
             Personnel::query()->where('status', 'Active'),
-            $request->user()
+            $user
         )->pluck('personnel_id');
         $todayLogs = QrScanLog::query()
             ->whereIn('personnel_id', $visiblePersonnelIds)
@@ -54,6 +60,8 @@ class QrAttendanceController extends Controller
         return response()->json([
             'server_time' => now()->toISOString(),
             'timezone' => config('app.timezone'),
+            'can_scan' => $canScan,
+            'can_view_cards' => $canViewCards,
             'can_manage_codes' => $canManageCodes,
             'summary' => [
                 'active_personnel' => $visiblePersonnelIds->count(),
@@ -62,10 +70,14 @@ class QrAttendanceController extends Controller
                 'duplicates_today' => (clone $todayLogs)->where('scan_status', 'Duplicate')->count(),
             ],
             'recent_scans' => $recentLogs,
-            'personnel' => $canManageCodes
+            'personnel' => $canViewCards
                 ? Personnel::query()
                     ->with('department:department_id,department_code,department_name,office_location')
                     ->where('status', 'Active')
+                    ->when(
+                        ! $canManageCodes,
+                        fn ($query) => $query->whereKey($user->personnel_id ?? -1)
+                    )
                     ->orderBy('last_name')
                     ->orderBy('first_name')
                     ->get()
@@ -232,11 +244,12 @@ class QrAttendanceController extends Controller
             ], 422);
         }
 
-        $maximumAccuracy = (float) config('attendance.maximum_location_accuracy_meters', 50);
+        $maximumAccuracy = (float) config('attendance.maximum_location_accuracy_meters', 100);
 
         if ((float) $validated['accuracy'] > $maximumAccuracy) {
             $message = 'GPS accuracy is too low (±'.number_format((float) $validated['accuracy'])
-                .' m). Move to an open area and refresh location.';
+                .' m). This kiosk requires ±'.number_format($maximumAccuracy)
+                .' m or better. Enable precise location, then refresh and scan again.';
             $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
 
             return response()->json([

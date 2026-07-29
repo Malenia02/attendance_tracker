@@ -125,7 +125,7 @@ DB_PASSWORD=your_database_password
 SANCTUM_STATEFUL_DOMAINS=localhost:5173,127.0.0.1:5173
 DTR_SIGNING_KEY=replace_with_a_random_key
 QR_SIGNING_KEY=replace_with_a_different_random_key
-MAXIMUM_LOCATION_ACCURACY_METERS=50
+MAXIMUM_LOCATION_ACCURACY_METERS=100
 ```
 
 Generate two different signing keys:

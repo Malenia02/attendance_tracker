@@ -81,7 +81,7 @@ services:
       - key: QR_SIGNING_KEY
         generateValue: true
       - key: MAXIMUM_LOCATION_ACCURACY_METERS
-        value: "50"
+        value: "100"
       - key: MAIL_MAILER
         value: log
       - key: RUN_MIGRATIONS_ON_START
