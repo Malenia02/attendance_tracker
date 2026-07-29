@@ -249,9 +249,9 @@ context. Manual scanning remains available during local development.
 - Administrator and HR accounts may browse and regenerate personnel QR cards.
   Supervisor, Encoder, and Personnel accounts can view and print only the card
   linked to their own system account.
-- Printed personnel cards show their validity from the personnel employment
-  start and end years. The QR attendance endpoint also rejects scans outside
-  those configured employment dates.
+- Personnel cards have independent valid-from and valid-until dates, defaulting
+  to one year for new credentials. Card validity must remain inside the
+  employment period, and QR attendance rejects scans outside either period.
 - DTR records move through Draft, Submitted, Returned, and Certified states.
 - Returned records must be corrected and submitted again before certification.
 - Certification creates a signed snapshot. Generated certified DTRs are checked

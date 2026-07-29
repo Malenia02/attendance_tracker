@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Department;
 use App\Models\Personnel;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
@@ -123,6 +125,7 @@ class PersonnelController extends Controller
             unset($validated['photo']);
         }
 
+        $validated = $this->normalizeCredentialValidity($validated);
         $validated['qr_login_code'] = hash('sha256', Str::random(64));
 
         try {
@@ -157,6 +160,7 @@ class PersonnelController extends Controller
     {
         $validated = $request->validate($this->rules($request, $personnel));
         unset($validated['remove_photo'], $validated['auto_generate_employee_number']);
+        $validated = $this->normalizeCredentialValidity($validated, $personnel);
         $wasGip = $personnel->personnel_type === 'GIP';
         $willBeGip = $validated['personnel_type'] === 'GIP';
 
@@ -270,6 +274,8 @@ class PersonnelController extends Controller
             ],
             'employment_start_date' => ['nullable', 'date'],
             'employment_end_date' => ['nullable', 'date', 'after_or_equal:employment_start_date'],
+            'qr_valid_from' => ['nullable', 'date'],
+            'qr_valid_until' => ['nullable', 'date', 'after_or_equal:qr_valid_from'],
             'email' => [
                 'nullable',
                 'email:rfc',
@@ -343,6 +349,8 @@ class PersonnelController extends Controller
             ] : null,
             'employment_start_date' => $personnel->employment_start_date?->format('Y-m-d'),
             'employment_end_date' => $personnel->employment_end_date?->format('Y-m-d'),
+            'qr_valid_from' => $personnel->qr_valid_from?->format('Y-m-d'),
+            'qr_valid_until' => $personnel->qr_valid_until?->format('Y-m-d'),
             'email' => $personnel->email,
             'contact_number' => $personnel->contact_number,
             'address' => $personnel->address,
@@ -364,6 +372,70 @@ class PersonnelController extends Controller
             ] : null,
             'created_at' => $personnel->created_at?->toISOString(),
         ];
+    }
+
+    private function normalizeCredentialValidity(
+        array $validated,
+        ?Personnel $personnel = null
+    ): array {
+        $parseDate = static fn ($value): ?Carbon => filled($value)
+            ? Carbon::parse($value)->startOfDay()
+            : null;
+        $employmentStart = $parseDate(
+            array_key_exists('employment_start_date', $validated)
+                ? $validated['employment_start_date']
+                : $personnel?->employment_start_date
+        );
+        $employmentEnd = $parseDate(
+            array_key_exists('employment_end_date', $validated)
+                ? $validated['employment_end_date']
+                : $personnel?->employment_end_date
+        );
+        $today = today();
+        $defaultFrom = $employmentStart?->gt($today)
+            ? $employmentStart->copy()
+            : $today->copy();
+
+        if ($employmentEnd?->lt($defaultFrom)) {
+            $defaultFrom = $employmentStart && $employmentStart->lte($employmentEnd)
+                ? $employmentStart->copy()
+                : $employmentEnd->copy();
+        }
+
+        $validFrom = array_key_exists('qr_valid_from', $validated)
+            ? ($parseDate($validated['qr_valid_from']) ?? $defaultFrom)
+            : ($personnel?->qr_valid_from?->copy() ?? $defaultFrom);
+        $defaultUntil = $validFrom->copy()->addYear()->subDay();
+
+        if ($employmentEnd && $employmentEnd->lt($defaultUntil)) {
+            $defaultUntil = $employmentEnd->copy();
+        }
+
+        $validUntil = array_key_exists('qr_valid_until', $validated)
+            ? ($parseDate($validated['qr_valid_until']) ?? $defaultUntil)
+            : ($personnel?->qr_valid_until?->copy() ?? $defaultUntil);
+        $errors = [];
+
+        if ($validUntil->lt($validFrom)) {
+            $errors['qr_valid_until'][] = 'The card expiry date must be on or after its valid-from date.';
+        }
+
+        if ($employmentStart && $validFrom->lt($employmentStart)) {
+            $errors['qr_valid_from'][] = 'Card validity cannot begin before employment starts.';
+        }
+
+        if ($employmentEnd && $validUntil->gt($employmentEnd)) {
+            $errors['qr_valid_until'][] = 'Card validity cannot extend beyond the employment end date.';
+        }
+
+        if ($errors) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        $validated['qr_valid_from'] = $validFrom->toDateString();
+        $validated['qr_valid_until'] = $validUntil->toDateString();
+
+        return $validated;
     }
 
     private function storePhoto(Request $request): ?string

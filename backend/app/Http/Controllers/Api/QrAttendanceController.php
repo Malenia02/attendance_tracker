@@ -209,6 +209,23 @@ class QrAttendanceController extends Controller
             ], 422);
         }
 
+        if (($personnel->qr_valid_from && $now->isBefore($personnel->qr_valid_from->startOfDay()))
+            || ($personnel->qr_valid_until && $now->isAfter($personnel->qr_valid_until->endOfDay()))) {
+            $log = $this->createScanLog(
+                $request,
+                $validated,
+                $personnel,
+                'Expired Credential',
+                'This personnel card is not currently valid. Ask Administrator or HR to review its validity dates.'
+            );
+
+            return response()->json([
+                'message' => $log->message,
+                'scan' => $this->formatScanLog($log),
+                'personnel' => $this->formatPersonnelIdentity($personnel),
+            ], 422);
+        }
+
         $office = $personnel->department;
 
         if (! $office?->latitude || ! $office?->longitude) {
@@ -531,13 +548,13 @@ class QrAttendanceController extends Controller
 
     private function formatPersonnelCard(Personnel $personnel): array
     {
-        $validFrom = $personnel->employment_start_date;
-        $validUntil = $personnel->employment_end_date;
+        $validFrom = $personnel->qr_valid_from;
+        $validUntil = $personnel->qr_valid_until;
         $validityLabel = match (true) {
             $validFrom !== null && $validUntil !== null => $validFrom->format('Y').' - '.$validUntil->format('Y'),
             $validFrom !== null => 'From '.$validFrom->format('Y'),
             $validUntil !== null => 'Until '.$validUntil->format('Y'),
-            default => 'While active',
+            default => 'Not configured',
         };
 
         return [

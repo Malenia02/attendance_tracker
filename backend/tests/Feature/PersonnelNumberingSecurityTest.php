@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Department;
+use App\Models\Personnel;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -41,6 +42,8 @@ class PersonnelNumberingSecurityTest extends TestCase
             $table->string('address', 255)->nullable();
             $table->string('photo')->nullable();
             $table->string('qr_login_code', 100)->nullable()->unique();
+            $table->date('qr_valid_from')->nullable();
+            $table->date('qr_valid_until')->nullable();
             $table->string('status')->default('Active');
             $table->timestamps();
         });
@@ -191,6 +194,40 @@ class PersonnelNumberingSecurityTest extends TestCase
             'employee_number' => 'DILG-OFFICIAL-105',
             'personnel_type' => 'Regular',
         ]);
+    }
+
+    public function test_card_validity_is_separate_and_cannot_exceed_employment(): void
+    {
+        $department = $this->department();
+        $administrator = $this->administrator();
+        $payload = [
+            ...$this->gipPayload($department->department_id, 'Validity'),
+            'employment_start_date' => '2026-07-01',
+            'employment_end_date' => '2026-12-31',
+            'qr_valid_from' => '2026-08-01',
+            'qr_valid_until' => '2027-07-31',
+        ];
+
+        $this->actingAs($administrator)
+            ->postJson('/api/personnel', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['qr_valid_until']);
+
+        $payload['qr_valid_until'] = '2026-12-31';
+
+        $response = $this->actingAs($administrator)
+            ->postJson('/api/personnel', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.employment_start_date', '2026-07-01')
+            ->assertJsonPath('data.employment_end_date', '2026-12-31')
+            ->assertJsonPath('data.qr_valid_from', '2026-08-01')
+            ->assertJsonPath('data.qr_valid_until', '2026-12-31');
+
+        $saved = Personnel::findOrFail($response->json('data.personnel_id'));
+        $this->assertSame('2026-07-01', $saved->employment_start_date->format('Y-m-d'));
+        $this->assertSame('2026-12-31', $saved->employment_end_date->format('Y-m-d'));
+        $this->assertSame('2026-08-01', $saved->qr_valid_from->format('Y-m-d'));
+        $this->assertSame('2026-12-31', $saved->qr_valid_until->format('Y-m-d'));
     }
 
     private function department(): Department

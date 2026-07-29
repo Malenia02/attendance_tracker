@@ -28,6 +28,8 @@ class QrChallengeSecurityTest extends TestCase
             $table->date('employment_end_date')->nullable();
             $table->string('photo')->nullable();
             $table->string('qr_login_code')->nullable();
+            $table->date('qr_valid_from')->nullable();
+            $table->date('qr_valid_until')->nullable();
             $table->string('status')->default('Active');
             $table->timestamps();
         });
@@ -165,6 +167,8 @@ class QrChallengeSecurityTest extends TestCase
             'employment_start_date' => '2026-01-01',
             'employment_end_date' => '2027-12-31',
             'qr_login_code' => hash('sha256', 'personnel-test-card'),
+            'qr_valid_from' => '2026-07-01',
+            'qr_valid_until' => '2027-06-30',
             'status' => 'Active',
             'created_at' => now(),
             'updated_at' => now(),
@@ -194,6 +198,60 @@ class QrChallengeSecurityTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonStructure(['challenge', 'expires_at']);
+    }
+
+    public function test_scan_rejects_a_card_outside_its_own_validity_period(): void
+    {
+        $credential = hash('sha256', 'expired-card-credential');
+        $personnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'GIP-EXPIRED-CARD',
+            'first_name' => 'Expired',
+            'last_name' => 'Credential',
+            'personnel_type' => 'GIP',
+            'employment_start_date' => now()->subYear()->toDateString(),
+            'employment_end_date' => now()->addYear()->toDateString(),
+            'qr_login_code' => $credential,
+            'qr_valid_from' => now()->subYear()->toDateString(),
+            'qr_valid_until' => now()->subDay()->toDateString(),
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $administrator = User::create([
+            'username' => 'expired-card-admin',
+            'password_hash' => bcrypt('ValidPassword!123'),
+            'user_role' => 'Administrator',
+            'status' => 'Active',
+        ]);
+        $device = 'expired-card-device-001';
+        $challenge = $this->actingAs($administrator)
+            ->postJson('/api/qr-attendance/challenge', [
+                'device_identifier' => $device,
+            ])
+            ->assertOk()
+            ->json('challenge');
+        $signature = hash_hmac(
+            'sha256',
+            "DILGATTEND|v1|{$personnelId}|{$credential}",
+            (string) config('attendance.qr_signing_key')
+        );
+
+        $this->actingAs($administrator)
+            ->postJson('/api/qr-attendance/scan', [
+                'code' => "DILGATTEND:v1:{$personnelId}:{$signature}",
+                'challenge' => $challenge,
+                'device_identifier' => $device,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'This personnel card is not currently valid. Ask Administrator or HR to review its validity dates.'
+            );
+
+        $this->assertDatabaseHas('qr_scan_logs', [
+            'personnel_id' => $personnelId,
+            'scan_status' => 'Expired Credential',
+        ]);
     }
 
     public function test_non_card_managers_can_only_view_their_own_card_and_cannot_regenerate_it(): void

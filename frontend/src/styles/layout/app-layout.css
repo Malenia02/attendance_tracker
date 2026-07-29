@@ -2,10 +2,13 @@
 .main-wrapper {
   min-height: 100vh;
   margin-left: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
   transition: margin-left var(--transition);
 }
 
 .main-content {
+  flex: 1 0 auto;
   padding: calc(var(--topbar-height) + 28px) 30px 40px;
 }
 

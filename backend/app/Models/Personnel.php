@@ -31,6 +31,8 @@ class Personnel extends Model
         'address',
         'photo',
         'qr_login_code',
+        'qr_valid_from',
+        'qr_valid_until',
         'status',
     ];
 
@@ -42,6 +44,8 @@ class Personnel extends Model
     protected $casts = [
         'employment_start_date' => 'date',
         'employment_end_date' => 'date',
+        'qr_valid_from' => 'date',
+        'qr_valid_until' => 'date',
     ];
 
     public function department(): BelongsTo

@@ -19,6 +19,25 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 
+function toDateInput(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultCardValidity() {
+  const validFrom = new Date();
+  const validUntil = new Date(validFrom);
+  validUntil.setFullYear(validUntil.getFullYear() + 1);
+  validUntil.setDate(validUntil.getDate() - 1);
+
+  return {
+    qr_valid_from: toDateInput(validFrom),
+    qr_valid_until: toDateInput(validUntil),
+  };
+}
+
 const emptyForm = {
   employee_number: "",
   auto_generate_employee_number: "1",
@@ -32,6 +51,7 @@ const emptyForm = {
   department_id: "",
   employment_start_date: "",
   employment_end_date: "",
+  ...defaultCardValidity(),
   email: "",
   contact_number: "",
   address: "",
@@ -137,7 +157,7 @@ export default function Personnel() {
   function openCreateModal() {
     releasePhotoObjectUrl();
     setEditingRecord(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, ...defaultCardValidity() });
     setPhotoFile(null);
     setPhotoPreview("");
     setRemovePhoto(false);
@@ -161,6 +181,8 @@ export default function Personnel() {
       department_id: record.department_id ? String(record.department_id) : "",
       employment_start_date: record.employment_start_date || "",
       employment_end_date: record.employment_end_date || "",
+      qr_valid_from: record.qr_valid_from || "",
+      qr_valid_until: record.qr_valid_until || "",
       email: record.email || "",
       contact_number: record.contact_number || "",
       address: record.address || "",
@@ -603,6 +625,15 @@ export default function Personnel() {
               <FormField label="Position title" name="position_title" form={form} errors={fieldErrors} onChange={updateForm} full />
               <FormField label="Employment start" name="employment_start_date" type="date" form={form} errors={fieldErrors} onChange={updateForm} />
               <FormField label="Employment end" name="employment_end_date" type="date" form={form} errors={fieldErrors} onChange={updateForm} />
+
+              <h3 className="form-section-title">Personnel card validity</h3>
+              <div className="form-field form-field-full">
+                <small className="field-hint">
+                  These dates control the QR card independently. They must remain within the configured employment period.
+                </small>
+              </div>
+              <FormField label="Card valid from" name="qr_valid_from" type="date" form={form} errors={fieldErrors} onChange={updateForm} required />
+              <FormField label="Card valid until" name="qr_valid_until" type="date" form={form} errors={fieldErrors} onChange={updateForm} required />
 
               <div className="form-field form-field-full">
                 <label htmlFor="personnel_status">Status</label>
