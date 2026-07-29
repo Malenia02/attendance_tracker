@@ -23,45 +23,51 @@ const menuSections = [
     ],
   },
   {
-    label: "Time & Attendance",
+    label: "Attendance Operations",
     items: [
-      { label: "Attendance", path: "/attendance", icon: Clock3 },
-      { label: "DTR Monitoring", path: "/dtr", icon: FileText },
-      { label: "Calendar & Holidays", path: "/calendar", icon: CalendarRange },
       {
-        label: "QR Attendance",
+        label: "QR Attendance Kiosk",
         path: "/qr-attendance",
         icon: QrCode,
         roles: ["Administrator", "HR", "Supervisor", "Encoder"],
       },
+      { label: "Daily Attendance", personnelLabel: "My Attendance", path: "/attendance", icon: Clock3 },
+      { label: "DTR Monitoring", personnelLabel: "My DTR", path: "/dtr", icon: FileText },
     ],
   },
   {
-    label: "Workforce",
+    label: "Workforce & Work Rules",
     items: [
       {
-        label: "Personnel",
-        path: "/personnel",
-        icon: Users,
-        roles: ["Administrator", "HR"],
-      },
-      {
-        label: "Departments & Offices",
+        label: "Departments & Office GPS",
         path: "/departments",
         icon: Building2,
         roles: ["Administrator", "HR"],
       },
       {
-        label: "Schedules",
+        label: "Work Schedules",
         path: "/schedules",
         icon: CalendarDays,
         roles: ["Administrator", "HR"],
       },
+      {
+        label: "Personnel Directory",
+        path: "/personnel",
+        icon: Users,
+        roles: ["Administrator", "HR"],
+      },
+      { label: "Calendar & Duty Days", path: "/calendar", icon: CalendarRange },
     ],
   },
   {
-    label: "Administration",
+    label: "Security & Audit",
     items: [
+      {
+        label: "System Users",
+        path: "/system-users",
+        icon: ShieldCheck,
+        roles: ["Administrator"],
+      },
       {
         label: "Activity Logs",
         path: "/activity-logs",
@@ -69,12 +75,11 @@ const menuSections = [
         roles: ["Administrator"],
       },
       {
-        label: "System Users",
-        path: "/system-users",
-        icon: ShieldCheck,
+        label: "Settings",
+        path: "/settings",
+        icon: Settings,
         roles: ["Administrator"],
       },
-      { label: "Settings", path: "/settings", icon: Settings },
     ],
   },
 ];
@@ -115,19 +120,22 @@ export default function Sidebar({ isOpen, isCollapsed }) {
 
               {visibleItems.map((item) => {
                 const Icon = item.icon;
+                const itemLabel = currentUser?.user_role === "Personnel"
+                  ? item.personnelLabel || item.label
+                  : item.label;
 
                 return (
                   <NavLink
                     key={item.path}
                     to={item.path}
-                    title={isCollapsed ? item.label : undefined}
-                    aria-label={item.label}
+                    title={isCollapsed ? itemLabel : undefined}
+                    aria-label={itemLabel}
                     className={({ isActive }) =>
                       isActive ? "nav-link active" : "nav-link"
                     }
                   >
                     <Icon size={18} />
-                    <span>{item.label}</span>
+                    <span>{itemLabel}</span>
                   </NavLink>
                 );
               })}
