@@ -4,7 +4,9 @@ const API_ORIGIN = API_BASE.endsWith("/api")
   : API_BASE.replace(/\/api\/?$/, "");
 const USER_KEY = "dilg_auth_user";
 const SESSION_CHECK_TTL_MS = 30_000;
-const SESSION_CHECK_TIMEOUT_MS = 8_000;
+const SESSION_CHECK_TIMEOUT_MS = Number(
+  import.meta.env.VITE_SESSION_CHECK_TIMEOUT_MS || 60_000,
+);
 let sessionVerificationPromise = null;
 let lastSessionVerificationAt = 0;
 

@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\QrChallengeRequest;
+use App\Http\Requests\QrScanRequest;
+use App\Models\AttendanceQrToken;
 use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\QrScanLog;
@@ -12,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\InputBag;
 
@@ -76,7 +80,9 @@ class QrAttendanceController extends Controller
             return response()->json(['message' => 'Only Administrator and HR accounts can manage QR cards.'], 403);
         }
 
-        $personnel->forceFill(['qr_login_code' => Str::random(64)])->save();
+        $personnel->forceFill([
+            'qr_login_code' => hash('sha256', Str::random(64)),
+        ])->save();
 
         return response()->json([
             'message' => 'A new QR card was generated for '.$personnel->full_name.'.',
@@ -84,20 +90,50 @@ class QrAttendanceController extends Controller
         ]);
     }
 
-    public function scan(Request $request): JsonResponse
+    public function challenge(QrChallengeRequest $request): JsonResponse
     {
-        if (! in_array($request->user()->user_role, self::KIOSK_ROLES, true)) {
-            return response()->json(['message' => 'This account is not authorized as a QR kiosk operator.'], 403);
+        $validated = $request->validated();
+        $challenge = bin2hex(random_bytes(32));
+        $now = now();
+        $expiresAt = $now->copy()->addSeconds(90);
+
+        AttendanceQrToken::create([
+            'department_id' => $request->user()->personnel?->department_id,
+            'token_hash' => $this->challengeHash(
+                $challenge,
+                $validated['device_identifier']
+            ),
+            'purpose' => 'Attendance',
+            'valid_from' => $now,
+            'expires_at' => $expiresAt,
+            'used_count' => 0,
+            'maximum_uses' => 1,
+            'is_active' => true,
+            'created_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'challenge' => $challenge,
+            'expires_at' => $expiresAt->toISOString(),
+        ]);
+    }
+
+    public function scan(QrScanRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $qrToken = $this->consumeChallenge(
+            $request,
+            $validated['challenge'],
+            $validated['device_identifier']
+        );
+
+        if (! $qrToken) {
+            return response()->json([
+                'message' => 'The kiosk scan challenge is invalid, expired, or has already been used. Scan the card again.',
+            ], 409);
         }
 
-        $validated = $request->validate([
-            'code' => ['required', 'string', 'max:255'],
-            'device_identifier' => ['required', 'string', 'max:255'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'accuracy' => ['nullable', 'numeric', 'between:0,10000'],
-            'position_timestamp' => ['nullable', 'date'],
-        ]);
+        $request->attributes->set('qr_token_id', $qrToken->qr_token_id);
         $now = now();
         $personnel = $this->resolvePersonnel($validated['code']);
 
@@ -109,6 +145,26 @@ class QrAttendanceController extends Controller
                 'scan' => $this->formatScanLog($log),
             ], 422);
         }
+
+        $personnelRateKey = 'qr-personnel:'.$personnel->personnel_id;
+
+        if (RateLimiter::tooManyAttempts($personnelRateKey, 6)) {
+            $message = 'Too many scans were attempted for this personnel card. Wait one minute and try again.';
+            $log = $this->createScanLog(
+                $request,
+                $validated,
+                $personnel,
+                'Rejected',
+                $message
+            );
+
+            return response()->json([
+                'message' => $message,
+                'scan' => $this->formatScanLog($log),
+            ], 429);
+        }
+
+        RateLimiter::hit($personnelRateKey, 60);
 
         if ($personnel->status !== 'Active') {
             $log = $this->createScanLog($request, $validated, $personnel, 'Inactive Personnel', 'This personnel record is inactive.');
@@ -264,7 +320,7 @@ class QrAttendanceController extends Controller
                 $message = 'Duplicate scan ignored. Please wait before scanning this card again.';
                 $log = $this->createScanLog($request, $validated, $personnel, 'Duplicate', $message);
 
-                return ['status' => 422, 'message' => $message, 'log' => $log];
+                return ['status' => 409, 'message' => $message, 'log' => $log];
             }
 
             $attendanceRequest = Request::create(
@@ -377,6 +433,48 @@ class QrAttendanceController extends Controller
         );
     }
 
+    private function consumeChallenge(
+        Request $request,
+        string $challenge,
+        string $deviceIdentifier
+    ): ?AttendanceQrToken {
+        return DB::transaction(function () use (
+            $request,
+            $challenge,
+            $deviceIdentifier
+        ): ?AttendanceQrToken {
+            $token = AttendanceQrToken::query()
+                ->where('token_hash', $this->challengeHash($challenge, $deviceIdentifier))
+                ->where('created_by', $request->user()->user_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (
+                ! $token
+                || ! $token->is_active
+                || now()->isBefore($token->valid_from)
+                || now()->isAfter($token->expires_at)
+                || ($token->maximum_uses !== null
+                    && $token->used_count >= $token->maximum_uses)
+            ) {
+                return null;
+            }
+
+            $token->used_count++;
+            $token->is_active = $token->maximum_uses !== null
+                ? $token->used_count < $token->maximum_uses
+                : true;
+            $token->save();
+
+            return $token;
+        });
+    }
+
+    private function challengeHash(string $challenge, string $deviceIdentifier): string
+    {
+        return hash('sha256', $challenge.'|'.$deviceIdentifier);
+    }
+
     private function createScanLog(
         Request $request,
         array $validated,
@@ -388,6 +486,7 @@ class QrAttendanceController extends Controller
         ?float $distance = null
     ): QrScanLog {
         return QrScanLog::create([
+            'qr_token_id' => $request->attributes->get('qr_token_id'),
             'personnel_id' => $personnel?->personnel_id,
             'attendance_id' => $attendanceId,
             'scan_action' => $action,
@@ -458,7 +557,9 @@ class QrAttendanceController extends Controller
             'personnel_id' => $log->personnel_id,
             'full_name' => $log->personnel?->full_name,
             'employee_number' => $log->personnel?->employee_number,
-            'photo' => $log->personnel?->photo,
+            'photo_url' => $log->personnel
+                ? $this->formatPersonnelIdentity($log->personnel)['photo_url']
+                : null,
             'scan_action' => $this->displayScanAction($log),
             'scan_status' => $log->scan_status,
             'message' => $log->message,

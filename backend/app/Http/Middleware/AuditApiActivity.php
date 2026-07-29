@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\ActivityLog;
+use App\Support\RequestId;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -51,6 +52,7 @@ class AuditApiActivity
                 'entity_id' => $entityId,
                 'ip_address' => $request->ip(),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+                'request_id' => RequestId::for($request),
             ]);
         } catch (\Throwable $exception) {
             report($exception);

@@ -250,11 +250,18 @@ context. Manual scanning remains available during local development.
 
 - QR payloads are signed by the backend.
 - Scan requests are rate-limited and tied to the authenticated kiosk operator.
+- Every scan now requires a 90-second, one-time server challenge bound to the
+  current kiosk account and device identifier. Replaying the same API request is
+  rejected with `409 Conflict`.
 - GPS coordinates, accuracy, age, and office distance are checked server-side.
 - Personnel photos are stored privately and served only through an authenticated
   API route.
-- A photographed static QR can still be replayed physically. For higher-risk
-  deployments, use a supervised kiosk or rotating QR credentials.
+- A photographed printed card can still be presented at a real authorized
+  kiosk. Use a supervised fixed kiosk and compare the displayed personnel photo
+  when stronger physical identity assurance is required.
+
+The July 29, 2026 security migration hashes existing per-person QR credentials,
+so cards printed before that migration must be printed again after deployment.
 
 When printing QR cards, use 100% scale and enable **Background graphics** for
 the premium navy and teal card design.
@@ -277,6 +284,19 @@ Authentication uses Sanctum session cookies with CSRF protection. Login,
 general API, and QR scan routes have separate rate limits. Repeated login
 failures trigger a temporary account lock. Passwords are hashed and validated
 using Laravel's password rules.
+
+API JSON responses retain the existing page-specific fields and also include:
+
+```json
+{
+  "success": true,
+  "request_id": "0190c8c2-...",
+  "data": {}
+}
+```
+
+Errors include a stable `error.code`, a safe message, optional validation
+details, and the same request ID used by server logs.
 
 ## Production deployment
 
@@ -308,6 +328,13 @@ subdomains under one parent domain and follow
 [docs/RENDER-VERCEL.md](docs/RENDER-VERCEL.md). The repository includes
 the free-test `render.yaml`, the paid `render.production.yaml`, a production
 PHP Docker image, and `frontend/vercel.json`.
+
+The current free Render service is for testing only. `render.free.yaml` retains
+the Aiven CA certificate configuration and runs migrations during startup, but
+uploaded personnel photos are ephemeral and may disappear after a restart or
+redeploy. Free instances can also take close to a minute to wake after being
+idle, so frontend session verification allows a 60-second cold start. Do not use
+the free instance as the final records system.
 
 ## Testing and quality checks
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Support\RequestId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -151,6 +152,7 @@ class AuthController extends Controller
             $locked = $attempts >= self::MAX_ATTEMPTS;
 
             if ($locked) {
+                $changes['status'] = 'Locked';
                 $changes['locked_until'] = now()->addMinutes(self::LOCK_MINUTES);
             }
 
@@ -175,6 +177,7 @@ class AuthController extends Controller
             'entity_id' => $user->user_id,
             'ip_address' => $request->ip(),
             'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+            'request_id' => RequestId::for($request),
         ]);
     }
 

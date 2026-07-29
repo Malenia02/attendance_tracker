@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ImmutableAuditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AttendanceChangeLog extends Model
 {
+    use ImmutableAuditRecord;
+
     protected $table = 'attendance_change_logs';
 
     protected $primaryKey = 'attendance_change_log_id';

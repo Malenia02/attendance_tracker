@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\ActivityLog;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -41,7 +43,17 @@ class SecurityAuthenticationTest extends TestCase
             $table->unsignedBigInteger('entity_id')->nullable();
             $table->string('ip_address', 45)->nullable();
             $table->string('user_agent', 500)->nullable();
+            $table->uuid('request_id')->nullable();
             $table->timestamp('created_at')->useCurrent();
+        });
+
+        Schema::create('sessions', function (Blueprint $table): void {
+            $table->string('id')->primary();
+            $table->unsignedBigInteger('user_id')->nullable()->index();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->longText('payload');
+            $table->integer('last_activity')->index();
         });
 
         Schema::create('user_access_tokens', function (Blueprint $table): void {
@@ -59,6 +71,7 @@ class SecurityAuthenticationTest extends TestCase
     protected function tearDown(): void
     {
         Schema::dropIfExists('user_access_tokens');
+        Schema::dropIfExists('sessions');
         Schema::dropIfExists('activity_logs');
         Schema::dropIfExists('system_users');
         Schema::dropIfExists('personnel');
@@ -80,6 +93,8 @@ class SecurityAuthenticationTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonPath('user.user_id', $user->user_id)
+            ->assertJsonPath('success', true)
+            ->assertJsonStructure(['request_id'])
             ->assertJsonMissingPath('token');
 
         $this->assertAuthenticatedAs($user);
@@ -109,6 +124,24 @@ class SecurityAuthenticationTest extends TestCase
         $this->assertSame($unknown->json('message'), $inactive->json('message'));
         $this->assertArrayNotHasKey('attempts_remaining', $inactive->json());
         $this->assertArrayNotHasKey('locked_until', $inactive->json());
+    }
+
+    public function test_repeated_login_failures_mark_the_account_as_temporarily_locked(): void
+    {
+        $user = $this->createUser('lockout-user', 'Active');
+
+        foreach (range(1, 5) as $attempt) {
+            $this->postJson('/api/auth/login', [
+                'username' => $user->username,
+                'password' => "Wrong-Password-{$attempt}!",
+            ])->assertUnauthorized();
+        }
+
+        $user->refresh();
+
+        $this->assertSame('Locked', $user->status);
+        $this->assertSame(5, $user->failed_login_attempts);
+        $this->assertTrue($user->locked_until->isFuture());
     }
 
     public function test_security_headers_are_added_to_responses(): void
@@ -170,7 +203,79 @@ class SecurityAuthenticationTest extends TestCase
         $this->get('/api/auth/me')
             ->assertUnauthorized()
             ->assertHeader('Content-Type', 'application/json')
-            ->assertJsonPath('message', 'Unauthenticated.');
+            ->assertJsonPath('message', 'Unauthenticated.')
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error.code', 'UNAUTHENTICATED')
+            ->assertJsonStructure(['request_id']);
+    }
+
+    public function test_api_request_id_is_validated_and_returned(): void
+    {
+        $requestId = 'test-request-20260729';
+
+        $this->withHeader('X-Request-ID', $requestId)
+            ->get('/api/auth/me')
+            ->assertUnauthorized()
+            ->assertJsonPath('request_id', $requestId);
+    }
+
+    public function test_production_api_errors_use_a_safe_standard_contract(): void
+    {
+        config(['app.debug' => false]);
+
+        $this->get('/api/auth/login')
+            ->assertStatus(405)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error.code', 'METHOD_NOT_ALLOWED')
+            ->assertJsonMissingPath('exception')
+            ->assertJsonMissingPath('trace');
+    }
+
+    public function test_security_changes_revoke_existing_database_sessions_and_tokens(): void
+    {
+        config(['session.driver' => 'database']);
+        app('session')->forgetDrivers();
+
+        $administrator = $this->createUser('security-admin', 'Active');
+        $administrator->forceFill(['user_role' => 'Administrator'])->save();
+        $victim = $this->createUser('session-victim', 'Active');
+
+        DB::table('sessions')->insert([
+            'id' => 'victim-session',
+            'user_id' => $victim->user_id,
+            'payload' => 'serialized-session',
+            'last_activity' => now()->timestamp,
+        ]);
+        DB::table('user_access_tokens')->insert([
+            'user_id' => $victim->user_id,
+            'token_hash' => hash('sha256', 'victim-token'),
+            'expires_at' => now()->addHour(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/system-users/{$victim->user_id}", [
+                'username' => $victim->username,
+                'user_role' => 'Personnel',
+                'status' => 'Inactive',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('sessions', ['user_id' => $victim->user_id]);
+        $this->assertDatabaseMissing('user_access_tokens', ['user_id' => $victim->user_id]);
+    }
+
+    public function test_activity_log_records_cannot_be_modified_through_eloquent(): void
+    {
+        $log = ActivityLog::create([
+            'activity_type' => 'SECURITY_TEST',
+            'description' => 'Immutable audit record test.',
+        ]);
+
+        $this->expectException(\LogicException::class);
+
+        $log->update(['description' => 'Tampered']);
     }
 
     private function createUser(string $username, string $status): User

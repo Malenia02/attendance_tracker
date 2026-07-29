@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use DOMDocument;
-use DOMElement;
 use DOMNode;
 use DOMXPath;
 use RuntimeException;
@@ -26,7 +25,7 @@ class DtrDocumentGenerator
             throw new RuntimeException('The DTR document could not be created.');
         }
 
-        $archive = new ZipArchive();
+        $archive = new ZipArchive;
 
         if ($archive->open($destination) !== true) {
             @unlink($destination);
@@ -42,7 +41,7 @@ class DtrDocumentGenerator
                 throw new RuntimeException('The DTR template document content is missing.');
             }
 
-            $document = new DOMDocument();
+            $document = new DOMDocument;
             $document->preserveWhiteSpace = true;
             $document->formatOutput = false;
 

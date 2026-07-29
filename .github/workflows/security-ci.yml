@@ -1,0 +1,97 @@
+name: Security and production checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: attendance_test
+          MYSQL_ROOT_PASSWORD: test-root-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ptest-root-password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      APP_ENV: testing
+      APP_DEBUG: "false"
+      APP_KEY: base64:VGVzdC1vbmx5LWFwcC1rZXktMzItYnl0ZXMtbG9uZyE=
+      APP_URL: https://api.example.test
+      APP_TIMEZONE: Asia/Manila
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: attendance_test
+      DB_USERNAME: root
+      DB_PASSWORD: test-root-password
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      DTR_SIGNING_KEY: Test-only-DTR-signing-key-32-bytes-long!
+      QR_SIGNING_KEY: Test-only-QR-signing-key-32-bytes-long!!
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: dom, fileinfo, mbstring, openssl, pdo_mysql, xml, zip
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Validate Composer metadata
+        working-directory: backend
+        run: composer validate --strict --no-check-publish
+
+      - name: Audit Composer dependencies
+        working-directory: backend
+        run: composer audit --locked
+
+      - name: Run the real MySQL schema and migrations
+        working-directory: backend
+        run: php artisan migrate:fresh --force --no-interaction
+
+      - name: Run backend tests
+        working-directory: backend
+        run: php artisan test
+
+      - name: Check backend formatting
+        working-directory: backend
+        run: php vendor/bin/pint --test
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Audit production frontend dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build

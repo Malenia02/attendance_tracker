@@ -34,6 +34,11 @@ class Personnel extends Model
         'status',
     ];
 
+    protected $hidden = [
+        'qr_login_code',
+        'photo',
+    ];
+
     protected $casts = [
         'employment_start_date' => 'date',
         'employment_end_date' => 'date',

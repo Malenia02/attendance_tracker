@@ -32,7 +32,7 @@ class QrGeofenceTest extends TestCase
         $method = new ReflectionMethod(QrAttendanceController::class, 'distanceInMeters');
 
         return $method->invoke(
-            new QrAttendanceController(),
+            new QrAttendanceController,
             $latitude,
             $longitude,
             $officeLatitude,

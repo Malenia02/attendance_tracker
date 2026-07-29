@@ -298,12 +298,27 @@ export default function QrAttendance() {
         setLocationState({ status: "denied", accuracy: null });
       }
 
+      const deviceIdentifier = getDeviceIdentifier();
+      const challengeResponse = await apiFetch("/qr-attendance/challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_identifier: deviceIdentifier }),
+      });
+      const challengePayload = await challengeResponse.json().catch(() => ({}));
+
+      if (!challengeResponse.ok || !challengePayload.challenge) {
+        throw new Error(
+          challengePayload.message || "A secure kiosk scan could not be started.",
+        );
+      }
+
       const response = await apiFetch("/qr-attendance/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: cleanedCode,
-          device_identifier: getDeviceIdentifier(),
+          challenge: challengePayload.challenge,
+          device_identifier: deviceIdentifier,
           ...(position ? {
             latitude: position.latitude,
             longitude: position.longitude,

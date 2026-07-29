@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ManualAttendanceCorrectionRequest;
 use App\Models\AttendanceChangeLog;
 use App\Models\AttendanceCorrectionRequest;
 use App\Models\AttendanceRecord;
@@ -14,9 +15,11 @@ use App\Models\TimeLog;
 use App\Models\WorkSchedule;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -37,6 +40,8 @@ class AttendanceController extends Controller
             'date' => ['nullable', 'date'],
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(self::STATUS_FILTERS)],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:10,100'],
         ]);
         $date = Carbon::parse($validated['date'] ?? now()->toDateString())->toDateString();
         $user = $request->user();
@@ -137,6 +142,23 @@ class AttendanceController extends Controller
             ]);
 
         $allRows = collect($personnel);
+        $pagination = null;
+
+        if (isset($validated['per_page'])) {
+            $page = $validated['page'] ?? 1;
+            $pagination = [
+                'current_page' => $page,
+                'per_page' => $validated['per_page'],
+                'total' => $allRows->count(),
+                'last_page' => max(
+                    1,
+                    (int) ceil($allRows->count() / $validated['per_page'])
+                ),
+            ];
+            $personnel = $allRows
+                ->forPage($page, $validated['per_page'])
+                ->values();
+        }
 
         return response()->json([
             'date' => $date,
@@ -146,6 +168,7 @@ class AttendanceController extends Controller
                 'holiday_type' => $holiday->holiday_type,
             ] : null,
             'data' => $personnel,
+            'meta' => $pagination ? ['pagination' => $pagination] : null,
             'recent_logs' => $recentLogs,
             'summary' => [
                 'total' => $allRows->count(),
@@ -557,69 +580,75 @@ class AttendanceController extends Controller
             'Special Working Holiday'
         );
 
-        $result = DB::transaction(function () use ($personnel, $schedule, $now, $request, $validated, $user, $isSpecialWorkingDay): array {
-            $record = AttendanceRecord::query()
-                ->where('personnel_id', $personnel->personnel_id)
-                ->whereDate('attendance_date', $now->toDateString())
-                ->lockForUpdate()
-                ->first();
+        try {
+            $result = DB::transaction(function () use ($personnel, $schedule, $now, $request, $validated, $user, $isSpecialWorkingDay): array {
+                $record = AttendanceRecord::query()
+                    ->where('personnel_id', $personnel->personnel_id)
+                    ->whereDate('attendance_date', $now->toDateString())
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($record && in_array($record->attendance_status, [
-                'Absent',
-                'Leave',
-                'Holiday',
-                'Rest Day',
-                'Official Business',
-                'Work From Home',
-                'Half Day',
-            ], true)) {
-                return [
-                    'error' => 'This record is marked as '.$record->attendance_status.' and cannot accept a time log.',
-                    'record' => $record,
-                ];
-            }
+                if ($record && in_array($record->attendance_status, [
+                    'Absent',
+                    'Leave',
+                    'Holiday',
+                    'Rest Day',
+                    'Official Business',
+                    'Work From Home',
+                    'Half Day',
+                ], true)) {
+                    return [
+                        'error' => 'This record is marked as '.$record->attendance_status.' and cannot accept a time log.',
+                        'record' => $record,
+                    ];
+                }
 
-            $eligibility = $this->determineAvailableAction($record, $schedule, $now, $isSpecialWorkingDay);
-            $action = $eligibility['action'];
+                $eligibility = $this->determineAvailableAction($record, $schedule, $now, $isSpecialWorkingDay);
+                $action = $eligibility['action'];
 
-            if (! $action || ! isset(self::ACTIONS[$action])) {
-                return [
-                    'error' => $eligibility['message'],
-                    'record' => $record,
-                ];
-            }
+                if (! $action || ! isset(self::ACTIONS[$action])) {
+                    return [
+                        'error' => $eligibility['message'],
+                        'record' => $record,
+                    ];
+                }
 
-            if (! $record) {
-                $record = AttendanceRecord::create([
+                if (! $record) {
+                    $record = AttendanceRecord::create([
+                        'personnel_id' => $personnel->personnel_id,
+                        'schedule_id' => $schedule?->schedule_id,
+                        'attendance_date' => $now->toDateString(),
+                        'attendance_status' => 'Incomplete',
+                        'record_source' => 'Web Portal',
+                        'created_by' => $user->user_id,
+                    ]);
+                }
+
+                $record->{$action} = $now;
+                $this->recalculate($record, $schedule, $now);
+                $record->save();
+
+                TimeLog::create([
                     'personnel_id' => $personnel->personnel_id,
-                    'schedule_id' => $schedule?->schedule_id,
-                    'attendance_date' => $now->toDateString(),
-                    'attendance_status' => 'Incomplete',
-                    'record_source' => 'Web Portal',
+                    'attendance_id' => $record->attendance_id,
+                    'log_datetime' => $now,
+                    'log_type' => self::ACTIONS[$action],
+                    'log_source' => 'Web Portal',
+                    'ip_address' => $request->ip(),
+                    'device_identifier' => $validated['device_identifier'] ?? $request->userAgent(),
                     'created_by' => $user->user_id,
                 ]);
-            }
 
-            $record->{$action} = $now;
-            $this->recalculate($record, $schedule, $now);
-            $record->save();
-
-            TimeLog::create([
-                'personnel_id' => $personnel->personnel_id,
-                'attendance_id' => $record->attendance_id,
-                'log_datetime' => $now,
-                'log_type' => self::ACTIONS[$action],
-                'log_source' => 'Web Portal',
-                'ip_address' => $request->ip(),
-                'device_identifier' => $validated['device_identifier'] ?? $request->userAgent(),
-                'created_by' => $user->user_id,
-            ]);
-
-            return [
-                'action' => self::ACTIONS[$action],
-                'record' => $record->fresh(['schedule']),
-            ];
-        });
+                return [
+                    'action' => self::ACTIONS[$action],
+                    'record' => $record->fresh(['schedule']),
+                ];
+            });
+        } catch (UniqueConstraintViolationException) {
+            return response()->json([
+                'message' => 'This attendance action was already recorded by another request. Refresh the record before trying again.',
+            ], 409);
+        }
 
         if (isset($result['error'])) {
             return response()->json(['message' => $result['error']], 422);
@@ -634,25 +663,8 @@ class AttendanceController extends Controller
 
     public function verify(Request $request, AttendanceRecord $attendance): JsonResponse
     {
-        if (! in_array($request->user()->user_role, ['Administrator', 'HR', 'Supervisor'], true)) {
-            return response()->json([
-                'message' => 'You do not have permission to verify attendance records.',
-            ], 403);
-        }
-
         $attendance->loadMissing(['personnel', 'schedule']);
-
-        if (! $attendance->personnel || ! PersonnelAccess::canAccess($request->user(), $attendance->personnel)) {
-            return response()->json([
-                'message' => 'This attendance record is outside your assigned office scope.',
-            ], 403);
-        }
-
-        if ((int) $request->user()->personnel_id === (int) $attendance->personnel_id) {
-            return response()->json([
-                'message' => 'You cannot verify your own attendance record. A different authorized reviewer is required.',
-            ], 403);
-        }
+        Gate::authorize('verify', $attendance);
 
         $certification = DtrCertification::query()
             ->where('personnel_id', $attendance->personnel_id)
@@ -743,17 +755,7 @@ class AttendanceController extends Controller
             ->get();
 
         foreach ($records as $record) {
-            if (! $record->personnel || ! PersonnelAccess::canAccess($request->user(), $record->personnel)) {
-                return response()->json([
-                    'message' => 'One or more attendance records are outside your assigned office scope.',
-                ], 403);
-            }
-
-            if ((int) $request->user()->personnel_id === (int) $record->personnel_id) {
-                return response()->json([
-                    'message' => 'You cannot verify your own attendance record. A different authorized reviewer is required.',
-                ], 403);
-            }
+            Gate::authorize('verify', $record);
 
             $certification = DtrCertification::query()
                 ->where('personnel_id', $record->personnel_id)
@@ -822,38 +824,12 @@ class AttendanceController extends Controller
         ]);
     }
 
-    public function correct(Request $request): JsonResponse
+    public function correct(ManualAttendanceCorrectionRequest $request): JsonResponse
     {
-        if (! in_array($request->user()->user_role, ['Administrator', 'HR'], true)) {
-            return response()->json([
-                'message' => 'Only an administrator or HR user may correct historical attendance.',
-            ], 403);
-        }
-
-        $validated = $request->validate([
-            'personnel_id' => ['required', 'integer', 'exists:personnel,personnel_id'],
-            'attendance_date' => ['required', 'date', 'before_or_equal:today'],
-            'record_type' => ['required', Rule::in([
-                'Time Entries',
-                'Absent',
-                'Leave',
-                'Official Business',
-                'Work From Home',
-            ])],
-            'morning_time_in' => ['nullable', 'date_format:H:i'],
-            'morning_time_out' => ['nullable', 'date_format:H:i'],
-            'afternoon_time_in' => ['nullable', 'date_format:H:i'],
-            'afternoon_time_out' => ['nullable', 'date_format:H:i'],
-            'reason' => ['required', 'string', 'min:10', 'max:255'],
-        ]);
+        $validated = $request->validated();
         $date = Carbon::parse($validated['attendance_date'])->toDateString();
         $personnel = Personnel::query()->where('status', 'Active')->findOrFail($validated['personnel_id']);
-
-        if (! PersonnelAccess::canAccess($request->user(), $personnel)) {
-            return response()->json([
-                'message' => 'This personnel record is outside your authorized office scope.',
-            ], 403);
-        }
+        Gate::authorize('correctAttendance', $personnel);
 
         $certification = DtrCertification::query()
             ->where('personnel_id', $personnel->personnel_id)

@@ -122,6 +122,7 @@ class DtrReopeningSecurityTest extends TestCase
             $table->unsignedBigInteger('entity_id')->nullable();
             $table->string('ip_address', 45)->nullable();
             $table->string('user_agent', 500)->nullable();
+            $table->uuid('request_id')->nullable();
             $table->timestamp('created_at')->useCurrent();
         });
     }

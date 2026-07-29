@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Department;
 use App\Models\Personnel;
-use App\Support\PersonnelAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -30,9 +30,11 @@ class PersonnelController extends Controller
             'type' => ['nullable', Rule::in(self::TYPES)],
             'status' => ['nullable', Rule::in(self::STATUSES)],
             'department_id' => ['nullable', 'integer', 'exists:departments,department_id'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:10,100'],
         ]);
 
-        $personnel = Personnel::query()
+        $query = Personnel::query()
             ->with([
                 'department:department_id,department_code,department_name',
                 'user:user_id,personnel_id,username,user_role,status',
@@ -56,11 +58,30 @@ class PersonnelController extends Controller
                 fn ($query, int $departmentId) => $query->where('department_id', $departmentId)
             )
             ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get();
+            ->orderBy('first_name');
+        $pagination = null;
+
+        if (isset($validated['per_page'])) {
+            $paginator = $query->paginate(
+                $validated['per_page'],
+                ['*'],
+                'page',
+                $validated['page'] ?? 1
+            );
+            $personnel = collect($paginator->items());
+            $pagination = [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+            ];
+        } else {
+            $personnel = $query->get();
+        }
 
         return response()->json([
             'data' => $personnel->map(fn (Personnel $person) => $this->formatPersonnel($person)),
+            'meta' => $pagination ? ['pagination' => $pagination] : null,
             'summary' => [
                 'total' => Personnel::count(),
                 'active' => Personnel::where('status', 'Active')->count(),
@@ -102,7 +123,7 @@ class PersonnelController extends Controller
             unset($validated['photo']);
         }
 
-        $validated['qr_login_code'] = Str::random(64);
+        $validated['qr_login_code'] = hash('sha256', Str::random(64));
 
         try {
             $personnel = DB::transaction(function () use ($validated, $generateEmployeeNumber): Personnel {
@@ -188,42 +209,14 @@ class PersonnelController extends Controller
 
     public function destroy(Personnel $personnel): JsonResponse
     {
-        $linkedRecords = collect([
-            'system user' => $personnel->user()->exists(),
-            'attendance records' => $personnel->attendanceRecords()->exists(),
-            'time logs' => $personnel->timeLogs()->exists(),
-            'schedule assignments' => $personnel->scheduleAssignments()->exists(),
-            'leave records' => $personnel->leaveRecords()->exists(),
-            'DTR certifications' => $personnel->dtrCertifications()->exists(),
-        ])->filter()->keys();
-
-        if ($linkedRecords->isNotEmpty()) {
-            return response()->json([
-                'message' => 'This personnel record cannot be deleted because it has linked '
-                    .$linkedRecords->join(', ', ' and ')
-                    .'. Set its status to Inactive instead.',
-            ], 422);
-        }
-
-        $photoPath = $personnel->photo;
-        $personnel->delete();
-
-        if ($photoPath) {
-            Storage::disk('local')->delete($photoPath);
-        }
-
         return response()->json([
-            'message' => 'Personnel record deleted successfully.',
-        ]);
+            'message' => 'Personnel records are retained for audit history. Change the status to Inactive, Completed, or Terminated instead.',
+        ], 409);
     }
 
     public function photo(Request $request, Personnel $personnel): BinaryFileResponse|JsonResponse
     {
-        if (! PersonnelAccess::canAccess($request->user(), $personnel)) {
-            return response()->json([
-                'message' => 'You are not authorized to view this personnel photo.',
-            ], 403);
-        }
+        Gate::authorize('view', $personnel);
 
         if (! $personnel->photo || ! Storage::disk('local')->exists($personnel->photo)) {
             return response()->json([

@@ -3,13 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SystemUserRequest;
 use App\Models\Personnel;
 use App\Models\User;
+use App\Services\SessionRevoker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
 
 class SystemUserController extends Controller
 {
@@ -33,9 +35,11 @@ class SystemUserController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
             'role' => ['nullable', Rule::in(self::ROLES)],
             'status' => ['nullable', Rule::in(self::STATUSES)],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:10,100'],
         ]);
 
-        $users = User::query()
+        $query = User::query()
             ->with('personnel:personnel_id,employee_number,first_name,middle_name,last_name,suffix,email')
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -52,11 +56,30 @@ class SystemUserController extends Controller
             })
             ->when($validated['role'] ?? null, fn ($query, string $role) => $query->where('user_role', $role))
             ->when($validated['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
-            ->orderBy('username')
-            ->get();
+            ->orderBy('username');
+        $pagination = null;
+
+        if (isset($validated['per_page'])) {
+            $paginator = $query->paginate(
+                $validated['per_page'],
+                ['*'],
+                'page',
+                $validated['page'] ?? 1
+            );
+            $users = collect($paginator->items());
+            $pagination = [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+            ];
+        } else {
+            $users = $query->get();
+        }
 
         return response()->json([
             'data' => $users->map(fn (User $user) => $this->formatUser($user)),
+            'meta' => $pagination ? ['pagination' => $pagination] : null,
             'summary' => [
                 'total' => User::count(),
                 'active' => User::where('status', 'Active')->count(),
@@ -99,9 +122,9 @@ class SystemUserController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(SystemUserRequest $request): JsonResponse
     {
-        $validated = $request->validate($this->rules());
+        $validated = $request->validated();
 
         $user = User::create([
             'personnel_id' => $validated['personnel_id'] ?? null,
@@ -121,11 +144,68 @@ class SystemUserController extends Controller
         ], 201);
     }
 
-    public function update(Request $request, User $systemUser): JsonResponse
-    {
-        $validated = $request->validate($this->rules($systemUser));
+    public function update(
+        SystemUserRequest $request,
+        User $systemUser,
+        SessionRevoker $sessionRevoker
+    ): JsonResponse {
+        $validated = $request->validated();
 
-        if ($this->wouldRemoveLastActiveAdministrator($systemUser, $validated)) {
+        $result = DB::transaction(function () use (
+            $systemUser,
+            $validated,
+            $sessionRevoker
+        ): array {
+            $lockedUser = User::query()
+                ->whereKey($systemUser->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $activeAdministratorCount = User::query()
+                ->where('user_role', 'Administrator')
+                ->where('status', 'Active')
+                ->lockForUpdate()
+                ->get()
+                ->count();
+
+            if ($this->wouldRemoveLastActiveAdministrator(
+                $lockedUser,
+                $validated,
+                $activeAdministratorCount
+            )) {
+                return ['blocked' => true];
+            }
+
+            $lockedUser->fill([
+                'personnel_id' => $validated['personnel_id'] ?? null,
+                'username' => $validated['username'],
+                'user_role' => $validated['user_role'],
+                'status' => $validated['status'],
+            ]);
+
+            if (! empty($validated['password'])) {
+                $lockedUser->password_hash = Hash::make($validated['password']);
+            }
+
+            if ($validated['status'] === 'Active') {
+                $lockedUser->failed_login_attempts = 0;
+                $lockedUser->locked_until = null;
+            }
+
+            $securityChanged = $lockedUser->isDirty([
+                'password_hash',
+                'user_role',
+                'status',
+            ]);
+            $lockedUser->save();
+
+            if ($securityChanged) {
+                $sessionRevoker->revokeFor($lockedUser);
+            }
+
+            return ['blocked' => false, 'user' => $lockedUser];
+        });
+
+        if ($result['blocked']) {
             return response()->json([
                 'message' => 'The final active administrator cannot be deactivated or assigned another role.',
                 'errors' => [
@@ -134,33 +214,7 @@ class SystemUserController extends Controller
             ], 422);
         }
 
-        $systemUser->fill([
-            'personnel_id' => $validated['personnel_id'] ?? null,
-            'username' => $validated['username'],
-            'user_role' => $validated['user_role'],
-            'status' => $validated['status'],
-        ]);
-
-        if (! empty($validated['password'])) {
-            $systemUser->password_hash = Hash::make($validated['password']);
-        }
-
-        if ($validated['status'] === 'Active') {
-            $systemUser->failed_login_attempts = 0;
-            $systemUser->locked_until = null;
-        }
-
-        $securityChanged = $systemUser->isDirty([
-            'password_hash',
-            'user_role',
-            'status',
-        ]);
-
-        $systemUser->save();
-
-        if ($securityChanged) {
-            $systemUser->accessTokens()->delete();
-        }
+        $systemUser = $result['user'];
         $systemUser->load('personnel');
 
         return response()->json([
@@ -169,61 +223,59 @@ class SystemUserController extends Controller
         ]);
     }
 
-    public function destroy(User $systemUser): JsonResponse
-    {
-        if (
-            $systemUser->user_role === 'Administrator'
-            && $systemUser->status === 'Active'
-            && User::where('user_role', 'Administrator')->where('status', 'Active')->count() <= 1
-        ) {
+    public function destroy(
+        Request $request,
+        User $systemUser,
+        SessionRevoker $sessionRevoker
+    ): JsonResponse {
+        if ((int) $request->user()->user_id === (int) $systemUser->user_id) {
             return response()->json([
-                'message' => 'The final active administrator cannot be deleted.',
-            ], 422);
+                'message' => 'You cannot delete the account used by your current session.',
+            ], 409);
         }
 
-        $systemUser->delete();
+        $deleted = DB::transaction(function () use ($systemUser, $sessionRevoker): bool {
+            $lockedUser = User::query()
+                ->whereKey($systemUser->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $activeAdministratorCount = User::query()
+                ->where('user_role', 'Administrator')
+                ->where('status', 'Active')
+                ->lockForUpdate()
+                ->get()
+                ->count();
+
+            if (
+                $lockedUser->user_role === 'Administrator'
+                && $lockedUser->status === 'Active'
+                && $activeAdministratorCount <= 1
+            ) {
+                return false;
+            }
+
+            $sessionRevoker->revokeFor($lockedUser);
+            $lockedUser->delete();
+
+            return true;
+        });
+
+        if (! $deleted) {
+            return response()->json([
+                'message' => 'The final active administrator cannot be deleted.',
+            ], 409);
+        }
 
         return response()->json([
             'message' => 'System user deleted successfully.',
         ]);
     }
 
-    private function rules(?User $user = null): array
-    {
-        return [
-            'personnel_id' => [
-                'nullable',
-                'integer',
-                'exists:personnel,personnel_id',
-                Rule::unique('system_users', 'personnel_id')->ignore($user?->user_id, 'user_id'),
-            ],
-            'username' => [
-                'required',
-                'string',
-                'min:3',
-                'max:100',
-                'regex:/^[A-Za-z0-9._-]+$/',
-                Rule::unique('system_users', 'username')->ignore($user?->user_id, 'user_id'),
-            ],
-            'password' => [
-                $user ? 'nullable' : 'required',
-                'string',
-                'max:72',
-                'confirmed',
-                Password::min(12)
-                    ->mixedCase()
-                    ->letters()
-                    ->numbers()
-                    ->symbols()
-                    ->uncompromised(),
-            ],
-            'user_role' => ['required', Rule::in(self::ROLES)],
-            'status' => ['required', Rule::in(self::STATUSES)],
-        ];
-    }
-
-    private function wouldRemoveLastActiveAdministrator(User $user, array $validated): bool
-    {
+    private function wouldRemoveLastActiveAdministrator(
+        User $user,
+        array $validated,
+        ?int $activeAdministratorCount = null
+    ): bool {
         if ($user->user_role !== 'Administrator' || $user->status !== 'Active') {
             return false;
         }
@@ -232,7 +284,8 @@ class SystemUserController extends Controller
             && $validated['status'] === 'Active';
 
         return ! $remainsActiveAdministrator
-            && User::where('user_role', 'Administrator')->where('status', 'Active')->count() <= 1;
+            && ($activeAdministratorCount
+                ?? User::where('user_role', 'Administrator')->where('status', 'Active')->count()) <= 1;
     }
 
     private function formatUser(User $user): array

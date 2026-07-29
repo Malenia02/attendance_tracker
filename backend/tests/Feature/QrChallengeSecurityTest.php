@@ -1,0 +1,145 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
+
+class QrChallengeSecurityTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Schema::create('personnel', function (Blueprint $table): void {
+            $table->id('personnel_id');
+            $table->unsignedBigInteger('department_id')->nullable();
+            $table->string('first_name')->default('Test');
+            $table->string('last_name')->default('User');
+        });
+
+        Schema::create('system_users', function (Blueprint $table): void {
+            $table->id('user_id');
+            $table->unsignedBigInteger('personnel_id')->nullable();
+            $table->string('username')->unique();
+            $table->string('password_hash');
+            $table->string('user_role');
+            $table->string('status');
+            $table->unsignedSmallInteger('failed_login_attempts')->default(0);
+            $table->dateTime('locked_until')->nullable();
+            $table->dateTime('last_login_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('user_access_tokens', function (Blueprint $table): void {
+            $table->id('token_id');
+            $table->unsignedBigInteger('user_id');
+            $table->char('token_hash', 64)->unique();
+            $table->dateTime('expires_at');
+            $table->timestamps();
+        });
+
+        Schema::create('attendance_qr_tokens', function (Blueprint $table): void {
+            $table->id('qr_token_id');
+            $table->unsignedBigInteger('department_id')->nullable();
+            $table->char('token_hash', 64)->unique();
+            $table->string('purpose');
+            $table->dateTime('valid_from');
+            $table->dateTime('expires_at');
+            $table->unsignedInteger('used_count')->default(0);
+            $table->unsignedInteger('maximum_uses')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->timestamp('created_at')->useCurrent();
+        });
+
+        Schema::create('qr_scan_logs', function (Blueprint $table): void {
+            $table->id('qr_scan_id');
+            $table->unsignedBigInteger('qr_token_id')->nullable();
+            $table->unsignedBigInteger('personnel_id')->nullable();
+            $table->unsignedBigInteger('attendance_id')->nullable();
+            $table->string('scan_action');
+            $table->dateTime('scanned_at');
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+            $table->decimal('location_accuracy_meters', 8, 2)->nullable();
+            $table->dateTime('position_recorded_at')->nullable();
+            $table->decimal('distance_from_office_meters', 10, 2)->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->string('user_agent', 500)->nullable();
+            $table->string('device_identifier')->nullable();
+            $table->unsignedBigInteger('scanned_by')->nullable();
+            $table->string('scan_status');
+            $table->string('message')->nullable();
+        });
+
+        Schema::create('activity_logs', function (Blueprint $table): void {
+            $table->id('activity_log_id');
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->string('activity_type', 100);
+            $table->string('description', 500);
+            $table->string('entity_type')->nullable();
+            $table->unsignedBigInteger('entity_id')->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->string('user_agent', 500)->nullable();
+            $table->uuid('request_id')->nullable();
+            $table->timestamp('created_at')->useCurrent();
+        });
+    }
+
+    protected function tearDown(): void
+    {
+        Schema::dropIfExists('activity_logs');
+        Schema::dropIfExists('qr_scan_logs');
+        Schema::dropIfExists('attendance_qr_tokens');
+        Schema::dropIfExists('user_access_tokens');
+        Schema::dropIfExists('system_users');
+        Schema::dropIfExists('personnel');
+
+        parent::tearDown();
+    }
+
+    public function test_a_kiosk_challenge_is_single_use_and_device_bound(): void
+    {
+        $user = User::create([
+            'username' => 'qr-admin',
+            'password_hash' => bcrypt('ValidPassword!123'),
+            'user_role' => 'Administrator',
+            'status' => 'Active',
+        ]);
+        $device = 'test-kiosk-device-001';
+
+        $challenge = $this->actingAs($user)
+            ->postJson('/api/qr-attendance/challenge', [
+                'device_identifier' => $device,
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->json('challenge');
+
+        $payload = [
+            'code' => 'DILGATTEND:v1:999:invalid-signature',
+            'challenge' => $challenge,
+            'device_identifier' => $device,
+        ];
+
+        $this->actingAs($user)
+            ->postJson('/api/qr-attendance/scan', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'The QR card is invalid or has been revoked.');
+
+        $this->actingAs($user)
+            ->postJson('/api/qr-attendance/scan', $payload)
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'CONFLICT');
+
+        $this->assertDatabaseHas('attendance_qr_tokens', [
+            'created_by' => $user->user_id,
+            'used_count' => 1,
+            'is_active' => false,
+        ]);
+        $this->assertDatabaseCount('qr_scan_logs', 1);
+    }
+}

@@ -25,6 +25,8 @@ services:
         sync: false
       - key: FRONTEND_DEPLOYMENT
         value: external
+      - key: FRONTEND_API_PROXY
+        value: "true"
       - key: FRONTEND_URL
         sync: false
       - key: TRUSTED_HOSTS
@@ -42,12 +44,16 @@ services:
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        value: "3306"
+        sync: false
       - key: DB_DATABASE
         sync: false
       - key: DB_USERNAME
         sync: false
       - key: DB_PASSWORD
+        sync: false
+      - key: MYSQL_ATTR_SSL_CA
+        value: /tmp/dilg-mysql-ca.pem
+      - key: MYSQL_SSL_CA_BASE64
         sync: false
       - key: SESSION_DRIVER
         value: database
@@ -63,8 +69,6 @@ services:
         value: lax
       - key: SESSION_COOKIE
         value: dilg_attendance_session
-      - key: SESSION_DOMAIN
-        sync: false
       - key: SANCTUM_STATEFUL_DOMAINS
         sync: false
       - key: CORS_ALLOWED_ORIGINS

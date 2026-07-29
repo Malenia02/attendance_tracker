@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ImmutableAuditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DtrStatusLog extends Model
 {
+    use ImmutableAuditRecord;
+
     protected $table = 'dtr_status_logs';
 
     protected $primaryKey = 'dtr_status_log_id';

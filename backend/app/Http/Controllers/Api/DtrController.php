@@ -35,6 +35,8 @@ class DtrController extends Controller
             'month' => ['nullable', 'date_format:Y-m'],
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Certified', 'Returned', 'Reopened'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:10,100'],
         ]);
 
         $month = Carbon::createFromFormat('Y-m-d', ($validated['month'] ?? now()->format('Y-m')).'-01')
@@ -101,6 +103,24 @@ class DtrController extends Controller
                     ->where('certification.status', $status)
                     ->values()
             );
+        $allRows = $rows;
+        $pagination = null;
+
+        if (isset($validated['per_page'])) {
+            $page = $validated['page'] ?? 1;
+            $pagination = [
+                'current_page' => $page,
+                'per_page' => $validated['per_page'],
+                'total' => $allRows->count(),
+                'last_page' => max(
+                    1,
+                    (int) ceil($allRows->count() / $validated['per_page'])
+                ),
+            ];
+            $rows = $allRows
+                ->forPage($page, $validated['per_page'])
+                ->values();
+        }
 
         return response()->json([
             'month' => $month->format('Y-m'),
@@ -115,13 +135,14 @@ class DtrController extends Controller
             'can_approve_reopen' => $user->user_role === 'Administrator',
             'current_user_id' => $user->user_id,
             'data' => $rows,
+            'meta' => $pagination ? ['pagination' => $pagination] : null,
             'summary' => [
-                'personnel' => $rows->count(),
-                'ready' => $rows->where('is_ready', true)->count(),
-                'needs_attention' => $rows->where('is_ready', false)->count(),
-                'certified' => $rows->where('certification.status', 'Certified')->count(),
-                'late_occurrences' => $rows->sum('late_days'),
-                'half_days' => $rows->sum('half_days'),
+                'personnel' => $allRows->count(),
+                'ready' => $allRows->where('is_ready', true)->count(),
+                'needs_attention' => $allRows->where('is_ready', false)->count(),
+                'certified' => $allRows->where('certification.status', 'Certified')->count(),
+                'late_occurrences' => $allRows->sum('late_days'),
+                'half_days' => $allRows->sum('half_days'),
             ],
         ]);
     }

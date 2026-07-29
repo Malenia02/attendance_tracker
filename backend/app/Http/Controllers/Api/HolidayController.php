@@ -128,9 +128,27 @@ class HolidayController extends Controller
                     ->where(fn ($query) => $query->where('holiday_date', request('holiday_date')))
                     ->ignore($holiday?->holiday_id, 'holiday_id'),
             ],
-            'holiday_type' => ['required', Rule::in(self::TYPES)],
+            'holiday_type' => [
+                'required',
+                Rule::in(self::TYPES),
+                Rule::unique('holidays', 'holiday_type')
+                    ->where(function ($query) {
+                        $query->where('holiday_date', request('holiday_date'));
+
+                        return request('scope') === 'National'
+                            ? $query->whereNull('department_id')
+                            : $query->where('department_id', request('department_id'));
+                    })
+                    ->ignore($holiday?->holiday_id, 'holiday_id'),
+            ],
             'scope' => ['required', Rule::in(self::SCOPES)],
-            'department_id' => ['nullable', 'integer', 'exists:departments,department_id'],
+            'department_id' => [
+                'nullable',
+                'integer',
+                'exists:departments,department_id',
+                Rule::requiredIf(fn (): bool => request('scope') !== 'National'),
+                Rule::prohibitedIf(fn (): bool => request('scope') === 'National'),
+            ],
             'description' => ['nullable', 'string', 'max:255'],
         ];
     }

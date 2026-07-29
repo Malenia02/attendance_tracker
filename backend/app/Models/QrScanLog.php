@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ImmutableAuditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class QrScanLog extends Model
 {
+    use ImmutableAuditRecord;
+
     protected $table = 'qr_scan_logs';
 
     protected $primaryKey = 'qr_scan_id';

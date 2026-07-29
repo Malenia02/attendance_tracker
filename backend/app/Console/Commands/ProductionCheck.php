@@ -183,6 +183,9 @@ class ProductionCheck extends Command
             'system_users',
             'personnel',
             'departments',
+            'holidays',
+            'work_schedules',
+            'personnel_schedules',
             'attendance_records',
             'attendance_change_logs',
             'attendance_correction_requests',
@@ -190,6 +193,9 @@ class ProductionCheck extends Command
             'dtr_certification_versions',
             'dtr_reopen_requests',
             'activity_logs',
+            'attendance_qr_tokens',
+            'qr_scan_logs',
+            'time_logs',
         ];
 
         if (config('session.driver') === 'database') {
@@ -205,6 +211,31 @@ class ProductionCheck extends Command
                 $errors[] = "Required database table is missing: {$table}.";
             }
         }
+
+        $requiredColumns = [
+            'activity_logs' => ['request_id'],
+            'qr_scan_logs' => ['scanned_by', 'qr_token_id'],
+            'holidays' => ['scope_department_key'],
+        ];
+
+        foreach ($requiredColumns as $table => $columns) {
+            if (Schema::hasTable($table) && ! Schema::hasColumns($table, $columns)) {
+                $errors[] = "Security migration columns are missing from {$table}: "
+                    .implode(', ', $columns).'.';
+            }
+        }
+
+        $requiredIndexes = [
+            'personnel' => 'uq_personnel_email',
+            'time_logs' => 'uq_time_logs_attendance_type',
+            'holidays' => 'uq_holiday_date_scope_type',
+        ];
+
+        foreach ($requiredIndexes as $table => $index) {
+            if (Schema::hasTable($table) && ! Schema::hasIndex($table, $index)) {
+                $errors[] = "Required database index is missing: {$index}.";
+            }
+        }
     }
 
     private function databaseReady(): bool
@@ -217,7 +248,9 @@ class ProductionCheck extends Command
             DB::select('select 1');
 
             return Schema::hasTable('system_users')
-                && Schema::hasTable('attendance_records');
+                && Schema::hasTable('attendance_records')
+                && Schema::hasColumn('activity_logs', 'request_id')
+                && Schema::hasIndex('time_logs', 'uq_time_logs_attendance_type');
         } catch (Throwable) {
             return false;
         }

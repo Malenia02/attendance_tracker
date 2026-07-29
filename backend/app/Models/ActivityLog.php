@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ImmutableAuditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ActivityLog extends Model
 {
+    use ImmutableAuditRecord;
+
     protected $table = 'activity_logs';
 
     protected $primaryKey = 'activity_log_id';
@@ -21,6 +24,7 @@ class ActivityLog extends Model
         'entity_id',
         'ip_address',
         'user_agent',
+        'request_id',
     ];
 
     protected $casts = [

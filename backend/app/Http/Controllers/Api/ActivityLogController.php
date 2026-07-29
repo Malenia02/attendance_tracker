@@ -43,6 +43,7 @@ class ActivityLogController extends Controller
                 NULL as old_values,
                 NULL as new_values,
                 NULL as reason,
+                activity.request_id as request_id,
                 activity.created_at as created_at
             ");
         $attendanceQuery = DB::table('attendance_change_logs as changes')
@@ -69,6 +70,7 @@ class ActivityLogController extends Controller
                 changes.old_values as old_values,
                 changes.new_values as new_values,
                 changes.reason as reason,
+                NULL as request_id,
                 changes.created_at as created_at
             ");
         $dtrQuery = DB::table('dtr_status_logs as dtr_changes')
@@ -100,6 +102,7 @@ class ActivityLogController extends Controller
                 JSON_OBJECT('status', dtr_changes.from_status) as old_values,
                 JSON_OBJECT('status', dtr_changes.to_status) as new_values,
                 dtr_changes.remarks as reason,
+                dtr_changes.request_id as request_id,
                 dtr_changes.created_at as created_at
             ");
         $auditQuery = $activityQuery
@@ -185,6 +188,7 @@ class ActivityLogController extends Controller
             'old_values' => $this->decodeValues($log->old_values),
             'new_values' => $this->decodeValues($log->new_values),
             'reason' => $log->reason,
+            'request_id' => $log->request_id,
             'created_at' => $log->created_at,
         ];
     }
