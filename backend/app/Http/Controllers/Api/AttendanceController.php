@@ -12,6 +12,7 @@ use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Models\TimeLog;
+use App\Models\User;
 use App\Models\WorkSchedule;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
@@ -526,7 +527,7 @@ class AttendanceController extends Controller
 
         return response()->json([
             'message' => $approved
-                ? 'Correction request approved and applied. A different authorized reviewer must verify the attendance record.'
+                ? 'Correction request approved and applied. The attendance record must be verified before DTR certification.'
                 : 'Correction request rejected. The employee can review the decision and submit a new request.',
             'data' => $this->formatCorrectionRequest(
                 $result['request']->load(['personnel.department', 'submittedBy', 'reviewedBy'])
@@ -692,7 +693,7 @@ class AttendanceController extends Controller
 
         if ($verificationError = $this->verificationBlockReason(
             $attendance,
-            $request->user()->user_id,
+            $request->user(),
             $attendance->attendance_date->isToday()
                 ? now()
                 : $attendance->attendance_date->copy()->endOfDay()
@@ -781,7 +782,7 @@ class AttendanceController extends Controller
 
             if ($verificationError = $this->verificationBlockReason(
                 $record,
-                $request->user()->user_id,
+                $request->user(),
                 $record->attendance_date->copy()->endOfDay()
             )) {
                 return response()->json(['message' => $verificationError], 422);
@@ -1034,7 +1035,7 @@ class AttendanceController extends Controller
 
     private function verificationBlockReason(
         AttendanceRecord $record,
-        int $reviewerId,
+        User $reviewer,
         Carbon $referenceTime
     ): ?string {
         if ($this->determineAttendanceStatus(
@@ -1054,7 +1055,11 @@ class AttendanceController extends Controller
             ->latest('attendance_change_log_id')
             ->first();
 
-        if ($latestCorrection && (int) $latestCorrection->changed_by === $reviewerId) {
+        if (
+            $reviewer->user_role !== 'Administrator'
+            && $latestCorrection
+            && (int) $latestCorrection->changed_by === (int) $reviewer->user_id
+        ) {
             return 'A different authorized reviewer must verify this manual correction.';
         }
 

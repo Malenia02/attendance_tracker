@@ -37,7 +37,7 @@ class QrAttendanceController extends Controller
 
         $canScan = in_array($user->user_role, self::KIOSK_ROLES, true);
         $canManageCodes = in_array($user->user_role, self::CODE_MANAGER_ROLES, true);
-        $canViewCards = $canManageCodes || $user->user_role === 'Personnel';
+        $canViewCards = true;
         $today = now()->toDateString();
         $visiblePersonnelIds = PersonnelAccess::scope(
             Personnel::query()->where('status', 'Active'),
@@ -531,10 +531,22 @@ class QrAttendanceController extends Controller
 
     private function formatPersonnelCard(Personnel $personnel): array
     {
+        $validFrom = $personnel->employment_start_date;
+        $validUntil = $personnel->employment_end_date;
+        $validityLabel = match (true) {
+            $validFrom !== null && $validUntil !== null => $validFrom->format('Y').' - '.$validUntil->format('Y'),
+            $validFrom !== null => 'From '.$validFrom->format('Y'),
+            $validUntil !== null => 'Until '.$validUntil->format('Y'),
+            default => 'While active',
+        };
+
         return [
             ...$this->formatPersonnelIdentity($personnel),
             'qr_payload' => $this->payload($personnel),
             'has_qr' => (bool) $personnel->qr_login_code,
+            'valid_from' => $validFrom?->format('Y-m-d'),
+            'valid_until' => $validUntil?->format('Y-m-d'),
+            'validity_label' => $validityLabel,
         ];
     }
 

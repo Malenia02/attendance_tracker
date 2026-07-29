@@ -124,6 +124,7 @@ class DashboardController extends Controller
             ->values();
 
         $dtrStatuses = $personnel
+            ->whereNotNull('department_id')
             ->map(fn (Personnel $person) => $person->dtrCertifications->first()?->certification_status ?? 'Draft')
             ->countBy();
         $personnelIds = $personnel->pluck('personnel_id');

@@ -24,6 +24,8 @@ class QrChallengeSecurityTest extends TestCase
             $table->string('suffix')->nullable();
             $table->string('personnel_type')->default('GIP');
             $table->string('position_title')->nullable();
+            $table->date('employment_start_date')->nullable();
+            $table->date('employment_end_date')->nullable();
             $table->string('photo')->nullable();
             $table->string('qr_login_code')->nullable();
             $table->string('status')->default('Active');
@@ -160,6 +162,8 @@ class QrChallengeSecurityTest extends TestCase
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
             'personnel_type' => 'GIP',
+            'employment_start_date' => '2026-01-01',
+            'employment_end_date' => '2027-12-31',
             'qr_login_code' => hash('sha256', 'personnel-test-card'),
             'status' => 'Active',
             'created_at' => now(),
@@ -180,7 +184,8 @@ class QrChallengeSecurityTest extends TestCase
             ->assertJsonPath('can_view_cards', true)
             ->assertJsonPath('can_manage_codes', false)
             ->assertJsonCount(1, 'personnel')
-            ->assertJsonPath('personnel.0.personnel_id', $personnelId);
+            ->assertJsonPath('personnel.0.personnel_id', $personnelId)
+            ->assertJsonPath('personnel.0.validity_label', '2026 - 2027');
 
         $this->actingAs($user)
             ->postJson('/api/qr-attendance/challenge', [
@@ -189,5 +194,89 @@ class QrChallengeSecurityTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonStructure(['challenge', 'expires_at']);
+    }
+
+    public function test_non_card_managers_can_only_view_their_own_card_and_cannot_regenerate_it(): void
+    {
+        $ownPersonnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'GIP-SUPERVISOR-001',
+            'first_name' => 'Maria',
+            'last_name' => 'Supervisor',
+            'personnel_type' => 'GIP',
+            'qr_login_code' => hash('sha256', 'supervisor-card'),
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $otherPersonnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'GIP-OTHER-001',
+            'first_name' => 'Other',
+            'last_name' => 'Personnel',
+            'personnel_type' => 'GIP',
+            'qr_login_code' => hash('sha256', 'other-card'),
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (['Supervisor', 'Encoder'] as $role) {
+            $user = User::create([
+                'personnel_id' => $ownPersonnelId,
+                'username' => strtolower($role).'-card-user',
+                'password_hash' => bcrypt('ValidPassword!123'),
+                'user_role' => $role,
+                'status' => 'Active',
+            ]);
+
+            $this->actingAs($user)
+                ->getJson('/api/qr-attendance')
+                ->assertOk()
+                ->assertJsonPath('can_view_cards', true)
+                ->assertJsonPath('can_manage_codes', false)
+                ->assertJsonCount(1, 'personnel')
+                ->assertJsonPath('personnel.0.personnel_id', $ownPersonnelId);
+
+            $this->actingAs($user)
+                ->postJson("/api/qr-attendance/personnel/{$otherPersonnelId}/regenerate")
+                ->assertForbidden();
+
+            $user->delete();
+        }
+    }
+
+    public function test_administrator_and_hr_can_regenerate_personnel_cards(): void
+    {
+        $personnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'GIP-REGENERATE-001',
+            'first_name' => 'Card',
+            'last_name' => 'Holder',
+            'personnel_type' => 'GIP',
+            'qr_login_code' => hash('sha256', 'original-card'),
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (['Administrator', 'HR'] as $role) {
+            $user = User::create([
+                'username' => strtolower($role).'-regenerator',
+                'password_hash' => bcrypt('ValidPassword!123'),
+                'user_role' => $role,
+                'status' => 'Active',
+            ]);
+            $previousCode = DB::table('personnel')
+                ->where('personnel_id', $personnelId)
+                ->value('qr_login_code');
+
+            $this->actingAs($user)
+                ->postJson("/api/qr-attendance/personnel/{$personnelId}/regenerate")
+                ->assertOk()
+                ->assertJsonPath('personnel.personnel_id', $personnelId);
+
+            $this->assertNotSame(
+                $previousCode,
+                DB::table('personnel')->where('personnel_id', $personnelId)->value('qr_login_code')
+            );
+        }
     }
 }

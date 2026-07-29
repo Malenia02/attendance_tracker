@@ -25,7 +25,10 @@ final class AttendanceRecordPolicy
             return Response::deny('This attendance record is outside your assigned office scope.');
         }
 
-        if ((int) $user->personnel_id === (int) $attendance->personnel_id) {
+        if (
+            $user->user_role !== 'Administrator'
+            && (int) $user->personnel_id === (int) $attendance->personnel_id
+        ) {
             return Response::deny(
                 'You cannot verify your own attendance record. A different authorized reviewer is required.'
             );

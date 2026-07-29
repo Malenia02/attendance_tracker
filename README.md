@@ -241,6 +241,17 @@ context. Manual scanning remains available during local development.
 - Missing morning or afternoon sessions can produce a half-day result.
 - Attendance corrections are logged with the old and new values, reason,
   operator, IP address, and timestamp.
+- Personnel without an assigned department are excluded from DTR monitoring
+  and cannot start, certify, generate, or reopen a DTR workflow.
+- Administrator is the full-access override role and may verify their own
+  attendance, certify their own DTR, and review their own DTR reopening request.
+  The action is still validated and written to the audit trail.
+- Administrator and HR accounts may browse and regenerate personnel QR cards.
+  Supervisor, Encoder, and Personnel accounts can view and print only the card
+  linked to their own system account.
+- Printed personnel cards show their validity from the personnel employment
+  start and end years. The QR attendance endpoint also rejects scans outside
+  those configured employment dates.
 - DTR records move through Draft, Submitted, Returned, and Certified states.
 - Returned records must be corrected and submitted again before certification.
 - Certification creates a signed snapshot. Generated certified DTRs are checked

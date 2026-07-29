@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AttendanceChangeLog;
 use App\Models\AttendanceRecord;
 use App\Models\Personnel;
 use App\Models\User;
@@ -314,6 +315,104 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             'attendance_id' => $attendance->attendance_id,
             'is_verified' => false,
             'verified_by' => null,
+        ]);
+    }
+
+    public function test_administrator_can_verify_own_attendance(): void
+    {
+        [$employee, $attendance, $date] = $this->createMissingTimeOutFixture();
+        $personnelId = $employee->personnel_id;
+        $employee->delete();
+        $administrator = $this->createUser(
+            'admin-own-attendance',
+            'Administrator',
+            $personnelId
+        );
+        $attendance->forceFill([
+            'morning_time_out' => $date.' 12:00:00',
+            'afternoon_time_in' => $date.' 13:00:00',
+            'afternoon_time_out' => $date.' 17:00:00',
+            'attendance_status' => 'Present',
+        ])->save();
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/attendance/{$attendance->attendance_id}/verify")
+            ->assertOk()
+            ->assertJsonPath('data.is_verified', true);
+
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $attendance->attendance_id,
+            'is_verified' => true,
+            'verified_by' => $administrator->user_id,
+        ]);
+    }
+
+    public function test_administrator_can_verify_a_manual_correction_they_made(): void
+    {
+        [$employee, $attendance, $date] = $this->createMissingTimeOutFixture();
+        $personnelId = $employee->personnel_id;
+        $employee->delete();
+        $administrator = $this->createUser(
+            'admin-own-manual-correction',
+            'Administrator',
+            $personnelId
+        );
+        $attendance->forceFill([
+            'morning_time_out' => $date.' 12:00:00',
+            'afternoon_time_in' => $date.' 13:00:00',
+            'afternoon_time_out' => $date.' 17:00:00',
+            'attendance_status' => 'Present',
+            'record_source' => 'Manual',
+        ])->save();
+        AttendanceChangeLog::create([
+            'attendance_id' => $attendance->attendance_id,
+            'changed_by' => $administrator->user_id,
+            'action_type' => 'Updated',
+            'old_values' => [],
+            'new_values' => ['record_source' => 'Manual'],
+            'reason' => 'Administrator corrected their own attendance.',
+        ]);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/attendance/{$attendance->attendance_id}/verify")
+            ->assertOk()
+            ->assertJsonPath('data.is_verified', true);
+
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $attendance->attendance_id,
+            'is_verified' => true,
+            'verified_by' => $administrator->user_id,
+        ]);
+    }
+
+    public function test_administrator_can_bulk_verify_own_attendance(): void
+    {
+        [$employee, $attendance, $date] = $this->createMissingTimeOutFixture();
+        $personnelId = $employee->personnel_id;
+        $employee->delete();
+        $administrator = $this->createUser(
+            'admin-own-bulk-attendance',
+            'Administrator',
+            $personnelId
+        );
+        $attendance->forceFill([
+            'morning_time_out' => $date.' 12:00:00',
+            'afternoon_time_in' => $date.' 13:00:00',
+            'afternoon_time_out' => $date.' 17:00:00',
+            'attendance_status' => 'Present',
+        ])->save();
+
+        $this->actingAs($administrator)
+            ->postJson('/api/attendance/verify-bulk', [
+                'attendance_ids' => [$attendance->attendance_id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('verified_count', 1);
+
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $attendance->attendance_id,
+            'is_verified' => true,
+            'verified_by' => $administrator->user_id,
         ]);
     }
 

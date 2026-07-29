@@ -75,6 +75,7 @@ class DtrController extends Controller
                     ->where('dtr_month', $month->month),
             ])
             ->where('status', 'Active')
+            ->whereNotNull('department_id')
             ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -162,6 +163,12 @@ class DtrController extends Controller
             return response()->json(['message' => 'This DTR is outside your assigned office scope.'], 403);
         }
 
+        if ($personnel->department_id === null) {
+            return response()->json([
+                'message' => 'Assign this personnel record to a department before starting its DTR workflow.',
+            ], 422);
+        }
+
         if ($status === 'Certified' || $status === 'Returned') {
             if (! in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true)) {
                 return response()->json(['message' => 'You do not have permission to certify or return DTRs.'], 403);
@@ -170,7 +177,11 @@ class DtrController extends Controller
             return response()->json(['message' => 'You may only update your own DTR.'], 403);
         }
 
-        if ($status === 'Certified' && $isOwnRecord) {
+        if (
+            $status === 'Certified'
+            && $isOwnRecord
+            && $user->user_role !== 'Administrator'
+        ) {
             return response()->json([
                 'message' => 'You cannot certify your own DTR. A different authorized reviewer is required.',
             ], 403);
@@ -220,6 +231,7 @@ class DtrController extends Controller
             $previousStatus = $certification->certification_status ?? 'Draft';
             $correctedByCertifier = $status === 'Certified'
                 && $this->certifierChangedAmendedAttendance($certification, $user->user_id);
+            $administratorOverride = $user->user_role === 'Administrator';
             $transitionError = match (true) {
                 $previousStatus === 'Certified' => 'This DTR is certified and locked. A separate authorized reopening process is required.',
                 $status === $previousStatus => "This DTR is already {$status}.",
@@ -227,8 +239,8 @@ class DtrController extends Controller
                 $status === 'Submitted' && ! in_array($previousStatus, ['Draft', 'Returned', 'Reopened'], true) => 'Only draft, returned, or reopened DTRs may be submitted.',
                 $status === 'Returned' && $previousStatus !== 'Submitted' => 'Only submitted DTRs may be returned for correction.',
                 $status === 'Certified' && $previousStatus !== 'Submitted' => 'The DTR must be submitted before certification.',
-                $status === 'Certified' && $certification->prepared_by === $user->user_id => 'The person who submitted a DTR cannot also certify it.',
-                $correctedByCertifier => 'The person who corrected an amended attendance entry cannot certify that DTR version.',
+                $status === 'Certified' && ! $administratorOverride && $certification->prepared_by === $user->user_id => 'The person who submitted a DTR cannot also certify it.',
+                $correctedByCertifier && ! $administratorOverride => 'The person who corrected an amended attendance entry cannot certify that DTR version.',
                 default => null,
             };
 

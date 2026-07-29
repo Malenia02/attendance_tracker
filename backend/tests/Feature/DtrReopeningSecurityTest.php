@@ -6,6 +6,7 @@ use App\Models\DtrCertification;
 use App\Models\Personnel;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -199,7 +200,7 @@ class DtrReopeningSecurityTest extends TestCase
             );
     }
 
-    public function test_requester_cannot_approve_their_own_reopening_request(): void
+    public function test_administrator_can_approve_their_own_reopening_request(): void
     {
         [$personnel, $certification] = $this->createCertifiedDtr();
         $administrator = $this->createUser('admin-requester', 'Administrator');
@@ -217,14 +218,21 @@ class DtrReopeningSecurityTest extends TestCase
             ->patchJson("/api/dtr/reopen-requests/{$requestId}/review", [
                 'decision' => 'Approved',
             ])
-            ->assertForbidden();
+            ->assertOk();
 
-        $this->assertSame('Certified', $certification->fresh()->certification_status);
+        $certification->refresh();
+        $this->assertSame('Reopened', $certification->certification_status);
+        $this->assertSame(2, $certification->version_number);
         $this->assertDatabaseHas('dtr_reopen_requests', [
             'dtr_reopen_request_id' => $requestId,
-            'request_status' => 'Pending',
+            'request_status' => 'Approved',
+            'reviewed_by' => $administrator->user_id,
         ]);
-        $this->assertDatabaseCount('dtr_certification_versions', 0);
+        $this->assertDatabaseHas('dtr_certification_versions', [
+            'dtr_certification_id' => $certification->dtr_certification_id,
+            'version_number' => 1,
+            'archived_by' => $administrator->user_id,
+        ]);
     }
 
     public function test_tampered_certified_snapshot_blocks_reopening(): void
@@ -257,9 +265,42 @@ class DtrReopeningSecurityTest extends TestCase
         $this->assertDatabaseCount('dtr_certification_versions', 0);
     }
 
-    private function createCertifiedDtr(): array
+    public function test_unassigned_personnel_cannot_start_or_reopen_a_dtr_workflow(): void
     {
         $personnel = Personnel::create([
+            'employee_number' => 'UNASSIGNED-001',
+            'first_name' => 'Unassigned',
+            'last_name' => 'Personnel',
+            'status' => 'Active',
+        ]);
+        $administrator = $this->createUser('unassigned-admin', 'Administrator');
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-07',
+                'status' => 'Draft',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Assign this personnel record to a department before starting its DTR workflow.'
+            );
+
+        $this->assertDatabaseMissing('dtr_certifications', [
+            'personnel_id' => $personnel->personnel_id,
+        ]);
+    }
+
+    private function createCertifiedDtr(): array
+    {
+        $departmentId = DB::table('departments')->insertGetId([
+            'department_code' => 'DILG-'.uniqid(),
+            'department_name' => 'Test Department',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $personnel = Personnel::create([
+            'department_id' => $departmentId,
             'employee_number' => 'GIP-2026-001',
             'first_name' => 'Test',
             'last_name' => 'Personnel',

@@ -679,12 +679,22 @@ export default function QrAttendance() {
       ) : (
         <div className="panel qr-cards-panel">
           <div className="qr-cards-toolbar">
-            <div><span>Select an ID to print · click the card to flip</span><h2>Personnel QR Cards</h2></div>
             <div>
-              <label><Search size={16} /><input value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search personnel..." /></label>
+              <span>
+                {data.can_manage_codes
+                  ? "Select an ID to print · click the card to flip"
+                  : "Your linked personnel credential · click the card to flip"}
+              </span>
+              <h2>{data.can_manage_codes ? "Personnel QR Cards" : "My Personnel Card"}</h2>
             </div>
+            {data.can_manage_codes && (
+              <div>
+                <label><Search size={16} /><input value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search personnel..." /></label>
+              </div>
+            )}
           </div>
-          <div className="qr-print-selection-bar">
+          {data.can_manage_codes && (
+            <div className="qr-print-selection-bar">
             <div className="qr-print-selection-count">
               <CheckCircle2 size={17} />
               <span><strong>{selectedCardIds.length}</strong> {selectedCardIds.length === 1 ? "ID" : "IDs"} selected for printing</span>
@@ -715,29 +725,47 @@ export default function QrAttendance() {
                 <Printer size={16} />Print selected
               </button>
             </div>
-          </div>
+            </div>
+          )}
+          {!data.can_manage_codes && data.personnel.length > 0 && (
+            <div className="qr-print-selection-bar">
+              <div className="qr-print-selection-count">
+                <IdCard size={17} />
+                <span>Only your linked personnel card is available.</span>
+              </div>
+              <div className="qr-print-selection-actions">
+                <button type="button" className="primary" onClick={() => window.print()}>
+                  <Printer size={16} />Print my card
+                </button>
+              </div>
+            </div>
+          )}
           <div className="qr-print-grid">
             {data.personnel.map((person) => (
               <div
                 key={person.personnel_id}
                 className={[
                   "personnel-card-choice",
-                  selectedCardIdSet.has(person.personnel_id) ? "is-print-selected" : "",
+                  (!data.can_manage_codes || selectedCardIdSet.has(person.personnel_id))
+                    ? "is-print-selected"
+                    : "",
                   visibleCardIdSet.has(person.personnel_id) ? "" : "is-filtered-out",
                 ].filter(Boolean).join(" ")}
               >
-                <button
-                  type="button"
-                  className="personnel-card-select"
-                  aria-pressed={selectedCardIdSet.has(person.personnel_id)}
-                  aria-label={`${selectedCardIdSet.has(person.personnel_id) ? "Remove" : "Select"} ${person.full_name} ${selectedCardIdSet.has(person.personnel_id) ? "from" : "for"} printing`}
-                  onClick={() => toggleCardSelection(person.personnel_id)}
-                >
-                  <span aria-hidden="true">
-                    {selectedCardIdSet.has(person.personnel_id) && <CheckCircle2 size={14} />}
-                  </span>
-                  {selectedCardIdSet.has(person.personnel_id) ? "Selected" : "Select ID"}
-                </button>
+                {data.can_manage_codes && (
+                  <button
+                    type="button"
+                    className="personnel-card-select"
+                    aria-pressed={selectedCardIdSet.has(person.personnel_id)}
+                    aria-label={`${selectedCardIdSet.has(person.personnel_id) ? "Remove" : "Select"} ${person.full_name} ${selectedCardIdSet.has(person.personnel_id) ? "from" : "for"} printing`}
+                    onClick={() => toggleCardSelection(person.personnel_id)}
+                  >
+                    <span aria-hidden="true">
+                      {selectedCardIdSet.has(person.personnel_id) && <CheckCircle2 size={14} />}
+                    </span>
+                    {selectedCardIdSet.has(person.personnel_id) ? "Selected" : "Select ID"}
+                  </button>
+                )}
                 <PersonnelQrCard
                   person={person}
                   busy={regeneratingId === person.personnel_id}
@@ -889,14 +917,12 @@ function PersonnelQrCard({ person, busy, canRegenerate, onRegenerate }) {
           <QrCardHeader />
       <div className="qr-card-ribbon">
         <span>Authorized personnel credential</span>
-        <span><i></i> Active</span>
       </div>
       <div className="personnel-qr-body">
         <div className="personnel-card-identity">
           <div className="personnel-card-profile">
             <div className="personnel-card-photo">
               {personImage ? <img src={personImage} alt="" /> : <span>{initials(person.full_name)}</span>}
-              <i><BadgeCheck size={13} /></i>
             </div>
             <div className="personnel-card-name">
               <small>Cardholder</small>
@@ -908,6 +934,7 @@ function PersonnelQrCard({ person, busy, canRegenerate, onRegenerate }) {
             <div><small>Employee number</small><strong>{person.employee_number}</strong></div>
             <div><small>Office / Unit</small><strong>{person.department?.code || "Not assigned"}</strong></div>
             <div><small>Personnel type</small><strong>{person.personnel_type}</strong></div>
+            <div><small>Validity</small><strong>{person.validity_label || "While active"}</strong></div>
           </div>
         </div>
         <div className="personnel-card-code">

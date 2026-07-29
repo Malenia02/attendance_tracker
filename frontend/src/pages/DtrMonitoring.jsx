@@ -22,7 +22,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { apiFetch, getStoredUser } from "../lib/auth";
+import { apiFetch } from "../lib/auth";
 import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 
@@ -57,7 +57,6 @@ async function readResponse(response) {
 
 export default function DtrMonitoring() {
   const navigate = useNavigate();
-  const currentUser = getStoredUser();
   const [month, setMonth] = useState(currentMonthKey);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({
@@ -77,7 +76,6 @@ export default function DtrMonitoring() {
     can_manage_others: false,
     can_request_reopen: false,
     can_approve_reopen: false,
-    current_user_id: currentUser?.user_id || null,
   });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -109,7 +107,6 @@ export default function DtrMonitoring() {
           can_manage_others: payload.can_manage_others,
           can_request_reopen: payload.can_request_reopen,
           can_approve_reopen: payload.can_approve_reopen,
-          current_user_id: payload.current_user_id,
         });
         setSelectedIds((current) => current.filter(
           (id) => payload.data.some(
@@ -576,7 +573,6 @@ export default function DtrMonitoring() {
           canCorrect={meta.can_correct_attendance}
           canRequestReopen={meta.can_request_reopen}
           canApproveReopen={meta.can_approve_reopen}
-          currentUserId={meta.current_user_id}
           busy={busyId === selected.personnel_id}
           exceptionBusy={exceptionBusy}
           onClose={() => setSelected(null)}
@@ -604,7 +600,6 @@ function DtrDetails({
   canCorrect,
   canRequestReopen,
   canApproveReopen,
-  currentUserId,
   busy,
   exceptionBusy,
   onClose,
@@ -712,7 +707,7 @@ function DtrDetails({
                 date{pendingReopen.affected_dates.length === 1 ? "" : "s"}
               </small>
             </div>
-            {canApproveReopen && Number(pendingReopen.requested_by_id) !== Number(currentUserId) && (
+            {canApproveReopen && (
               <div className="dtr-reopen-review-actions">
                 <button
                   type="button"
@@ -731,9 +726,6 @@ function DtrDetails({
                   Approve reopening
                 </button>
               </div>
-            )}
-            {Number(pendingReopen.requested_by_id) === Number(currentUserId) && (
-              <em>Independent approval by another administrator is required.</em>
             )}
           </div>
         )}

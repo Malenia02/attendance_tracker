@@ -33,6 +33,12 @@ class DtrReopenController extends Controller
             return response()->json(['message' => 'This DTR is outside your assigned office scope.'], 403);
         }
 
+        if ($personnel->department_id === null) {
+            return response()->json([
+                'message' => 'Assign this personnel record to a department before reopening its DTR.',
+            ], 422);
+        }
+
         $month = Carbon::createFromFormat('Y-m-d', $validated['month'].'-01')->startOfMonth();
         $hasOutsideDate = collect($validated['affected_dates'])->contains(
             fn (string $date) => ! Carbon::createFromFormat('Y-m-d', $date)->isSameMonth($month)
@@ -105,7 +111,10 @@ class DtrReopenController extends Controller
                 return ['error' => 'This reopening request has already been decided.', 'status' => 409];
             }
 
-            if ((int) $lockedRequest->requested_by === (int) $user->user_id) {
+            if (
+                $user->user_role !== 'Administrator'
+                && (int) $lockedRequest->requested_by === (int) $user->user_id
+            ) {
                 return [
                     'error' => 'You cannot approve or reject your own reopening request.',
                     'status' => 403,
@@ -113,12 +122,20 @@ class DtrReopenController extends Controller
             }
 
             $certification = DtrCertification::query()
+                ->with('personnel')
                 ->whereKey($lockedRequest->dtr_certification_id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
             if (! PersonnelAccess::canAccess($user, $certification->personnel)) {
                 return ['error' => 'This DTR is outside your assigned office scope.', 'status' => 403];
+            }
+
+            if ($certification->personnel?->department_id === null) {
+                return [
+                    'error' => 'Assign this personnel record to a department before reviewing its DTR reopening request.',
+                    'status' => 422,
+                ];
             }
 
             if ($validated['decision'] === 'Approved') {

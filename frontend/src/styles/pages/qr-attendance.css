@@ -1226,10 +1226,6 @@
   border-top: 1px solid #dfe8ef;
 }
 
-.personnel-card-details > div:last-child {
-  grid-column: 1 / -1;
-}
-
 .personnel-card-details small,
 .personnel-card-details strong {
   display: block;
