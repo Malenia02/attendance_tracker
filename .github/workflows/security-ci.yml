@@ -76,6 +76,12 @@ jobs:
         working-directory: backend
         run: php artisan migrate:fresh --force --no-interaction
 
+      - name: Verify production migration retry recovery
+        working-directory: backend
+        run: |
+          php artisan tinker --execute="DB::table('migrations')->where('migration', '2026_07_29_000000_harden_production_integrity')->delete();"
+          php artisan migrate --force --no-interaction
+
       - name: Run backend tests
         working-directory: backend
         run: php artisan test
