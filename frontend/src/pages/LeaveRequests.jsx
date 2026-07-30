@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BadgeCheck,
   Ban,
@@ -14,6 +15,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  UploadCloud,
   X,
   XCircle,
 } from "lucide-react";
@@ -59,6 +61,12 @@ function statusClass(status) {
   return String(status || "").toLowerCase().replaceAll(" ", "-");
 }
 
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function LeaveRequests() {
   const [records, setRecords] = useState([]);
   const [summary, setSummary] = useState({
@@ -89,6 +97,17 @@ export default function LeaveRequests() {
   const [actionReason, setActionReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
+
+  useEffect(() => {
+    if (!createOpen && !selected) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [createOpen, selected]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -367,8 +386,8 @@ export default function LeaveRequests() {
         />
       </div>
 
-      {createOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      {createOpen && createPortal((
+        <div className="modal-backdrop leave-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeCreate();
         }}>
           <div className="user-modal form-modal leave-form-modal" role="dialog" aria-modal="true" aria-labelledby="leave-form-title">
@@ -442,13 +461,41 @@ export default function LeaveRequests() {
               </div>
               <div className="form-field form-field-full">
                 <label htmlFor="leave_document">Supporting document <span>Optional</span></label>
-                <input
-                  id="leave_document"
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.webp"
-                  onChange={(event) => setDocumentFile(event.target.files?.[0] || null)}
-                />
-                <small className="form-help">PDF or image, maximum 5 MB. Stored privately.</small>
+                <div className={`leave-file-picker ${documentFile ? "has-file" : ""}`}>
+                  <input
+                    key={documentFile
+                      ? `${documentFile.name}-${documentFile.lastModified}`
+                      : "no-leave-document"}
+                    className="leave-file-input"
+                    id="leave_document"
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.webp"
+                    onChange={(event) => setDocumentFile(event.target.files?.[0] || null)}
+                  />
+                  <label className="leave-file-trigger" htmlFor="leave_document">
+                    <span><UploadCloud size={19} /></span>
+                    <div>
+                      <strong>{documentFile?.name || "Choose a supporting document"}</strong>
+                      <small>
+                        {documentFile
+                          ? `${formatFileSize(documentFile.size)} · Ready to upload securely`
+                          : "PDF, JPG, PNG, or WebP · Maximum 5 MB"}
+                      </small>
+                    </div>
+                    <em>{documentFile ? "Change" : "Browse"}</em>
+                  </label>
+                  {documentFile && (
+                    <button
+                      type="button"
+                      className="leave-file-clear"
+                      aria-label="Remove selected supporting document"
+                      onClick={() => setDocumentFile(null)}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+                <small className="form-help">The attachment is private and visible only to authorized reviewers.</small>
                 {fieldErrors.supporting_document && <small className="field-error">{fieldErrors.supporting_document[0]}</small>}
               </div>
               <div className="leave-form-note form-field-full">
@@ -464,10 +511,10 @@ export default function LeaveRequests() {
             </form>
           </div>
         </div>
-      )}
+      ), document.body)}
 
-      {selected && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      {selected && createPortal((
+        <div className="modal-backdrop leave-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !actionBusy) setSelected(null);
         }}>
           <div className="user-modal form-modal leave-detail-modal" role="dialog" aria-modal="true" aria-labelledby="leave-detail-title">
@@ -580,7 +627,7 @@ export default function LeaveRequests() {
             )}
           </div>
         </div>
-      )}
+      ), document.body)}
     </section>
   );
 }
