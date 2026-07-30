@@ -1,35 +1,75 @@
 .app-footer {
+  position: relative;
   margin: 0 30px 22px;
-  padding: 14px 18px;
-  display: flex;
+  padding: 17px 19px;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+  gap: 26px;
+  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 16px;
   color: var(--text-soft);
   background:
-    linear-gradient(135deg, rgba(65, 84, 241, 0.045), transparent 48%),
+    radial-gradient(circle at 8% -70%, rgba(65, 84, 241, 0.18), transparent 42%),
+    radial-gradient(circle at 88% 150%, rgba(46, 202, 106, 0.1), transparent 38%),
+    linear-gradient(135deg, rgba(65, 84, 241, 0.055), transparent 52%),
     var(--bg-card);
-  box-shadow: 0 8px 24px rgba(1, 41, 112, 0.06);
+  box-shadow:
+    0 16px 35px rgba(1, 41, 112, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.app-footer::before {
+  position: absolute;
+  top: 0;
+  right: 18px;
+  left: 18px;
+  height: 2px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(90deg, transparent, var(--primary), var(--success), transparent);
+  content: "";
+  opacity: 0.72;
 }
 
 .app-footer-brand,
+.app-footer-trust,
 .app-footer-meta,
-.app-footer-meta > span {
+.app-footer-github {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
 }
 
 .app-footer-brand {
   min-width: 0;
-  gap: 10px;
+  gap: 12px;
 }
 
 .app-footer-seal {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 39px;
+  height: 39px;
+  flex: 0 0 39px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    0 6px 14px rgba(1, 41, 112, 0.13),
+    0 0 0 4px color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.app-footer-eyebrow {
+  margin-bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.75px;
+  text-transform: uppercase;
 }
 
 .app-footer-brand strong,
@@ -39,38 +79,125 @@
 
 .app-footer-brand strong {
   color: var(--text-main);
-  font-size: 13px;
-  font-weight: 750;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: -0.1px;
 }
 
 .app-footer-brand small,
-.app-footer-meta small {
+.app-footer-meta small,
+.app-footer-trust small {
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
+}
+
+.app-footer-trust {
+  gap: 9px;
+  padding: 8px 13px;
+  border: 1px solid color-mix(in srgb, var(--success) 20%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--success) 5%, var(--bg-card));
+}
+
+.app-footer-trust > span {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  color: var(--success);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.app-footer-trust small,
+.app-footer-trust strong {
+  display: block;
+  white-space: nowrap;
+}
+
+.app-footer-trust strong {
+  margin-top: 2px;
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .app-footer-meta {
-  flex: 0 0 auto;
+  min-width: 205px;
   flex-direction: column;
   align-items: flex-end;
-}
-
-.app-footer-meta > span {
   gap: 5px;
-  color: var(--text-soft);
-  font-size: 11px;
-  font-weight: 700;
 }
 
-.app-footer-meta > span svg {
-  color: var(--success);
+.app-footer-github {
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--primary) 5%, var(--bg-card));
+  text-decoration: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.app-footer-github:hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 12%, transparent);
+  transform: translateY(-1px);
+}
+
+.app-footer-github:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  outline-offset: 2px;
+}
+
+.app-footer-github > span {
+  min-width: 0;
+}
+
+.app-footer-github small,
+.app-footer-github strong {
+  display: block;
+}
+
+.app-footer-github small {
+  margin: 0;
+  font-size: 8px;
+  letter-spacing: 0.2px;
+}
+
+.app-footer-github strong {
+  margin-top: 1px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.app-footer-github > svg:last-child {
+  color: var(--text-muted);
+}
+
+.app-footer-copyright {
+  margin: 0 !important;
+  font-size: 9px !important;
+}
+
+@media (max-width: 1050px) {
+  .app-footer {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+
+  .app-footer-trust {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {
   .app-footer {
     margin: 0 14px 16px;
     padding: 13px 14px;
+    display: flex;
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;
@@ -81,6 +208,10 @@
     padding-top: 10px;
     align-items: flex-start;
     border-top: 1px solid var(--border);
+  }
+
+  .app-footer-github {
+    width: 100%;
   }
 }
 
