@@ -253,6 +253,30 @@ class ScheduleManagementSecurityTest extends TestCase
             ->assertJsonPath('personnel.0.current_assignment', null);
     }
 
+    public function test_personnel_assignments_are_paginated_before_formatting(): void
+    {
+        $administrator = $this->user('Administrator');
+
+        foreach (range(1, 31) as $number) {
+            Personnel::create([
+                'employee_number' => 'PAGE-'.str_pad((string) $number, 3, '0', STR_PAD_LEFT),
+                'first_name' => 'Person',
+                'last_name' => str_pad((string) $number, 3, '0', STR_PAD_LEFT),
+                'personnel_type' => 'GIP',
+                'status' => 'Active',
+            ]);
+        }
+
+        $this->actingAs($administrator)
+            ->getJson('/api/schedules?personnel_page=2&personnel_per_page=10')
+            ->assertOk()
+            ->assertJsonCount(10, 'personnel')
+            ->assertJsonPath('meta.personnel_pagination.current_page', 2)
+            ->assertJsonPath('meta.personnel_pagination.per_page', 10)
+            ->assertJsonPath('meta.personnel_pagination.total', 31)
+            ->assertJsonPath('meta.personnel_pagination.last_page', 4);
+    }
+
     private function user(string $role): User
     {
         return User::create([

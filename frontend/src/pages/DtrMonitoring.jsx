@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch } from "../lib/auth";
+import Pagination from "../components/common/Pagination";
 import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 
@@ -59,6 +60,8 @@ export default function DtrMonitoring() {
   const navigate = useNavigate();
   const [month, setMonth] = useState(currentMonthKey);
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState({
     personnel: 0,
     ready: 0,
@@ -92,12 +95,21 @@ export default function DtrMonitoring() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        month,
+        page: String(page),
+        per_page: "25",
+      });
+      if (search.trim()) params.set("search", search.trim());
+      if (statusFilter) params.set("status", statusFilter);
 
-    apiFetch(`/dtr?month=${month}`, { signal: controller.signal })
-      .then(readResponse)
-      .then((payload) => {
+      apiFetch(`/dtr?${params}`, { signal: controller.signal })
+        .then(readResponse)
+        .then((payload) => {
         setRows(payload.data);
         setSummary(payload.summary);
+        setPagination(payload.meta?.pagination || null);
         setMeta({
           month_label: payload.month_label,
           can_certify: payload.can_certify,
@@ -116,16 +128,23 @@ export default function DtrMonitoring() {
         setSelected((current) => current
           ? payload.data.find((row) => row.personnel_id === current.personnel_id) || null
           : null);
-      })
-      .catch((requestError) => {
-        if (requestError.name !== "AbortError") setError(requestError.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+          if (!payload.data.length && page > 1) {
+            setPage((current) => Math.max(1, current - 1));
+          }
+        })
+        .catch((requestError) => {
+          if (requestError.name !== "AbortError") setError(requestError.message);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 250);
 
-    return () => controller.abort();
-  }, [month, refreshKey]);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [month, search, statusFilter, page, refreshKey]);
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -391,6 +410,7 @@ export default function DtrMonitoring() {
                 setLoading(true);
                 setError("");
                 setMonth(event.target.value);
+                setPage(1);
               }}
             />
           </label>
@@ -442,7 +462,7 @@ export default function DtrMonitoring() {
               <Search size={16} />
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => { setSearch(event.target.value); setPage(1); }}
                 placeholder="Search personnel..."
               />
             </label>
@@ -451,7 +471,7 @@ export default function DtrMonitoring() {
               <option value="ready">Ready</option>
               <option value="attention">Needs attention</option>
             </select>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
               <option value="">All DTR statuses</option>
               {["Draft", "Submitted", "Certified", "Returned", "Reopened"].map((status) => (
                 <option key={status}>{status}</option>
@@ -559,9 +579,12 @@ export default function DtrMonitoring() {
             </tbody>
           </table>
         </div>
-        <footer className="users-table-footer">
-          Showing {filteredRows.length} of {rows.length} personnel
-        </footer>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          itemLabel="DTR records"
+        />
       </div>
 
       {selected && (

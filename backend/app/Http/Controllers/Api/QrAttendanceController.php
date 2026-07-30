@@ -39,19 +39,20 @@ class QrAttendanceController extends Controller
         $canManageCodes = in_array($user->user_role, self::CODE_MANAGER_ROLES, true);
         $canViewCards = true;
         $today = now()->toDateString();
-        $visiblePersonnelIds = PersonnelAccess::scope(
+        $visiblePersonnelQuery = PersonnelAccess::scope(
             Personnel::query()->where('status', 'Active'),
             $user
-        )->pluck('personnel_id');
+        );
+        $visiblePersonnelIds = (clone $visiblePersonnelQuery)->select('personnel_id');
         $todayLogs = QrScanLog::query()
-            ->whereIn('personnel_id', $visiblePersonnelIds)
+            ->whereIn('personnel_id', clone $visiblePersonnelIds)
             ->whereDate('scanned_at', $today);
         $recentLogs = QrScanLog::query()
             ->with([
                 'personnel:personnel_id,employee_number,first_name,middle_name,last_name,suffix,photo',
                 'scanner:user_id,username',
             ])
-            ->whereIn('personnel_id', $visiblePersonnelIds)
+            ->whereIn('personnel_id', clone $visiblePersonnelIds)
             ->orderByDesc('scanned_at')
             ->limit(20)
             ->get()
@@ -64,25 +65,73 @@ class QrAttendanceController extends Controller
             'can_view_cards' => $canViewCards,
             'can_manage_codes' => $canManageCodes,
             'summary' => [
-                'active_personnel' => $visiblePersonnelIds->count(),
+                'active_personnel' => (clone $visiblePersonnelQuery)->count(),
                 'accepted_today' => (clone $todayLogs)->where('scan_status', 'Accepted')->count(),
                 'rejected_today' => (clone $todayLogs)->whereNotIn('scan_status', ['Accepted', 'Duplicate'])->count(),
                 'duplicates_today' => (clone $todayLogs)->where('scan_status', 'Duplicate')->count(),
             ],
             'recent_scans' => $recentLogs,
-            'personnel' => $canViewCards
+            'personnel' => $canViewCards && ! $canManageCodes
                 ? Personnel::query()
                     ->with('department:department_id,department_code,department_name,office_location')
                     ->where('status', 'Active')
-                    ->when(
-                        ! $canManageCodes,
-                        fn ($query) => $query->whereKey($user->personnel_id ?? -1)
-                    )
+                    ->whereKey($user->personnel_id ?? -1)
                     ->orderBy('last_name')
                     ->orderBy('first_name')
                     ->get()
                     ->map(fn (Personnel $person) => $this->formatPersonnelCard($person))
                 : [],
+        ]);
+    }
+
+    public function cards(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! in_array($user->user_role, self::CODE_MANAGER_ROLES, true)) {
+            return response()->json([
+                'message' => 'Only Administrator and HR accounts can browse personnel QR cards.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'between:6,48'],
+        ]);
+        $paginator = Personnel::query()
+            ->with('department:department_id,department_code,department_name,office_location')
+            ->where('status', 'Active')
+            ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
+            ->when($validated['search'] ?? null, function ($query, string $search): void {
+                $query->where(function ($query) use ($search): void {
+                    $query
+                        ->where('employee_number', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('middle_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate(
+                $validated['per_page'] ?? 12,
+                ['*'],
+                'page',
+                $validated['page'] ?? 1
+            );
+
+        return response()->json([
+            'data' => collect($paginator->items())
+                ->map(fn (Personnel $person) => $this->formatPersonnelCard($person)),
+            'meta' => ['pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ]],
         ]);
     }
 

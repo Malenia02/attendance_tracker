@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
+import Pagination from "../components/common/Pagination";
 
 const emptyForm = {
   personnel_id: "",
@@ -80,8 +81,11 @@ function evaluatePassword(password, confirmation) {
 export default function SystemUsers() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [users, setUsers] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0, locked: 0 });
   const [options, setOptions] = useState({ roles: [], statuses: [], personnel: [] });
+  const [personnelLookupSearch, setPersonnelLookupSearch] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -109,16 +113,24 @@ export default function SystemUsers() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ limit: "50" });
+      if (personnelLookupSearch.trim()) params.set("personnel_search", personnelLookupSearch.trim());
+      if (form.personnel_id) params.set("personnel_id", form.personnel_id);
 
-    apiFetch("/system-users/options", { signal: controller.signal })
-      .then(readResponse)
-      .then(setOptions)
-      .catch((error) => {
-        if (error.name !== "AbortError") setPageError(error.message);
-      });
+      apiFetch(`/system-users/options?${params}`, { signal: controller.signal })
+        .then(readResponse)
+        .then(setOptions)
+        .catch((error) => {
+          if (error.name !== "AbortError") setPageError(error.message);
+        });
+    }, 200);
 
-    return () => controller.abort();
-  }, [refreshKey]);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [personnelLookupSearch, form.personnel_id, refreshKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -127,6 +139,8 @@ export default function SystemUsers() {
       setPageError("");
 
       const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("per_page", "25");
       if (search.trim()) params.set("search", search.trim());
       if (roleFilter) params.set("role", roleFilter);
       if (statusFilter) params.set("status", statusFilter);
@@ -140,6 +154,8 @@ export default function SystemUsers() {
 
         setUsers(payload.data);
         setSummary(payload.summary);
+        setPagination(payload.meta?.pagination || null);
+        if (!payload.data.length && page > 1) setPage((current) => Math.max(1, current - 1));
       } catch (error) {
         if (error.name !== "AbortError") setPageError(error.message);
       } finally {
@@ -151,7 +167,7 @@ export default function SystemUsers() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [search, roleFilter, statusFilter, refreshKey]);
+  }, [search, roleFilter, statusFilter, page, refreshKey]);
 
   const availablePersonnel = useMemo(
     () =>
@@ -164,6 +180,7 @@ export default function SystemUsers() {
 
   function openCreateModal() {
     setEditingUser(null);
+    setPersonnelLookupSearch("");
     setForm(emptyForm);
     setFieldErrors({});
     setModalOpen(true);
@@ -171,6 +188,7 @@ export default function SystemUsers() {
 
   function openEditModal(user) {
     setEditingUser(user);
+    setPersonnelLookupSearch("");
     setForm({
       personnel_id: user.personnel_id ? String(user.personnel_id) : "",
       username: user.username,
@@ -280,17 +298,19 @@ export default function SystemUsers() {
 
   return (
     <section className="system-users-page">
-      <div className="page-title users-page-title">
+      <div className="records-hero system-users-hero">
         <div>
+          <span className="records-hero-eyebrow"><ShieldCheck size={14} /> Access governance</span>
           <h1>System Users</h1>
-          <nav className="breadcrumb" aria-label="Breadcrumb">
-            <span>Home</span><span>/</span><strong>System Users</strong>
-          </nav>
+          <p>Control account access, personnel links, security roles, and account availability.</p>
         </div>
-        <button type="button" className="primary-action" onClick={openCreateModal}>
-          <Plus size={18} />
-          Add system user
-        </button>
+        <div className="records-hero-side">
+          <span className="records-hero-mark" aria-hidden="true"><LockKeyhole size={28} /></span>
+          <button type="button" className="records-hero-action" onClick={openCreateModal}>
+            <Plus size={18} />
+            Add system user
+          </button>
+        </div>
       </div>
 
       {notice && <div className="users-notice success"><UserCheck size={18} />{notice}</div>}
@@ -305,23 +325,30 @@ export default function SystemUsers() {
         ))}
       </div>
 
-      <div className="panel users-panel">
+      <div className="panel users-panel records-panel">
+        <div className="records-panel-heading">
+          <div>
+            <span>Identity administration</span>
+            <h2>Authorized accounts</h2>
+          </div>
+          <small>{loading ? "Loading accounts..." : `${users.length} result${users.length === 1 ? "" : "s"}`}</small>
+        </div>
         <div className="users-toolbar">
           <div className="users-search">
             <Search size={18} />
             <input
               type="search"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
               placeholder="Search username, personnel, email..."
               aria-label="Search system users"
             />
           </div>
-          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+          <select value={roleFilter} onChange={(event) => { setRoleFilter(event.target.value); setPage(1); }}>
             <option value="">All roles</option>
             {options.roles.map((role) => <option key={role}>{role}</option>)}
           </select>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
             <option value="">All statuses</option>
             {options.statuses.map((status) => <option key={status}>{status}</option>)}
           </select>
@@ -384,9 +411,12 @@ export default function SystemUsers() {
             </tbody>
           </table>
         </div>
-        <div className="users-table-footer">
-          Showing {users.length} {users.length === 1 ? "user" : "users"}
-        </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          itemLabel="system users"
+        />
       </div>
 
       {modalOpen && (
@@ -410,6 +440,13 @@ export default function SystemUsers() {
 
               <div className="form-field form-field-full">
                 <label htmlFor="personnel_id">Linked personnel <span>Optional</span></label>
+                <input
+                  type="search"
+                  value={personnelLookupSearch}
+                  onChange={(event) => setPersonnelLookupSearch(event.target.value)}
+                  placeholder="Search personnel by name or employee number..."
+                  aria-label="Search personnel to link"
+                />
                 <select id="personnel_id" name="personnel_id" value={form.personnel_id} onChange={updateForm}>
                   <option value="">No personnel assignment</option>
                   {availablePersonnel.map((person) => (

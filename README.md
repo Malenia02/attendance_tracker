@@ -353,6 +353,28 @@ a restart or redeploy. Free instances can also take close to a minute to wake
 after being idle, so frontend session verification allows a 60-second cold
 start. Do not use the free instance as the final records system.
 
+### Free-tier performance safeguards
+
+High-volume Personnel, System Users, Attendance, DTR, QR card, and schedule
+assignment lists use database pagination and bounded lookups. The dashboard is
+cached briefly, and DTR document generation is limited to 20 personnel per
+synchronous batch by default. These limits are suitable for testing on one free
+Render web service and an Aiven free MySQL node:
+
+```env
+DASHBOARD_CACHE_SECONDS=30
+DTR_SYNC_BATCH_LIMIT=20
+```
+
+Run the new scalability migration after deployment. To make a measured capacity
+check, follow [load-tests/README.md](load-tests/README.md). Do not run a load
+test against real personnel data or during office attendance hours.
+
+For production, use persistent object storage for photos/signatures, a paid
+always-on web instance, a dedicated queue worker, Redis-backed cache/queues,
+managed database backups, and monitoring. The free services remain appropriate
+for functional testing, not a live government records workload.
+
 ## Testing and quality checks
 
 Backend:

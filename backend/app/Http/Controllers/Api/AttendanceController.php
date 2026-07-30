@@ -46,19 +46,103 @@ class AttendanceController extends Controller
         ]);
         $date = Carbon::parse($validated['date'] ?? now()->toDateString())->toDateString();
         $user = $request->user();
-        $visiblePersonnelIds = PersonnelAccess::scope(
-            Personnel::query()->where('status', 'Active'),
-            $user
-        )->pluck('personnel_id');
         $holidays = Holiday::query()
             ->whereDate('holiday_date', $date)
             ->orderByRaw('department_id IS NULL DESC')
             ->get();
         $holiday = $holidays->first();
         $isToday = $date === now()->toDateString();
+        $perPage = $validated['per_page'] ?? 25;
+        $page = $validated['page'] ?? 1;
+        $search = $validated['search'] ?? null;
+        $status = $validated['status'] ?? null;
+
+        $personnelQuery = Personnel::query()
+            ->where('status', 'Active')
+            ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
+            ->when($search, function ($query, string $search): void {
+                $query->where(function ($query) use ($search): void {
+                    $query
+                        ->where('employee_number', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('middle_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                });
+            })
+            ->when($status, function ($query, string $status) use ($date, $holidays): void {
+                if ($status === 'Not Started') {
+                    $query->whereDoesntHave(
+                        'attendanceRecords',
+                        fn ($attendance) => $attendance->whereDate('attendance_date', $date)
+                    );
+
+                    return;
+                }
+
+                if ($status === 'Holiday') {
+                    $departmentIds = $holidays
+                        ->where('holiday_type', '!=', 'Special Working Holiday')
+                        ->pluck('department_id')
+                        ->filter()
+                        ->values();
+                    $hasGlobalHoliday = $holidays->contains(
+                        fn (Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday'
+                            && ! $event->department_id
+                    );
+
+                    $query->where(function ($query) use ($hasGlobalHoliday, $departmentIds): void {
+                        if ($hasGlobalHoliday) {
+                            $query->whereNotNull('personnel_id');
+                        } elseif ($departmentIds->isNotEmpty()) {
+                            $query->whereIn('department_id', $departmentIds);
+                        } else {
+                            $query->whereRaw('1 = 0');
+                        }
+                    });
+
+                    return;
+                }
+
+                $query->whereHas('attendanceRecords', function ($attendance) use ($date, $status): void {
+                    $attendance->whereDate('attendance_date', $date);
+
+                    if ($status === 'Late') {
+                        $attendance->where('late_minutes', '>', 0);
+                    } else {
+                        $attendance->where('attendance_status', $status);
+                    }
+                });
+            });
+
+        $summaryPersonnelIds = (clone $personnelQuery)->select('personnel_id');
+        $total = (clone $personnelQuery)->count();
+        $attendanceSummaryQuery = AttendanceRecord::query()
+            ->whereDate('attendance_date', $date)
+            ->whereIn('personnel_id', $summaryPersonnelIds);
+        $recordedPersonnel = (clone $attendanceSummaryQuery)
+            ->distinct()
+            ->count('personnel_id');
+
+        $paginator = (clone $personnelQuery)
+            ->with([
+                'department:department_id,department_code,department_name',
+                'attendanceRecords' => fn ($query) => $query
+                    ->whereDate('attendance_date', $date)
+                    ->with('schedule'),
+            ])
+            ->when(
+                $user->personnel_id,
+                fn ($query, int $personnelId) => $query
+                    ->orderByRaw('personnel_id = ? DESC', [$personnelId])
+            )
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate($perPage, ['*'], 'page', $page);
+        $pagePersonnel = collect($paginator->items());
+        $pagePersonnelIds = $pagePersonnel->pluck('personnel_id');
         $scheduleAssignments = PersonnelSchedule::query()
             ->with('schedule')
-            ->whereIn('personnel_id', $visiblePersonnelIds)
+            ->whereIn('personnel_id', $pagePersonnelIds)
             ->whereDate('effective_from', '<=', $date)
             ->where(function ($query) use ($date): void {
                 $query->whereNull('effective_to')->orWhereDate('effective_to', '>=', $date);
@@ -68,27 +152,7 @@ class AttendanceController extends Controller
             ->unique('personnel_id')
             ->keyBy('personnel_id');
 
-        $personnel = Personnel::query()
-            ->with([
-                'department:department_id,department_code,department_name',
-                'attendanceRecords' => fn ($query) => $query
-                    ->whereDate('attendance_date', $date)
-                    ->with('schedule'),
-            ])
-            ->where('status', 'Active')
-            ->whereIn('personnel_id', $visiblePersonnelIds)
-            ->when($validated['search'] ?? null, function ($query, string $search): void {
-                $query->where(function ($query) use ($search): void {
-                    $query
-                        ->where('employee_number', 'like', "%{$search}%")
-                        ->orWhere('first_name', 'like', "%{$search}%")
-                        ->orWhere('middle_name', 'like', "%{$search}%")
-                        ->orWhere('last_name', 'like', "%{$search}%");
-                });
-            })
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get()
+        $personnel = $pagePersonnel
             ->map(function (Personnel $person) use ($holidays, $scheduleAssignments, $isToday, $date): array {
                 $record = $person->attendanceRecords->first();
                 $schedule = $record?->schedule
@@ -115,18 +179,11 @@ class AttendanceController extends Controller
                 );
             });
 
-        if ($validated['status'] ?? null) {
-            $status = $validated['status'];
-            $personnel = $personnel
-                ->filter(fn (array $row) => $status === 'Late'
-                    ? $row['is_late']
-                    : $row['display_status'] === $status)
-                ->values();
-        }
-
         $recentLogs = TimeLog::query()
             ->with('personnel:personnel_id,first_name,middle_name,last_name,suffix,employee_number')
-            ->whereIn('personnel_id', $visiblePersonnelIds)
+            ->whereHas('personnel', fn ($query) => $query
+                ->where('status', 'Active')
+                ->tap(fn ($query) => PersonnelAccess::scope($query, $user)))
             ->whereDate('log_datetime', $date)
             ->orderByDesc('log_datetime')
             ->limit(12)
@@ -142,25 +199,6 @@ class AttendanceController extends Controller
                 'source' => $log->log_source,
             ]);
 
-        $allRows = collect($personnel);
-        $pagination = null;
-
-        if (isset($validated['per_page'])) {
-            $page = $validated['page'] ?? 1;
-            $pagination = [
-                'current_page' => $page,
-                'per_page' => $validated['per_page'],
-                'total' => $allRows->count(),
-                'last_page' => max(
-                    1,
-                    (int) ceil($allRows->count() / $validated['per_page'])
-                ),
-            ];
-            $personnel = $allRows
-                ->forPage($page, $validated['per_page'])
-                ->values();
-        }
-
         return response()->json([
             'date' => $date,
             'is_today' => $date === now()->toDateString(),
@@ -169,25 +207,58 @@ class AttendanceController extends Controller
                 'holiday_type' => $holiday->holiday_type,
             ] : null,
             'data' => $personnel,
-            'meta' => $pagination ? ['pagination' => $pagination] : null,
+            'meta' => ['pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ]],
             'recent_logs' => $recentLogs,
             'summary' => [
-                'total' => $allRows->count(),
-                'timed_in' => $allRows->filter(
-                    fn (array $row) => $row['morning_time_in'] || $row['afternoon_time_in']
-                )->count(),
-                'completed' => $allRows->where('display_status', 'Present')->count(),
-                'half_day' => $allRows->where('display_status', 'Half Day')->count(),
-                'late' => $allRows->where('is_late', true)->count(),
-                'incomplete' => $allRows->where('display_status', 'Incomplete')->count(),
-                'missing_time_out' => $allRows->where('has_missing_time_out', true)->count(),
-                'not_started' => $allRows->where('display_status', 'Not Started')->count(),
+                'total' => $total,
+                'timed_in' => (clone $attendanceSummaryQuery)
+                    ->where(fn ($query) => $query
+                        ->whereNotNull('morning_time_in')
+                        ->orWhereNotNull('afternoon_time_in'))
+                    ->distinct()
+                    ->count('personnel_id'),
+                'completed' => (clone $attendanceSummaryQuery)
+                    ->where('attendance_status', 'Present')
+                    ->count(),
+                'half_day' => (clone $attendanceSummaryQuery)
+                    ->where('attendance_status', 'Half Day')
+                    ->count(),
+                'late' => (clone $attendanceSummaryQuery)
+                    ->where('late_minutes', '>', 0)
+                    ->count(),
+                'incomplete' => (clone $attendanceSummaryQuery)
+                    ->where('attendance_status', 'Incomplete')
+                    ->count(),
+                'missing_time_out' => (clone $attendanceSummaryQuery)
+                    ->where(function ($query): void {
+                        $query
+                            ->where(fn ($query) => $query
+                                ->whereNotNull('morning_time_in')
+                                ->whereNull('morning_time_out'))
+                            ->orWhere(fn ($query) => $query
+                                ->whereNotNull('afternoon_time_in')
+                                ->whereNull('afternoon_time_out'));
+                    })
+                    ->count(),
+                'not_started' => max(0, $total - $recordedPersonnel),
             ],
         ]);
     }
 
     public function options(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'personnel_search' => ['nullable', 'string', 'max:100'],
+            'personnel_id' => ['nullable', 'integer', 'exists:personnel,personnel_id'],
+            'limit' => ['nullable', 'integer', 'between:10,100'],
+        ]);
         $user = $request->user();
         $canManageOthers = PersonnelAccess::canManageOthers($user);
 
@@ -199,8 +270,34 @@ class AttendanceController extends Controller
             'personnel' => Personnel::query()
                 ->where('status', 'Active')
                 ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
+                ->when(
+                    ($validated['personnel_search'] ?? null) || isset($validated['personnel_id']),
+                    function ($query) use ($validated): void {
+                        $query->where(function ($query) use ($validated): void {
+                            if ($search = ($validated['personnel_search'] ?? null)) {
+                                $query->where(function ($query) use ($search): void {
+                                    $query
+                                        ->where('employee_number', 'like', "%{$search}%")
+                                        ->orWhere('first_name', 'like', "%{$search}%")
+                                        ->orWhere('middle_name', 'like', "%{$search}%")
+                                        ->orWhere('last_name', 'like', "%{$search}%");
+                                });
+                            }
+
+                            if (isset($validated['personnel_id'])) {
+                                $query->orWhereKey($validated['personnel_id']);
+                            }
+                        });
+                    }
+                )
+                ->when(
+                    $user->personnel_id,
+                    fn ($query, int $personnelId) => $query
+                        ->orderByRaw('personnel_id = ? DESC', [$personnelId])
+                )
                 ->orderBy('last_name')
                 ->orderBy('first_name')
+                ->limit($validated['limit'] ?? 50)
                 ->get(['personnel_id', 'employee_number', 'first_name', 'middle_name', 'last_name', 'suffix'])
                 ->map(fn (Personnel $person) => [
                     'personnel_id' => $person->personnel_id,

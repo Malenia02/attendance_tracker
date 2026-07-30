@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+   import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
+import Pagination from "../components/common/Pagination";
 import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 import AttendanceCorrectionRequestModal from "../components/attendance/AttendanceCorrectionRequestModal";
@@ -75,6 +76,8 @@ export default function Attendance() {
       : today,
   );
   const [records, setRecords] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
   const [recentLogs, setRecentLogs] = useState([]);
   const [summary, setSummary] = useState({
     total: 0,
@@ -142,23 +145,38 @@ export default function Attendance() {
   useEffect(() => {
     const controller = new AbortController();
 
-    apiFetch(`/attendance?date=${selectedDate}`, { signal: controller.signal })
-      .then(readResponse)
-      .then((payload) => {
-        setRecords(payload.data);
-        setRecentLogs(payload.recent_logs);
-        setSummary(payload.summary);
-        setHoliday(payload.holiday);
-      })
-      .catch((error) => {
-        if (error.name !== "AbortError") setPageError(error.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        date: selectedDate,
+        page: String(page),
+        per_page: "25",
       });
+      if (search.trim()) params.set("search", search.trim());
+      if (statusFilter) params.set("status", statusFilter);
 
-    return () => controller.abort();
-  }, [selectedDate, refreshKey]);
+      apiFetch(`/attendance?${params}`, { signal: controller.signal })
+        .then(readResponse)
+        .then((payload) => {
+          setRecords(payload.data);
+          setRecentLogs(payload.recent_logs);
+          setSummary(payload.summary);
+          setHoliday(payload.holiday);
+          setPagination(payload.meta?.pagination || null);
+          if (!payload.data.length && page > 1) setPage((current) => Math.max(1, current - 1));
+        })
+        .catch((error) => {
+          if (error.name !== "AbortError") setPageError(error.message);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [selectedDate, search, statusFilter, page, refreshKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -688,9 +706,9 @@ export default function Attendance() {
           <div className="attendance-records-controls">
             <div className="users-search">
               <Search size={17} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search personnel..." />
+              <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search personnel..." />
             </div>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
               <option value="">All statuses</option>
               {options.status_filters.map((status) => <option key={status}>{status}</option>)}
             </select>
@@ -702,6 +720,7 @@ export default function Attendance() {
                 setLoading(true);
                 setPageError("");
                 setSelectedDate(event.target.value);
+                setPage(1);
               }}
               aria-label="Attendance date"
             />
@@ -791,9 +810,12 @@ export default function Attendance() {
             </tbody>
           </table>
         </div>
-        <div className="users-table-footer">
-          Showing {filteredRecords.length} of {records.length} active personnel
-        </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          itemLabel="active personnel"
+        />
       </div>
 
       {requestModal && (

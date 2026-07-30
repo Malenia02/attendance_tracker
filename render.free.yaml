@@ -74,6 +74,10 @@ services:
         value: dilg_attendance_test_
       - key: QUEUE_CONNECTION
         value: sync
+      - key: DASHBOARD_CACHE_SECONDS
+        value: "30"
+      - key: DTR_SYNC_BATCH_LIMIT
+        value: "20"
       - key: FILESYSTEM_DISK
         value: local
       - key: DTR_SIGNING_KEY

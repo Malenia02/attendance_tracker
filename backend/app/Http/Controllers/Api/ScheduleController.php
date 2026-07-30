@@ -30,6 +30,10 @@ class ScheduleController extends Controller
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
+            'personnel_search' => ['nullable', 'string', 'max:100'],
+            'assignment' => ['nullable', Rule::in(['assigned', 'unassigned'])],
+            'personnel_page' => ['nullable', 'integer', 'min:1'],
+            'personnel_per_page' => ['nullable', 'integer', 'between:10,100'],
         ]);
         $today = now()->toDateString();
 
@@ -53,21 +57,55 @@ class ScheduleController extends Controller
             ->orderBy('schedule_name')
             ->get();
 
-        $personnel = Personnel::query()
+        $activePersonnelQuery = Personnel::query()->where('status', 'Active');
+        $activePersonnelCount = (clone $activePersonnelQuery)->count();
+        $assignedPersonnel = (clone $activePersonnelQuery)
+            ->whereHas('scheduleAssignments', fn ($query) => $query
+                ->whereDate('effective_from', '<=', $today)
+                ->where(fn ($query) => $query
+                    ->whereNull('effective_to')
+                    ->orWhereDate('effective_to', '>=', $today))
+                ->whereHas('schedule', fn ($schedule) => $schedule->where('status', 'Active')))
+            ->count();
+        $personnelPaginator = (clone $activePersonnelQuery)
             ->with([
                 'department:department_id,department_code,department_name',
                 'scheduleAssignments' => fn ($query) => $query
                     ->with('schedule')
                     ->orderByDesc('effective_from'),
             ])
-            ->where('status', 'Active')
+            ->when($validated['personnel_search'] ?? null, function ($query, string $search): void {
+                $query->where(function ($query) use ($search): void {
+                    $query
+                        ->where('employee_number', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('middle_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                });
+            })
+            ->when($validated['assignment'] ?? null, function ($query, string $assignment) use ($today): void {
+                $relation = fn ($assignments) => $assignments
+                    ->whereDate('effective_from', '<=', $today)
+                    ->where(fn ($assignments) => $assignments
+                        ->whereNull('effective_to')
+                        ->orWhereDate('effective_to', '>=', $today))
+                    ->whereHas('schedule', fn ($schedule) => $schedule->where('status', 'Active'));
+
+                if ($assignment === 'assigned') {
+                    $query->whereHas('scheduleAssignments', $relation);
+                } else {
+                    $query->whereDoesntHave('scheduleAssignments', $relation);
+                }
+            })
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get();
-
-        $assignedPersonnel = $personnel->filter(
-            fn (Personnel $person) => $this->currentAssignment($person, $today) !== null
-        )->count();
+            ->paginate(
+                $validated['personnel_per_page'] ?? 25,
+                ['*'],
+                'personnel_page',
+                $validated['personnel_page'] ?? 1
+            );
+        $personnel = collect($personnelPaginator->items());
 
         return response()->json([
             'data' => $schedules->map(fn (WorkSchedule $schedule) => $this->formatSchedule($schedule)),
@@ -78,8 +116,16 @@ class ScheduleController extends Controller
                 'total' => WorkSchedule::count(),
                 'active' => WorkSchedule::where('status', 'Active')->count(),
                 'assigned_personnel' => $assignedPersonnel,
-                'unassigned_personnel' => $personnel->count() - $assignedPersonnel,
+                'unassigned_personnel' => max(0, $activePersonnelCount - $assignedPersonnel),
             ],
+            'meta' => ['personnel_pagination' => [
+                'current_page' => $personnelPaginator->currentPage(),
+                'per_page' => $personnelPaginator->perPage(),
+                'total' => $personnelPaginator->total(),
+                'last_page' => $personnelPaginator->lastPage(),
+                'from' => $personnelPaginator->firstItem(),
+                'to' => $personnelPaginator->lastItem(),
+            ]],
         ]);
     }
 

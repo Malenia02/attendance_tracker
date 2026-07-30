@@ -18,4 +18,12 @@ return [
         'MAXIMUM_LOCATION_ACCURACY_METERS',
         100
     ),
+
+    // Short caching keeps the dashboard responsive on low-resource test
+    // instances while still reflecting attendance changes promptly.
+    'dashboard_cache_seconds' => (int) env('DASHBOARD_CACHE_SECONDS', 30),
+
+    // The free Render web service has limited CPU/RAM and no dedicated queue
+    // worker. Keep synchronous document batches deliberately small.
+    'dtr_sync_batch_limit' => (int) env('DTR_SYNC_BATCH_LIMIT', 20),
 ];

@@ -37,6 +37,8 @@ class DtrController extends Controller
             'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Certified', 'Returned', 'Reopened'])],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'personnel_ids' => ['nullable', 'array', 'max:100'],
+            'personnel_ids.*' => ['integer', 'distinct', 'exists:personnel,personnel_id'],
         ]);
 
         $month = Carbon::createFromFormat('Y-m-d', ($validated['month'] ?? now()->format('Y-m')).'-01')
@@ -51,7 +53,61 @@ class DtrController extends Controller
             ->get()
             ->groupBy(fn (Holiday $holiday) => $holiday->holiday_date->toDateString());
 
-        $personnel = Personnel::query()
+        $personnelQuery = Personnel::query()
+            ->where('status', 'Active')
+            ->whereNotNull('department_id')
+            ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
+            ->when($validated['personnel_ids'] ?? null, fn ($query, array $ids) => $query
+                ->whereIn('personnel_id', $ids))
+            ->when($validated['search'] ?? null, function ($query, string $search): void {
+                $query->where(function ($query) use ($search): void {
+                    $query
+                        ->where('employee_number', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('middle_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                });
+            })
+            ->when($validated['status'] ?? null, function ($query, string $status) use ($month): void {
+                if ($status === 'Draft') {
+                    $query->where(function ($query) use ($month): void {
+                        $query
+                            ->whereDoesntHave('dtrCertifications', fn ($certifications) => $certifications
+                                ->where('dtr_year', $month->year)
+                                ->where('dtr_month', $month->month))
+                            ->orWhereHas('dtrCertifications', fn ($certifications) => $certifications
+                                ->where('dtr_year', $month->year)
+                                ->where('dtr_month', $month->month)
+                                ->where('certification_status', 'Draft'));
+                    });
+
+                    return;
+                }
+
+                $query->whereHas('dtrCertifications', fn ($certifications) => $certifications
+                    ->where('dtr_year', $month->year)
+                    ->where('dtr_month', $month->month)
+                    ->where('certification_status', $status));
+            });
+        $perPage = $validated['per_page'] ?? 25;
+        $page = $validated['page'] ?? 1;
+        $totalPersonnel = (clone $personnelQuery)->count();
+        $personnelIds = (clone $personnelQuery)->select('personnel_id');
+        $certificationSummary = DtrCertification::query()
+            ->where('dtr_year', $month->year)
+            ->where('dtr_month', $month->month)
+            ->whereIn('personnel_id', clone $personnelIds)
+            ->selectRaw('certification_status, COUNT(*) as aggregate')
+            ->groupBy('certification_status')
+            ->pluck('aggregate', 'certification_status');
+        $attendanceSummary = AttendanceRecord::query()
+            ->whereBetween('attendance_date', [$month->toDateString(), $monthEnd->toDateString()])
+            ->whereIn('personnel_id', clone $personnelIds)
+            ->selectRaw('SUM(CASE WHEN late_minutes > 0 THEN 1 ELSE 0 END) as late_occurrences')
+            ->selectRaw("SUM(CASE WHEN attendance_status = 'Half Day' THEN 1 ELSE 0 END) as half_days")
+            ->first();
+
+        $paginator = (clone $personnelQuery)
             ->with([
                 'department:department_id,department_code,department_name',
                 'scheduleAssignments' => fn ($query) => $query
@@ -74,54 +130,20 @@ class DtrController extends Controller
                     ->where('dtr_year', $month->year)
                     ->where('dtr_month', $month->month),
             ])
-            ->where('status', 'Active')
-            ->whereNotNull('department_id')
-            ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
-            ->when($validated['search'] ?? null, function ($query, string $search): void {
-                $query->where(function ($query) use ($search): void {
-                    $query
-                        ->where('employee_number', 'like', "%{$search}%")
-                        ->orWhere('first_name', 'like', "%{$search}%")
-                        ->orWhere('middle_name', 'like', "%{$search}%")
-                        ->orWhere('last_name', 'like', "%{$search}%");
-                });
-            })
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get();
+            ->paginate($perPage, ['*'], 'page', $page);
 
-        $rows = $personnel
+        $rows = collect($paginator->items())
             ->map(fn (Personnel $person) => $this->buildPersonnelRow(
                 $person,
                 $month,
                 $monthEnd,
                 $cutoff,
                 $holidays
-            ))
-            ->when(
-                $validated['status'] ?? null,
-                fn (Collection $rows, string $status) => $rows
-                    ->where('certification.status', $status)
-                    ->values()
-            );
-        $allRows = $rows;
-        $pagination = null;
-
-        if (isset($validated['per_page'])) {
-            $page = $validated['page'] ?? 1;
-            $pagination = [
-                'current_page' => $page,
-                'per_page' => $validated['per_page'],
-                'total' => $allRows->count(),
-                'last_page' => max(
-                    1,
-                    (int) ceil($allRows->count() / $validated['per_page'])
-                ),
-            ];
-            $rows = $allRows
-                ->forPage($page, $validated['per_page'])
-                ->values();
-        }
+            ));
+        $workflowReady = (int) ($certificationSummary['Submitted'] ?? 0)
+            + (int) ($certificationSummary['Certified'] ?? 0);
 
         return response()->json([
             'month' => $month->format('Y-m'),
@@ -136,14 +158,21 @@ class DtrController extends Controller
             'can_approve_reopen' => $user->user_role === 'Administrator',
             'current_user_id' => $user->user_id,
             'data' => $rows,
-            'meta' => $pagination ? ['pagination' => $pagination] : null,
+            'meta' => ['pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ]],
             'summary' => [
-                'personnel' => $allRows->count(),
-                'ready' => $allRows->where('is_ready', true)->count(),
-                'needs_attention' => $allRows->where('is_ready', false)->count(),
-                'certified' => $allRows->where('certification.status', 'Certified')->count(),
-                'late_occurrences' => $allRows->sum('late_days'),
-                'half_days' => $allRows->sum('half_days'),
+                'personnel' => $totalPersonnel,
+                'ready' => $workflowReady,
+                'needs_attention' => max(0, $totalPersonnel - $workflowReady),
+                'certified' => (int) ($certificationSummary['Certified'] ?? 0),
+                'late_occurrences' => (int) ($attendanceSummary?->late_occurrences ?? 0),
+                'half_days' => (int) ($attendanceSummary?->half_days ?? 0),
             ],
         ]);
     }
@@ -330,12 +359,18 @@ class DtrController extends Controller
             ], 403);
         }
 
+        $batchLimit = max(1, min(100, (int) config('attendance.dtr_sync_batch_limit', 20)));
         $validated = $request->validate([
             'month' => ['required', 'date_format:Y-m'],
-            'personnel_ids' => ['nullable', 'array', 'max:100'],
+            'personnel_ids' => ['nullable', 'array', "max:{$batchLimit}"],
             'personnel_ids.*' => ['integer', 'distinct', 'exists:personnel,personnel_id'],
         ]);
-        $monitorRequest = Request::create('/api/dtr', 'GET', ['month' => $validated['month']]);
+        $monitorRequest = Request::create('/api/dtr', 'GET', [
+            'month' => $validated['month'],
+            'status' => 'Certified',
+            'personnel_ids' => $validated['personnel_ids'] ?? null,
+            'per_page' => $batchLimit,
+        ]);
         $monitorRequest->setUserResolver(fn () => $request->user());
         $monitorData = $this->index($monitorRequest)->getData(true);
         $reports = collect($monitorData['data']);

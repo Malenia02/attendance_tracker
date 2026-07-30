@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
+import Pagination from "../components/common/Pagination";
 
 function toDateInput(date) {
   const year = date.getFullYear();
@@ -74,6 +75,8 @@ async function readResponse(response) {
 export default function Personnel() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [records, setRecords] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState({ total: 0, active: 0, gip: 0, other_staff: 0 });
   const [options, setOptions] = useState({
     types: [],
@@ -143,6 +146,8 @@ export default function Personnel() {
       setPageError("");
 
       const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("per_page", "25");
       if (search.trim()) params.set("search", search.trim());
       if (typeFilter) params.set("type", typeFilter);
       if (statusFilter) params.set("status", statusFilter);
@@ -156,6 +161,8 @@ export default function Personnel() {
 
         setRecords(payload.data);
         setSummary(payload.summary);
+        setPagination(payload.meta?.pagination || null);
+        if (!payload.data.length && page > 1) setPage((current) => Math.max(1, current - 1));
       } catch (error) {
         if (error.name !== "AbortError") setPageError(error.message);
       } finally {
@@ -167,7 +174,7 @@ export default function Personnel() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [search, typeFilter, statusFilter, departmentFilter, refreshKey]);
+  }, [search, typeFilter, statusFilter, departmentFilter, page, refreshKey]);
 
   function openCreateModal() {
     releasePhotoObjectUrl();
@@ -409,17 +416,19 @@ export default function Personnel() {
 
   return (
     <section className="personnel-page">
-      <div className="page-title users-page-title">
+      <div className="records-hero personnel-records-hero">
         <div>
+          <span className="records-hero-eyebrow"><Users size={14} /> Workforce directory</span>
           <h1>Personnel Directory</h1>
-          <nav className="breadcrumb" aria-label="Breadcrumb">
-            <span>Home</span><span>/</span><strong>Personnel</strong>
-          </nav>
+          <p>Manage personnel profiles, office assignments, employment details, and attendance credentials.</p>
         </div>
-        <button type="button" className="primary-action" onClick={openCreateModal}>
-          <Plus size={18} />
-          Add personnel
-        </button>
+        <div className="records-hero-side">
+          <span className="records-hero-mark" aria-hidden="true"><IdCard size={28} /></span>
+          <button type="button" className="records-hero-action" onClick={openCreateModal}>
+            <Plus size={18} />
+            Add personnel
+          </button>
+        </div>
       </div>
 
       {notice && <div className="users-notice success"><UserCheck size={18} />{notice}</div>}
@@ -434,23 +443,30 @@ export default function Personnel() {
         ))}
       </div>
 
-      <div className="panel users-panel">
+      <div className="panel users-panel records-panel">
+        <div className="records-panel-heading">
+          <div>
+            <span>Workforce records</span>
+            <h2>Personnel profiles</h2>
+          </div>
+          <small>{loading ? "Loading records..." : `${records.length} result${records.length === 1 ? "" : "s"}`}</small>
+        </div>
         <div className="users-toolbar personnel-toolbar">
           <div className="users-search">
             <Search size={18} />
             <input
               type="search"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
               placeholder="Search name, employee number, email..."
               aria-label="Search personnel"
             />
           </div>
-          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+          <select value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setPage(1); }}>
             <option value="">All personnel types</option>
             {options.types.map((type) => <option key={type}>{type}</option>)}
           </select>
-          <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
+          <select value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPage(1); }}>
             <option value="">All departments</option>
             {options.departments.map((department) => (
               <option key={department.department_id} value={department.department_id}>
@@ -458,7 +474,7 @@ export default function Personnel() {
               </option>
             ))}
           </select>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
             <option value="">All statuses</option>
             {options.statuses.map((status) => <option key={status}>{status}</option>)}
           </select>
@@ -537,9 +553,12 @@ export default function Personnel() {
             </tbody>
           </table>
         </div>
-        <div className="users-table-footer">
-          Showing {records.length} personnel {records.length === 1 ? "record" : "records"}
-        </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          itemLabel="personnel records"
+        />
       </div>
 
       {modalOpen && (

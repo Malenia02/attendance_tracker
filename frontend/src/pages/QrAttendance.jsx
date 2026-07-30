@@ -25,6 +25,7 @@ import QRCode from "qrcode";
 import DilgSeal from "../components/branding/DilgSeal";
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
+import Pagination from "../components/common/Pagination";
 import { formatDuration } from "../lib/duration";
 
 
@@ -281,6 +282,8 @@ export default function QrAttendance() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [cardSearch, setCardSearch] = useState("");
+  const [cardPage, setCardPage] = useState(1);
+  const [cardPagination, setCardPagination] = useState(null);
   const [selectedCardIds, setSelectedCardIds] = useState([]);
   const [regeneratingId, setRegeneratingId] = useState(null);
   const scannerRef = useRef(null);
@@ -296,6 +299,37 @@ export default function QrAttendance() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!data.can_manage_codes || (data.can_scan && tab !== "cards")) return undefined;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        page: String(cardPage),
+        per_page: "12",
+      });
+      if (cardSearch.trim()) params.set("search", cardSearch.trim());
+
+      apiFetch(`/qr-attendance/cards?${params}`, { signal: controller.signal })
+        .then(readResponse)
+        .then((payload) => {
+          setData((current) => ({ ...current, personnel: payload.data }));
+          setCardPagination(payload.meta?.pagination || null);
+          if (!payload.data.length && cardPage > 1) {
+            setCardPage((current) => Math.max(1, current - 1));
+          }
+        })
+        .catch((requestError) => {
+          if (requestError.name !== "AbortError") setError(requestError.message);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [data.can_manage_codes, data.can_scan, tab, cardSearch, cardPage]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -689,7 +723,7 @@ export default function QrAttendance() {
             </div>
             {data.can_manage_codes && (
               <div>
-                <label><Search size={16} /><input value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search personnel..." /></label>
+                <label><Search size={16} /><input value={cardSearch} onChange={(event) => { setCardSearch(event.target.value); setCardPage(1); setSelectedCardIds([]); }} placeholder="Search personnel..." /></label>
               </div>
             )}
           </div>
@@ -741,7 +775,7 @@ export default function QrAttendance() {
             </div>
           )}
           <div className="qr-print-grid">
-            {data.personnel.map((person) => (
+            {filteredPersonnel.map((person) => (
               <div
                 key={person.personnel_id}
                 className={[
@@ -786,6 +820,15 @@ export default function QrAttendance() {
               </div>
             )}
           </div>
+          <Pagination
+            pagination={cardPagination}
+            onPageChange={(nextPage) => {
+              setCardPage(nextPage);
+              setSelectedCardIds([]);
+            }}
+            disabled={loading}
+            itemLabel="personnel cards"
+          />
         </div>
       )}
 

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
+import Pagination from "../components/common/Pagination";
 
 const days = [
   ["monday", "Mon"],
@@ -107,6 +108,8 @@ export default function Schedules() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [schedules, setSchedules] = useState([]);
   const [personnel, setPersonnel] = useState([]);
+  const [personnelPage, setPersonnelPage] = useState(1);
+  const [personnelPagination, setPersonnelPagination] = useState(null);
   const [summary, setSummary] = useState({
     total: 0,
     active: 0,
@@ -135,14 +138,25 @@ export default function Schedules() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        personnel_page: String(personnelPage),
+        personnel_per_page: "25",
+      });
+      if (personnelSearch.trim()) params.set("personnel_search", personnelSearch.trim());
+      if (assignmentFilter) params.set("assignment", assignmentFilter);
 
-    apiFetch("/schedules", { signal: controller.signal })
+      apiFetch(`/schedules?${params}`, { signal: controller.signal })
       .then(readResponse)
       .then((payload) => {
         setSchedules(payload.data);
         setPersonnel(payload.personnel);
         setSummary(payload.summary);
+        setPersonnelPagination(payload.meta?.personnel_pagination || null);
         setPageError("");
+        if (!payload.personnel.length && personnelPage > 1) {
+          setPersonnelPage((current) => Math.max(1, current - 1));
+        }
       })
       .catch((error) => {
         if (error.name !== "AbortError") setPageError(error.message);
@@ -150,9 +164,13 @@ export default function Schedules() {
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
+    }, 250);
 
-    return () => controller.abort();
-  }, [refreshKey]);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [personnelSearch, assignmentFilter, personnelPage, refreshKey]);
 
   const filteredSchedules = useMemo(() => {
     const query = scheduleSearch.trim().toLowerCase();
@@ -446,8 +464,8 @@ export default function Schedules() {
         <div className="schedule-assignment-header">
           <div><span>Effective today</span><h2>Personnel assignments</h2></div>
           <div>
-            <label><Search size={15} /><input value={personnelSearch} onChange={(event) => setPersonnelSearch(event.target.value)} placeholder="Search personnel..." /></label>
-            <select value={assignmentFilter} onChange={(event) => setAssignmentFilter(event.target.value)}>
+            <label><Search size={15} /><input value={personnelSearch} onChange={(event) => { setPersonnelSearch(event.target.value); setPersonnelPage(1); }} placeholder="Search personnel..." /></label>
+            <select value={assignmentFilter} onChange={(event) => { setAssignmentFilter(event.target.value); setPersonnelPage(1); }}>
               <option value="">All personnel</option>
               <option value="assigned">Assigned</option>
               <option value="unassigned">Unassigned</option>
@@ -499,6 +517,12 @@ export default function Schedules() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={personnelPagination}
+          onPageChange={setPersonnelPage}
+          disabled={loading}
+          itemLabel="personnel assignments"
+        />
       </div>
 
       {scheduleModal && (

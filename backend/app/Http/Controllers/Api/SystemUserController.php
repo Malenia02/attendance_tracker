@@ -57,29 +57,26 @@ class SystemUserController extends Controller
             ->when($validated['role'] ?? null, fn ($query, string $role) => $query->where('user_role', $role))
             ->when($validated['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
             ->orderBy('username');
-        $pagination = null;
-
-        if (isset($validated['per_page'])) {
-            $paginator = $query->paginate(
-                $validated['per_page'],
-                ['*'],
-                'page',
-                $validated['page'] ?? 1
-            );
-            $users = collect($paginator->items());
-            $pagination = [
-                'current_page' => $paginator->currentPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'last_page' => $paginator->lastPage(),
-            ];
-        } else {
-            $users = $query->get();
-        }
+        $paginator = $query->paginate(
+            $validated['per_page'] ?? 25,
+            ['*'],
+            'page',
+            $validated['page'] ?? 1
+        );
+        $users = collect($paginator->items());
 
         return response()->json([
             'data' => $users->map(fn (User $user) => $this->formatUser($user)),
-            'meta' => $pagination ? ['pagination' => $pagination] : null,
+            'meta' => [
+                'pagination' => [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                    'from' => $paginator->firstItem(),
+                    'to' => $paginator->lastItem(),
+                ],
+            ],
             'summary' => [
                 'total' => User::count(),
                 'active' => User::where('status', 'Active')->count(),
@@ -89,8 +86,13 @@ class SystemUserController extends Controller
         ]);
     }
 
-    public function options(): JsonResponse
+    public function options(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'personnel_search' => ['nullable', 'string', 'max:100'],
+            'personnel_id' => ['nullable', 'integer', 'exists:personnel,personnel_id'],
+            'limit' => ['nullable', 'integer', 'between:10,50'],
+        ]);
         $personnel = Personnel::query()
             ->with('user:user_id,personnel_id')
             ->select([
@@ -104,8 +106,30 @@ class SystemUserController extends Controller
                 'status',
             ])
             ->where('status', 'Active')
+            ->when(
+                ($validated['personnel_search'] ?? null) || isset($validated['personnel_id']),
+                function ($query) use ($validated): void {
+                    $query->where(function ($query) use ($validated): void {
+                        if ($search = ($validated['personnel_search'] ?? null)) {
+                            $query->where(function ($query) use ($search): void {
+                                $query
+                                    ->where('employee_number', 'like', "%{$search}%")
+                                    ->orWhere('first_name', 'like', "%{$search}%")
+                                    ->orWhere('middle_name', 'like', "%{$search}%")
+                                    ->orWhere('last_name', 'like', "%{$search}%")
+                                    ->orWhere('email', 'like', "%{$search}%");
+                            });
+                        }
+
+                        if (isset($validated['personnel_id'])) {
+                            $query->orWhereKey($validated['personnel_id']);
+                        }
+                    });
+                }
+            )
             ->orderBy('last_name')
             ->orderBy('first_name')
+            ->limit($validated['limit'] ?? 25)
             ->get()
             ->map(fn (Personnel $person) => [
                 'personnel_id' => $person->personnel_id,

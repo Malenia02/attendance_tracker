@@ -14,10 +14,27 @@ use Carbon\CarbonPeriod;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
     public function index(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $cacheSeconds = max(0, (int) config('attendance.dashboard_cache_seconds', 30));
+        $cacheKey = "dashboard:v2:user:{$user->user_id}";
+        $payload = $cacheSeconds > 0
+            ? Cache::remember(
+                $cacheKey,
+                now()->addSeconds($cacheSeconds),
+                fn (): array => $this->buildDashboardData($request)
+            )
+            : $this->buildDashboardData($request);
+
+        return response()->json($payload);
+    }
+
+    private function buildDashboardData(Request $request): array
     {
         $user = $request->user();
         $canManageOthers = PersonnelAccess::canManageOthers($user);
@@ -170,7 +187,7 @@ class DashboardController extends Controller
             ->values()
             ->take(6);
 
-        return response()->json([
+        return [
             'server_time' => now()->toISOString(),
             'timezone' => config('app.timezone'),
             'scope' => $hasGlobalAccess
@@ -209,7 +226,7 @@ class DashboardController extends Controller
             'upcoming_events' => $upcomingEvents,
             'departments' => $departments,
             'recent_logs' => $recentLogs,
-        ]);
+        ];
     }
 
     private function buildDailyRow(

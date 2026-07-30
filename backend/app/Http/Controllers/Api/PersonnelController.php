@@ -61,29 +61,26 @@ class PersonnelController extends Controller
             )
             ->orderBy('last_name')
             ->orderBy('first_name');
-        $pagination = null;
-
-        if (isset($validated['per_page'])) {
-            $paginator = $query->paginate(
-                $validated['per_page'],
-                ['*'],
-                'page',
-                $validated['page'] ?? 1
-            );
-            $personnel = collect($paginator->items());
-            $pagination = [
-                'current_page' => $paginator->currentPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'last_page' => $paginator->lastPage(),
-            ];
-        } else {
-            $personnel = $query->get();
-        }
+        $paginator = $query->paginate(
+            $validated['per_page'] ?? 25,
+            ['*'],
+            'page',
+            $validated['page'] ?? 1
+        );
+        $personnel = collect($paginator->items());
 
         return response()->json([
             'data' => $personnel->map(fn (Personnel $person) => $this->formatPersonnel($person)),
-            'meta' => $pagination ? ['pagination' => $pagination] : null,
+            'meta' => [
+                'pagination' => [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                    'from' => $paginator->firstItem(),
+                    'to' => $paginator->lastItem(),
+                ],
+            ],
             'summary' => [
                 'total' => Personnel::count(),
                 'active' => Personnel::where('status', 'Active')->count(),

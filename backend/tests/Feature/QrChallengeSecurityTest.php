@@ -382,4 +382,45 @@ class QrChallengeSecurityTest extends TestCase
             );
         }
     }
+
+    public function test_card_manager_browsing_is_paginated_and_role_protected(): void
+    {
+        foreach (range(1, 13) as $number) {
+            DB::table('personnel')->insert([
+                'employee_number' => 'CARD-'.str_pad((string) $number, 3, '0', STR_PAD_LEFT),
+                'first_name' => 'Card',
+                'last_name' => str_pad((string) $number, 3, '0', STR_PAD_LEFT),
+                'personnel_type' => 'GIP',
+                'qr_login_code' => hash('sha256', "card-{$number}"),
+                'status' => 'Active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $administrator = User::create([
+            'username' => 'card-browser-admin',
+            'password_hash' => bcrypt('ValidPassword!123'),
+            'user_role' => 'Administrator',
+            'status' => 'Active',
+        ]);
+        $personnelUser = User::create([
+            'username' => 'card-browser-personnel',
+            'password_hash' => bcrypt('ValidPassword!123'),
+            'user_role' => 'Personnel',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($administrator)
+            ->getJson('/api/qr-attendance/cards?page=2&per_page=6')
+            ->assertOk()
+            ->assertJsonCount(6, 'data')
+            ->assertJsonPath('meta.pagination.current_page', 2)
+            ->assertJsonPath('meta.pagination.total', 13)
+            ->assertJsonPath('meta.pagination.last_page', 3);
+
+        $this->actingAs($personnelUser)
+            ->getJson('/api/qr-attendance/cards')
+            ->assertForbidden();
+    }
 }
