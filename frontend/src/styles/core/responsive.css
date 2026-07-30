@@ -456,15 +456,22 @@
     flex: 1 0 auto;
   }
 
-  .qr-reader-shell,
-  #qr-reader,
-  #qr-reader video {
+  .qr-reader-shell {
+    width: 100%;
+    height: min(310px, 74vw);
     min-height: min(310px, 74vw);
   }
 
+  #qr-reader,
+  #qr-reader video,
+  #qr-reader__scan_region {
+    height: 100% !important;
+    min-height: 0;
+  }
+
   .qr-scan-corners {
-    width: min(250px, 70vw);
-    height: min(250px, 70vw);
+    width: min(210px, 68vw);
+    height: min(210px, 68vw);
   }
 
   .qr-cards-toolbar > div:last-child {
