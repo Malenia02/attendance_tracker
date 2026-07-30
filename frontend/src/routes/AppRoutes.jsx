@@ -13,6 +13,7 @@ import Departments from "../pages/Departments";
 import ActivityLogs from "../pages/ActivityLogs";
 import ErrorPage from "../pages/ErrorPage";
 import Schedules from "../pages/Schedules";
+import LeaveRequests from "../pages/LeaveRequests";
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -46,6 +47,7 @@ export default function AppRoutes() {
 
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="attendance" element={<Attendance />} />
+        <Route path="leave-requests" element={<LeaveRequests />} />
         <Route path="personnel" element={<Personnel />} />
         <Route path="departments" element={<Departments />} />
         <Route path="calendar" element={<HolidayCalendar />} />

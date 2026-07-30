@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DtrController;
 use App\Http\Controllers\Api\DtrReopenController;
 use App\Http\Controllers\Api\HolidayController;
+use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\ScheduleController;
@@ -66,6 +67,22 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         ->middleware(['role:Administrator,HR', 'throttle:5,1']);
     Route::patch('/dtr/reopen-requests/{reopenRequest}/review', [DtrReopenController::class, 'review'])
         ->middleware(['role:Administrator', 'throttle:10,1']);
+
+    Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
+    Route::post('/leave-requests', [LeaveRequestController::class, 'store'])
+        ->middleware('throttle:5,1');
+    Route::get(
+        '/leave-requests/{leaveRecord}/document',
+        [LeaveRequestController::class, 'document']
+    );
+    Route::patch(
+        '/leave-requests/{leaveRecord}/review',
+        [LeaveRequestController::class, 'review']
+    )->middleware(['role:Administrator,HR,Supervisor', 'throttle:20,1']);
+    Route::patch(
+        '/leave-requests/{leaveRecord}/cancel',
+        [LeaveRequestController::class, 'cancel']
+    )->middleware('throttle:10,1');
 
     Route::get('/holidays', [HolidayController::class, 'index']);
     Route::get('/holidays/options', [HolidayController::class, 'options']);

@@ -15,6 +15,7 @@ class AttendanceRecord extends Model
     protected $fillable = [
         'personnel_id',
         'schedule_id',
+        'leave_record_id',
         'attendance_date',
         'morning_time_in',
         'morning_time_out',
@@ -66,6 +67,15 @@ class AttendanceRecord extends Model
             WorkSchedule::class,
             'schedule_id',
             'schedule_id'
+        );
+    }
+
+    public function leaveRequest(): BelongsTo
+    {
+        return $this->belongsTo(
+            LeaveRecord::class,
+            'leave_record_id',
+            'leave_id'
         );
     }
 

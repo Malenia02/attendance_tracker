@@ -78,6 +78,7 @@ export default function (data) {
     ["GET", `${baseUrl}/api/dashboard`, null, params],
     ["GET", `${baseUrl}/api/personnel?page=1&per_page=25`, null, params],
     ["GET", `${baseUrl}/api/attendance?date=${date}&page=1&per_page=25`, null, params],
+    ["GET", `${baseUrl}/api/leave-requests?page=1&per_page=25`, null, params],
     ["GET", `${baseUrl}/api/dtr?month=${month}&page=1&per_page=25`, null, params],
   ]);
 

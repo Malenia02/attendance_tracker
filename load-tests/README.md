@@ -1,8 +1,9 @@
 # Attendance API smoke load test
 
-This k6 scenario checks the authenticated dashboard, Personnel, Attendance, and
-DTR endpoints with a small ramp to 10 concurrent users. It is intentionally
-conservative for the free Render/Aiven testing deployment.
+This k6 scenario checks the authenticated dashboard, Personnel, Attendance,
+Leave/Official Business, and DTR endpoints with a small ramp to 10 concurrent
+users. It is intentionally conservative for the free Render/Aiven testing
+deployment.
 
 Install [k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) and run from
 PowerShell without committing credentials:

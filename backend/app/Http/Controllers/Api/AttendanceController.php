@@ -26,7 +26,16 @@ use Illuminate\Validation\Rule;
 
 class AttendanceController extends Controller
 {
-    private const STATUS_FILTERS = ['Present', 'Half Day', 'Late', 'Incomplete', 'Not Started', 'Leave', 'Holiday'];
+    private const STATUS_FILTERS = [
+        'Present',
+        'Half Day',
+        'Late',
+        'Incomplete',
+        'Not Started',
+        'Leave',
+        'Official Business',
+        'Holiday',
+    ];
 
     private const ACTIONS = [
         'morning_time_in' => 'Morning In',

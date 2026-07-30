@@ -20,6 +20,8 @@ days unless an authorized office-specific working day is created.
 - Signed personnel QR cards with printable premium layouts
 - GPS accuracy, location freshness, and office-radius verification
 - Holiday and working-day calendar
+- Leave and official-business requests with private attachments, scoped review,
+  immutable status history, and automatic attendance/DTR integration
 - DTR preparation, submission, return, review, certification, and generation
 - Three populated DTR copies per personnel record
 - Attendance corrections and verification from the DTR workflow
@@ -43,9 +45,9 @@ days unless an authorized office-specific working day is created.
 | --- | --- |
 | Administrator | Full system administration, QR kiosk operation, logs, user management, and DTR generation |
 | HR | QR kiosk operation, personnel, departments, attendance correction, DTR review, and certification |
-| Supervisor | Own attendance/card plus department-scoped verification and DTR review |
+| Supervisor | Own attendance/card plus department-scoped verification, leave/official-business review, and DTR review |
 | Encoder | Own attendance/card plus department-scoped attendance and DTR processing |
-| Personnel | Own attendance, QR card, and DTR information |
+| Personnel | Own attendance, QR card, leave/official-business requests, and DTR information |
 
 Backend authorization is the security boundary. Hiding a menu item in React
 does not grant or remove API access.
@@ -294,8 +296,9 @@ Before production deployment:
   `QR_SIGNING_KEY`.
 - Never commit `.env`, database backups, generated DTRs, photos, or signatures.
 - Keep `frontend/node_modules`, `frontend/dist`, and `backend/vendor` out of Git.
-- Back up the database, `backend/storage/app/private/personnel-photos`, and
-  `backend/storage/app/private/personnel-signatures`.
+- Back up the database, `backend/storage/app/private/personnel-photos`,
+  `backend/storage/app/private/personnel-signatures`, and
+  `backend/storage/app/private/leave-documents`.
 
 Authentication uses Sanctum session cookies with CSRF protection. Login,
 general API, and QR scan routes have separate rate limits. Repeated login
@@ -348,18 +351,22 @@ PHP Docker image, and `frontend/vercel.json`.
 
 The current free Render service is for testing only. `render.free.yaml` retains
 the Aiven CA certificate configuration and runs migrations during startup, but
-uploaded personnel photos and signatures are ephemeral and may disappear after
-a restart or redeploy. Free instances can also take close to a minute to wake
-after being idle, so frontend session verification allows a 60-second cold
-start. Do not use the free instance as the final records system.
+uploaded personnel photos, signatures, and leave supporting documents are
+ephemeral and may disappear after a restart or redeploy. Free instances can
+also take close to a minute to wake after being idle, so frontend session
+verification allows a 60-second cold start. Do not use the free instance as the
+final records system.
 
 ### Free-tier performance safeguards
 
-High-volume Personnel, System Users, Attendance, DTR, QR card, and schedule
-assignment lists use database pagination and bounded lookups. The dashboard is
-cached briefly, and DTR document generation is limited to 20 personnel per
-synchronous batch by default. These limits are suitable for testing on one free
-Render web service and an Aiven free MySQL node:
+High-volume Personnel, System Users, Attendance, DTR, QR card, schedule
+assignment, and Leave/Official Business lists use database pagination and
+bounded lookups. Leave review synchronization is also limited to the requested
+date range and uses indexed attendance upserts rather than loading unrelated
+records. The dashboard is cached briefly, and DTR document generation is
+limited to 20 personnel per synchronous batch by default. These limits are
+suitable for testing on one free Render web service and an Aiven free MySQL
+node:
 
 ```env
 DASHBOARD_CACHE_SECONDS=30
@@ -370,10 +377,11 @@ Run the new scalability migration after deployment. To make a measured capacity
 check, follow [load-tests/README.md](load-tests/README.md). Do not run a load
 test against real personnel data or during office attendance hours.
 
-For production, use persistent object storage for photos/signatures, a paid
-always-on web instance, a dedicated queue worker, Redis-backed cache/queues,
-managed database backups, and monitoring. The free services remain appropriate
-for functional testing, not a live government records workload.
+For production, use persistent object storage for photos, signatures, and leave
+documents, a paid always-on web instance, a dedicated queue worker,
+Redis-backed cache/queues, managed database backups, and monitoring. The free
+services remain appropriate for functional testing, not a live government
+records workload.
 
 ## Testing and quality checks
 
