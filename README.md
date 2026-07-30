@@ -238,6 +238,10 @@ context. Manual scanning remains available during local development.
 - An Administrator or HR user can add an office-specific working day when a
   director requires duty on a rest day.
 - Holidays can apply globally or to a specific office.
+- The migration baseline includes the official nationwide 2026 calendar from
+  Proclamation No. 1006, s. 2025, plus Proclamation Nos. 1189 and 1264 for
+  Eid'l Fitr and Eid'l Adha. Newly proclaimed local holidays and future annual
+  calendars must still be reviewed and entered by an Administrator or HR user.
 - Attendance after the configured morning threshold is recorded and flagged as
   late instead of being blocked.
 - Missing morning or afternoon sessions can produce a half-day result.
