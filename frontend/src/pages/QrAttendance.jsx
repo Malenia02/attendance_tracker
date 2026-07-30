@@ -984,7 +984,6 @@ function PersonnelQrCard({ person, busy, canRegenerate, onRegenerate }) {
           <QrCardHeader />
         <div className="qr-card-ribbon">
           <span>Card care and security</span>
-          <span><i></i> Official use</span>
         </div>
         <div className="personnel-card-back-body">
           <DilgSeal className="personnel-card-back-watermark" alt="" />

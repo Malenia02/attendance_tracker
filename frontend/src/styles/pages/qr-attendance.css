@@ -1904,8 +1904,10 @@
     break-inside: avoid;
     page-break-inside: avoid;
     print-color-adjust: exact;
+    text-rendering: geometricPrecision;
     transform: none !important;
     -webkit-print-color-adjust: exact;
+    -webkit-font-smoothing: antialiased;
     -webkit-backface-visibility: visible;
   }
 
@@ -1944,12 +1946,15 @@
 
   .qr-card-brand strong {
     max-width: 61mm;
-    font-size: 5.5pt;
+    font-size: 6.5pt;
+    font-weight: 900;
   }
 
   .qr-card-brand small {
     margin-top: 0.5mm;
-    font-size: 4pt;
+    color: #ffffff;
+    font-size: 4.8pt;
+    font-weight: 700;
   }
 
   .qr-card-classification {
@@ -1957,13 +1962,17 @@
   }
 
   .qr-card-classification small {
-    font-size: 3.6pt;
+    color: #ffffff;
+    font-size: 4.5pt;
+    font-weight: 800;
   }
 
   .qr-card-ribbon {
     height: 4.5mm;
     padding: 0 3.5mm;
-    font-size: 3.8pt;
+    color: #263f5b;
+    font-size: 4.6pt;
+    font-weight: 900;
   }
 
   .personnel-qr-body {
@@ -2006,17 +2015,22 @@
   }
 
   .personnel-card-name > small {
-    font-size: 3.5pt;
+    color: #445d76;
+    font-size: 4.5pt;
+    font-weight: 900;
   }
 
   .personnel-card-name > strong {
     margin-top: 0.8mm;
-    font-size: 8pt;
+    font-size: 9.5pt;
+    line-height: 1.2;
   }
 
   .personnel-card-name > span {
     margin-top: 0.7mm;
-    font-size: 4.4pt;
+    color: #294963;
+    font-size: 5.2pt;
+    font-weight: 650;
   }
 
   .personnel-card-details {
@@ -2026,17 +2040,23 @@
   }
 
   .personnel-card-details small {
-    font-size: 3.3pt;
+    color: #49627a;
+    font-size: 4.2pt;
+    font-weight: 850;
   }
 
   .personnel-card-details strong {
     margin-top: 0.4mm;
-    font-size: 4.4pt;
+    color: #102f55;
+    font-size: 5.2pt;
+    font-weight: 900;
   }
 
   .personnel-card-code > span {
     margin-bottom: 0.6mm;
-    font-size: 3.5pt;
+    color: #0d5c57;
+    font-size: 4.3pt;
+    font-weight: 900;
   }
 
   .personnel-card-code > span svg {
@@ -2057,6 +2077,10 @@
     height: 28mm;
   }
 
+  .personnel-qr-image {
+    image-rendering: crisp-edges;
+  }
+
   .personnel-card-code > small {
     display: none;
   }
@@ -2075,7 +2099,9 @@
   }
 
   .personnel-card-rules > span {
-    font-size: 3.5pt;
+    color: #0d5c57;
+    font-size: 4.4pt;
+    font-weight: 900;
   }
 
   .personnel-card-rules ol {
@@ -2086,21 +2112,27 @@
   .personnel-card-rules li {
     min-height: 4.2mm;
     padding-left: 5.5mm;
-    font-size: 3.8pt;
+    color: #253f59;
+    font-size: 4.6pt;
+    font-weight: 600;
+    line-height: 1.35;
   }
 
   .personnel-card-rules li::before {
     width: 4mm;
     height: 4mm;
     border-radius: 1.2mm;
-    font-size: 3.1pt;
+    font-size: 3.8pt;
   }
 
   .personnel-card-privacy {
     margin-top: 1.2mm;
     padding: 1mm 1.3mm;
     border-left-width: 0.5mm;
-    font-size: 3.3pt;
+    color: #364f68;
+    font-size: 4.2pt;
+    font-weight: 600;
+    line-height: 1.35;
   }
 
   .personnel-card-return {
@@ -2118,17 +2150,23 @@
   }
 
   .personnel-card-return-heading span {
-    font-size: 3pt;
+    color: #0d5c57;
+    font-size: 4pt;
+    font-weight: 900;
   }
 
   .personnel-card-return > strong {
     margin-top: 1.5mm;
-    font-size: 4.4pt;
+    font-size: 5.3pt;
+    font-weight: 900;
   }
 
   .personnel-card-return > p {
     margin-top: 0.8mm;
-    font-size: 3.4pt;
+    color: #354f68;
+    font-size: 4.3pt;
+    font-weight: 600;
+    line-height: 1.35;
   }
 
   .personnel-card-signature {
@@ -2142,7 +2180,9 @@
 
   .personnel-card-signature > small {
     margin-top: 0.6mm;
-    font-size: 2.7pt;
+    color: #435a70;
+    font-size: 3.8pt;
+    font-weight: 700;
   }
 
   .personnel-qr-card > footer {
@@ -2162,20 +2202,28 @@
   }
 
   .personnel-card-serial small {
-    font-size: 3.1pt;
+    color: #465e75;
+    font-size: 3.8pt;
+    font-weight: 800;
   }
 
   .personnel-card-serial strong {
     margin-top: 0.35mm;
-    font-size: 4.1pt;
+    color: #102f55;
+    font-size: 5pt;
+    font-weight: 900;
   }
 
   .personnel-card-security {
-    font-size: 3.4pt;
+    color: #405970;
+    font-size: 4.2pt;
+    font-weight: 750;
   }
 
   .personnel-card-property {
-    font-size: 3.4pt;
+    color: #405970;
+    font-size: 4.2pt;
+    font-weight: 750;
   }
 
   .personnel-qr-card > footer .personnel-qr-action {
