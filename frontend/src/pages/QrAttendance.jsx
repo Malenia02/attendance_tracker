@@ -791,7 +791,11 @@ export default function QrAttendance() {
 
       <div className="panel qr-history-panel">
         <div className="qr-history-heading">
-          <div><span>Audit trail</span><h2>Recent QR scans</h2></div>
+          <div>
+            <span>Audit trail</span>
+            <h2>Recent QR scans</h2>
+            <small>These are historical results. After correcting a schedule, scan the card again to create a new result.</small>
+          </div>
           <button type="button" onClick={loadData}><RefreshCw size={15} />Refresh</button>
         </div>
         <div className="users-table-wrap">

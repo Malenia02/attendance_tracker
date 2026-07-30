@@ -274,6 +274,7 @@ class ScheduleController extends Controller
         return $personnel->scheduleAssignments->first(
             fn (PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() <= $date
                 && (! $assignment->effective_to || $assignment->effective_to->toDateString() >= $date)
+                && $assignment->schedule?->status === 'Active'
         );
     }
 
@@ -281,7 +282,8 @@ class ScheduleController extends Controller
     {
         $current = $this->currentAssignment($personnel, $today);
         $upcoming = $personnel->scheduleAssignments
-            ->filter(fn (PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() > $today)
+            ->filter(fn (PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() > $today
+                && $assignment->schedule?->status === 'Active')
             ->sortBy('effective_from')
             ->first();
 
@@ -306,6 +308,7 @@ class ScheduleController extends Controller
             'personnel_id' => $assignment->personnel_id,
             'schedule_id' => $assignment->schedule_id,
             'schedule_name' => $assignment->schedule?->schedule_name,
+            'schedule_status' => $assignment->schedule?->status,
             'effective_from' => $assignment->effective_from?->format('Y-m-d'),
             'effective_to' => $assignment->effective_to?->format('Y-m-d'),
         ];

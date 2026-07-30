@@ -1591,6 +1591,14 @@
   font-size: 17px;
 }
 
+.qr-history-heading > div > small {
+  margin-top: 5px;
+  display: block;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .qr-history-heading button {
   padding: 6px 8px;
   display: inline-flex;
@@ -1804,12 +1812,12 @@
   }
 
   .qr-print-grid {
-    width: 100%;
+    width: 100mm;
     padding: 0 !important;
     display: grid;
-    grid-template-columns: 186mm;
+    grid-template-columns: 100mm;
     justify-content: center;
-    gap: 6mm;
+    gap: 8mm;
     background: #ffffff !important;
   }
 
@@ -1820,7 +1828,7 @@
   }
 
   .personnel-card-choice.is-print-selected {
-    width: 186mm;
+    width: 100mm;
     padding-top: 0;
     display: block !important;
     break-inside: avoid;
@@ -1837,7 +1845,7 @@
   }
 
   .personnel-card-pair {
-    width: 186mm;
+    width: 100mm;
     display: block;
     outline: 0;
     cursor: default;
@@ -1847,10 +1855,10 @@
   }
 
   .personnel-card-flipper {
-    width: 186mm;
+    width: 100mm;
     display: grid;
-    grid-template-columns: repeat(2, 90mm);
-    grid-auto-rows: 57mm;
+    grid-template-columns: 100mm;
+    grid-auto-rows: 63mm;
     gap: 6mm;
     transform: none !important;
     transform-style: flat;
@@ -1860,9 +1868,9 @@
 
   .personnel-qr-card {
     grid-area: auto;
-    width: 90mm;
-    height: 57mm;
-    min-height: 57mm;
+    width: 100mm;
+    height: 63mm;
+    min-height: 63mm;
     overflow: hidden;
     border: 0.25mm solid #8fa9b8;
     border-radius: 3mm;
@@ -1883,9 +1891,9 @@
   }
 
   .personnel-qr-card > header {
-    min-height: 10.5mm;
-    height: 10.5mm;
-    padding: 1mm 3mm;
+    min-height: 11.5mm;
+    height: 11.5mm;
+    padding: 1mm 3.5mm;
     gap: 2mm;
   }
 
@@ -1894,8 +1902,8 @@
   }
 
   .qr-card-brand > span {
-    width: 8mm;
-    height: 8mm;
+    width: 9mm;
+    height: 9mm;
     border-radius: 50%;
   }
 
@@ -1910,13 +1918,13 @@
   }
 
   .qr-card-brand strong {
-    max-width: 54mm;
-    font-size: 5pt;
+    max-width: 61mm;
+    font-size: 5.5pt;
   }
 
   .qr-card-brand small {
     margin-top: 0.5mm;
-    font-size: 3.6pt;
+    font-size: 4pt;
   }
 
   .qr-card-classification {
@@ -1924,21 +1932,21 @@
   }
 
   .qr-card-classification small {
-    font-size: 3.2pt;
+    font-size: 3.6pt;
   }
 
   .qr-card-ribbon {
-    height: 4mm;
-    padding: 0 3mm;
-    font-size: 3.4pt;
+    height: 4.5mm;
+    padding: 0 3.5mm;
+    font-size: 3.8pt;
   }
 
   .personnel-qr-body {
-    min-height: 34mm;
-    height: 34mm;
-    padding: 2mm 3mm 1.5mm;
-    grid-template-columns: minmax(0, 1fr) 27mm;
-    gap: 2.5mm;
+    min-height: 37.5mm;
+    height: 37.5mm;
+    padding: 2.2mm 3.5mm 1.7mm;
+    grid-template-columns: minmax(0, 1fr) 30mm;
+    gap: 3mm;
   }
 
   .personnel-card-profile {
@@ -1946,9 +1954,9 @@
   }
 
   .personnel-card-photo {
-    width: 14mm;
-    height: 16mm;
-    flex-basis: 14mm;
+    width: 16mm;
+    height: 18mm;
+    flex-basis: 16mm;
     padding: 0.6mm;
     border-radius: 2mm;
   }
@@ -1973,17 +1981,17 @@
   }
 
   .personnel-card-name > small {
-    font-size: 3.2pt;
+    font-size: 3.5pt;
   }
 
   .personnel-card-name > strong {
     margin-top: 0.8mm;
-    font-size: 7pt;
+    font-size: 8pt;
   }
 
   .personnel-card-name > span {
     margin-top: 0.7mm;
-    font-size: 4pt;
+    font-size: 4.4pt;
   }
 
   .personnel-card-details {
@@ -1993,17 +2001,17 @@
   }
 
   .personnel-card-details small {
-    font-size: 3pt;
+    font-size: 3.3pt;
   }
 
   .personnel-card-details strong {
     margin-top: 0.4mm;
-    font-size: 4pt;
+    font-size: 4.4pt;
   }
 
   .personnel-card-code > span {
     margin-bottom: 0.6mm;
-    font-size: 3.1pt;
+    font-size: 3.5pt;
   }
 
   .personnel-card-code > span svg {
@@ -2012,16 +2020,16 @@
   }
 
   .personnel-qr-frame {
-    width: 27mm;
-    height: 27mm;
+    width: 30mm;
+    height: 30mm;
     padding: 0.8mm;
     border-radius: 1.8mm;
   }
 
   .personnel-qr-image,
   .personnel-no-qr {
-    width: 25mm;
-    height: 25mm;
+    width: 28mm;
+    height: 28mm;
   }
 
   .personnel-card-code > small {
@@ -2029,11 +2037,11 @@
   }
 
   .personnel-card-back-body {
-    min-height: 34mm;
-    height: 34mm;
-    padding: 2mm 3mm 1.5mm;
-    grid-template-columns: minmax(0, 1.25fr) minmax(25mm, 0.75fr);
-    gap: 2.5mm;
+    min-height: 37.5mm;
+    height: 37.5mm;
+    padding: 2.2mm 3.5mm 1.7mm;
+    grid-template-columns: minmax(0, 1.25fr) minmax(28mm, 0.75fr);
+    gap: 3mm;
   }
 
   .personnel-card-back-watermark {
@@ -2042,7 +2050,7 @@
   }
 
   .personnel-card-rules > span {
-    font-size: 3.2pt;
+    font-size: 3.5pt;
   }
 
   .personnel-card-rules ol {
@@ -2053,7 +2061,7 @@
   .personnel-card-rules li {
     min-height: 4.2mm;
     padding-left: 5.5mm;
-    font-size: 3.5pt;
+    font-size: 3.8pt;
   }
 
   .personnel-card-rules li::before {
@@ -2067,7 +2075,7 @@
     margin-top: 1.2mm;
     padding: 1mm 1.3mm;
     border-left-width: 0.5mm;
-    font-size: 3pt;
+    font-size: 3.3pt;
   }
 
   .personnel-card-return {
@@ -2090,12 +2098,12 @@
 
   .personnel-card-return > strong {
     margin-top: 1.5mm;
-    font-size: 4pt;
+    font-size: 4.4pt;
   }
 
   .personnel-card-return > p {
     margin-top: 0.8mm;
-    font-size: 3.1pt;
+    font-size: 3.4pt;
   }
 
   .personnel-card-signature {
@@ -2108,9 +2116,9 @@
   }
 
   .personnel-qr-card > footer {
-    min-height: 8.5mm;
-    height: 8.5mm;
-    padding: 1.2mm 3mm;
+    min-height: 9.5mm;
+    height: 9.5mm;
+    padding: 1.2mm 3.5mm;
     gap: 1.5mm;
   }
 
@@ -2124,20 +2132,20 @@
   }
 
   .personnel-card-serial small {
-    font-size: 2.8pt;
+    font-size: 3.1pt;
   }
 
   .personnel-card-serial strong {
     margin-top: 0.35mm;
-    font-size: 3.7pt;
+    font-size: 4.1pt;
   }
 
   .personnel-card-security {
-    font-size: 3.1pt;
+    font-size: 3.4pt;
   }
 
   .personnel-card-property {
-    font-size: 3.1pt;
+    font-size: 3.4pt;
   }
 
   .personnel-qr-card > footer .personnel-qr-action {

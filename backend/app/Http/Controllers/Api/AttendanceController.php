@@ -581,6 +581,12 @@ class AttendanceController extends Controller
             'Special Working Holiday'
         );
 
+        if (! $schedule) {
+            return response()->json([
+                'message' => $this->unavailableScheduleMessage($personnel->personnel_id, $date),
+            ], 422);
+        }
+
         try {
             $result = DB::transaction(function () use ($personnel, $schedule, $now, $request, $validated, $user, $isSpecialWorkingDay): array {
                 $record = AttendanceRecord::query()
@@ -1070,15 +1076,62 @@ class AttendanceController extends Controller
     {
         $assignment = PersonnelSchedule::query()
             ->with('schedule')
+            ->whereHas('schedule', fn ($query) => $query->where('status', 'Active'))
             ->where('personnel_id', $personnelId)
             ->whereDate('effective_from', '<=', $date)
             ->where(function ($query) use ($date): void {
                 $query->whereNull('effective_to')->orWhereDate('effective_to', '>=', $date);
             })
             ->latest('effective_from')
+            ->latest('personnel_schedule_id')
             ->first();
 
         return $assignment?->schedule;
+    }
+
+    private function unavailableScheduleMessage(int $personnelId, string $date): string
+    {
+        $assignments = PersonnelSchedule::query()
+            ->with('schedule')
+            ->where('personnel_id', $personnelId)
+            ->orderByDesc('effective_from')
+            ->orderByDesc('personnel_schedule_id')
+            ->get();
+
+        $current = $assignments->first(
+            fn (PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() <= $date
+                && (! $assignment->effective_to || $assignment->effective_to->toDateString() >= $date)
+        );
+
+        if ($current && $current->schedule?->status !== 'Active') {
+            return 'The assigned work schedule is inactive. Ask Administrator or HR to activate it or assign another active schedule.';
+        }
+
+        $upcoming = $assignments
+            ->filter(fn (PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() > $date
+                && $assignment->schedule?->status === 'Active')
+            ->sortBy('effective_from')
+            ->first();
+
+        if ($upcoming) {
+            return 'The assigned work schedule starts on '
+                .$upcoming->effective_from->format('F j, Y')
+                .'. Change the effective date if this personnel should start today.';
+        }
+
+        $expired = $assignments
+            ->filter(fn (PersonnelSchedule $assignment) => $assignment->effective_to
+                && $assignment->effective_to->toDateString() < $date)
+            ->sortByDesc('effective_to')
+            ->first();
+
+        if ($expired) {
+            return 'The previous work schedule assignment ended on '
+                .$expired->effective_to->format('F j, Y')
+                .'. Assign a new active schedule before recording attendance.';
+        }
+
+        return 'No active work schedule is assigned for today. Assign this personnel on the Schedules page, then scan the card again.';
     }
 
     private function recalculate(

@@ -6,6 +6,7 @@ use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Models\User;
 use App\Models\WorkSchedule;
+use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -217,6 +218,39 @@ class ScheduleManagementSecurityTest extends TestCase
             ->assertJsonPath('summary.assigned_personnel', 1)
             ->assertJsonPath('summary.unassigned_personnel', 0)
             ->assertJsonPath('personnel.0.current_assignment.schedule_name', 'Updated Schedule');
+    }
+
+    public function test_inactive_schedule_is_not_reported_as_a_current_assignment(): void
+    {
+        $this->travelTo(Carbon::parse('2026-07-30 08:00:00', 'Asia/Manila'));
+
+        $administrator = $this->user('Administrator');
+        $personnel = Personnel::create([
+            'employee_number' => 'GIP-2026-INACTIVE',
+            'first_name' => 'Inactive',
+            'last_name' => 'Schedule',
+            'personnel_type' => 'GIP',
+            'status' => 'Active',
+        ]);
+        $schedule = WorkSchedule::create([
+            ...$this->schedulePayload(),
+            'schedule_name' => 'Inactive Schedule',
+            'status' => 'Inactive',
+        ]);
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-07-01',
+            'effective_to' => null,
+            'created_by' => $administrator->user_id,
+        ]);
+
+        $this->actingAs($administrator)
+            ->getJson('/api/schedules')
+            ->assertOk()
+            ->assertJsonPath('summary.assigned_personnel', 0)
+            ->assertJsonPath('summary.unassigned_personnel', 1)
+            ->assertJsonPath('personnel.0.current_assignment', null);
     }
 
     private function user(string $role): User

@@ -55,11 +55,18 @@ const emptySchedule = {
   status: "Active",
 };
 
-const emptyAssignment = {
-  schedule_id: "",
-  effective_from: new Date().toISOString().slice(0, 10),
-  effective_to: "",
-};
+function localDateInputValue(date = new Date()) {
+  const timezoneOffset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 10);
+}
+
+function createEmptyAssignment() {
+  return {
+    schedule_id: "",
+    effective_from: localDateInputValue(),
+    effective_to: "",
+  };
+}
 
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
@@ -119,7 +126,7 @@ export default function Schedules() {
   const [scheduleErrors, setScheduleErrors] = useState({});
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [assignmentModal, setAssignmentModal] = useState(false);
-  const [assignmentForm, setAssignmentForm] = useState(emptyAssignment);
+  const [assignmentForm, setAssignmentForm] = useState(createEmptyAssignment);
   const [selectedPersonnel, setSelectedPersonnel] = useState([]);
   const [assignmentSearch, setAssignmentSearch] = useState("");
   const [assignmentErrors, setAssignmentErrors] = useState({});
@@ -280,7 +287,10 @@ export default function Schedules() {
   }
 
   function openAssignment(scheduleId = "", personnelIds = []) {
-    setAssignmentForm({ ...emptyAssignment, schedule_id: scheduleId ? String(scheduleId) : "" });
+    setAssignmentForm({
+      ...createEmptyAssignment(),
+      schedule_id: scheduleId ? String(scheduleId) : "",
+    });
     setSelectedPersonnel(personnelIds.map(Number));
     setAssignmentSearch("");
     setAssignmentErrors({});
