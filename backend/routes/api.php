@@ -45,7 +45,7 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::get('/qr-attendance', [QrAttendanceController::class, 'index'])
         ->middleware('role:Administrator,HR,Supervisor,Encoder,Personnel');
 
-    Route::middleware('role:Administrator,HR,Supervisor,Encoder,Personnel')->group(function (): void {
+    Route::middleware('role:Administrator,HR')->group(function (): void {
         Route::post('/qr-attendance/challenge', [QrAttendanceController::class, 'challenge'])
             ->middleware('throttle:qr-challenge');
         Route::post('/qr-attendance/scan', [QrAttendanceController::class, 'scan'])
@@ -69,6 +69,8 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::get('/holidays/options', [HolidayController::class, 'options']);
     Route::get('/personnel/{personnel}/photo', [PersonnelController::class, 'photo'])
         ->name('personnel.photo');
+    Route::get('/personnel/{personnel}/signature', [PersonnelController::class, 'signature'])
+        ->name('personnel.signature');
 
     Route::middleware('role:Administrator,HR')->group(function (): void {
         Route::apiResource('/departments', DepartmentController::class)

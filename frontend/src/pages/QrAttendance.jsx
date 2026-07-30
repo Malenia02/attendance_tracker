@@ -863,6 +863,7 @@ function PersonnelQrCard({ person, busy, canRegenerate, onRegenerate }) {
   const [renderedQr, setRenderedQr] = useState({ payload: null, image: "", error: "" });
   const [flipped, setFlipped] = useState(false);
   const personImage = person.photo_url;
+  const signatureImage = person.signature_url;
 
   useEffect(() => {
     let active = true;
@@ -1006,8 +1007,9 @@ function PersonnelQrCard({ person, busy, canRegenerate, onRegenerate }) {
             <strong>{person.department?.name || "DILG Issuing Office"}</strong>
             <p>{person.department?.location || "Return this card to the office that issued the credential."}</p>
             <div className="personnel-card-signature">
+              {signatureImage && <img src={signatureImage} alt={`${person.full_name}'s signature`} />}
               <span></span>
-              <small>Authorized signature</small>
+              <small>Cardholder signature</small>
             </div>
           </div>
         </div>

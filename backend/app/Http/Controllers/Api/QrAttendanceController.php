@@ -23,7 +23,7 @@ class QrAttendanceController extends Controller
 {
     private const PAGE_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder', 'Personnel'];
 
-    private const KIOSK_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder', 'Personnel'];
+    private const KIOSK_ROLES = ['Administrator', 'HR'];
 
     private const CODE_MANAGER_ROLES = ['Administrator', 'HR'];
 
@@ -578,6 +578,15 @@ class QrAttendanceController extends Controller
             'photo_url' => $personnel->photo
                 ? route(
                     'personnel.photo',
+                    ['personnel' => $personnel],
+                    config('app.frontend_deployment') === 'external'
+                        && ! config('app.frontend_api_proxy')
+                )
+                    .'?v='.($personnel->updated_at?->timestamp ?? 0)
+                : null,
+            'signature_url' => $personnel->signature
+                ? route(
+                    'personnel.signature',
                     ['personnel' => $personnel],
                     config('app.frontend_deployment') === 'external'
                         && ! config('app.frontend_api_proxy')

@@ -99,6 +99,40 @@ class AttendanceEligibilityTest extends TestCase
         $this->assertSame('morning_time_out', $result['action']);
     }
 
+    public function test_repeated_morning_time_in_returns_a_clear_already_recorded_message(): void
+    {
+        $record = new AttendanceRecord([
+            'morning_time_in' => '2026-07-23 07:05:00',
+            'attendance_status' => 'Incomplete',
+        ]);
+
+        $result = $this->check($record, '2026-07-23 08:00:00');
+
+        $this->assertNull($result['action']);
+        $this->assertSame(
+            'Morning Time In was already recorded at 07:05 AM. Morning Time Out opens at 11:30 AM.',
+            $result['message']
+        );
+    }
+
+    public function test_repeated_afternoon_time_in_identifies_the_recorded_time_and_next_action(): void
+    {
+        $record = new AttendanceRecord([
+            'morning_time_in' => '2026-07-23 07:05:00',
+            'morning_time_out' => '2026-07-23 12:00:00',
+            'afternoon_time_in' => '2026-07-23 13:02:00',
+            'attendance_status' => 'Incomplete',
+        ]);
+
+        $result = $this->check($record, '2026-07-23 14:15:00');
+
+        $this->assertNull($result['action']);
+        $this->assertSame(
+            'Afternoon Time In was already recorded at 01:02 PM. Afternoon Time Out opens at 04:30 PM.',
+            $result['message']
+        );
+    }
+
     public function test_arrival_after_seven_is_flagged_with_late_minutes(): void
     {
         $record = new AttendanceRecord([

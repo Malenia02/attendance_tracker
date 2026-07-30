@@ -111,24 +111,37 @@ class PersonnelController extends Controller
         $validated = $request->validate($this->rules($request));
         $generateEmployeeNumber = $validated['personnel_type'] === 'GIP'
             || $request->boolean('auto_generate_employee_number');
-        unset($validated['remove_photo'], $validated['auto_generate_employee_number']);
+        unset(
+            $validated['remove_photo'],
+            $validated['remove_signature'],
+            $validated['auto_generate_employee_number']
+        );
 
         if ($generateEmployeeNumber) {
             $validated['employee_number'] = 'PENDING-'.Str::uuid();
         }
 
-        $photoPath = $this->storePhoto($request);
-
-        if ($photoPath) {
-            $validated['photo'] = $photoPath;
-        } else {
-            unset($validated['photo']);
-        }
-
         $validated = $this->normalizeCredentialValidity($validated);
-        $validated['qr_login_code'] = hash('sha256', Str::random(64));
+        $photoPath = $this->storePhoto($request);
+        $signaturePath = null;
 
         try {
+            $signaturePath = $this->storeSignature($request);
+
+            if ($photoPath) {
+                $validated['photo'] = $photoPath;
+            } else {
+                unset($validated['photo']);
+            }
+
+            if ($signaturePath) {
+                $validated['signature'] = $signaturePath;
+            } else {
+                unset($validated['signature']);
+            }
+
+            $validated['qr_login_code'] = hash('sha256', Str::random(64));
+
             $personnel = DB::transaction(function () use ($validated, $generateEmployeeNumber): Personnel {
                 $personnel = Personnel::create($validated);
 
@@ -143,6 +156,9 @@ class PersonnelController extends Controller
         } catch (Throwable $exception) {
             if ($photoPath) {
                 Storage::disk('local')->delete($photoPath);
+            }
+            if ($signaturePath) {
+                Storage::disk('local')->delete($signaturePath);
             }
 
             throw $exception;
@@ -159,7 +175,11 @@ class PersonnelController extends Controller
     public function update(Request $request, Personnel $personnel): JsonResponse
     {
         $validated = $request->validate($this->rules($request, $personnel));
-        unset($validated['remove_photo'], $validated['auto_generate_employee_number']);
+        unset(
+            $validated['remove_photo'],
+            $validated['remove_signature'],
+            $validated['auto_generate_employee_number']
+        );
         $validated = $this->normalizeCredentialValidity($validated, $personnel);
         $wasGip = $personnel->personnel_type === 'GIP';
         $willBeGip = $validated['personnel_type'] === 'GIP';
@@ -172,6 +192,18 @@ class PersonnelController extends Controller
 
         $oldPhotoPath = $personnel->photo;
         $newPhotoPath = $this->storePhoto($request);
+        $oldSignaturePath = $personnel->signature;
+        $newSignaturePath = null;
+
+        try {
+            $newSignaturePath = $this->storeSignature($request);
+        } catch (Throwable $exception) {
+            if ($newPhotoPath) {
+                Storage::disk('local')->delete($newPhotoPath);
+            }
+
+            throw $exception;
+        }
 
         if ($newPhotoPath) {
             $validated['photo'] = $newPhotoPath;
@@ -179,6 +211,14 @@ class PersonnelController extends Controller
             $validated['photo'] = null;
         } else {
             unset($validated['photo']);
+        }
+
+        if ($newSignaturePath) {
+            $validated['signature'] = $newSignaturePath;
+        } elseif ($request->boolean('remove_signature')) {
+            $validated['signature'] = null;
+        } else {
+            unset($validated['signature']);
         }
 
         try {
@@ -195,12 +235,18 @@ class PersonnelController extends Controller
             if ($newPhotoPath) {
                 Storage::disk('local')->delete($newPhotoPath);
             }
+            if ($newSignaturePath) {
+                Storage::disk('local')->delete($newSignaturePath);
+            }
 
             throw $exception;
         }
 
         if ($oldPhotoPath && $oldPhotoPath !== $personnel->photo) {
             Storage::disk('local')->delete($oldPhotoPath);
+        }
+        if ($oldSignaturePath && $oldSignaturePath !== $personnel->signature) {
+            Storage::disk('local')->delete($oldSignaturePath);
         }
 
         $personnel->load(['department', 'user']);
@@ -232,6 +278,26 @@ class PersonnelController extends Controller
             Storage::disk('local')->path($personnel->photo),
             [
                 'Cache-Control' => 'private, max-age=86400',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        );
+    }
+
+    public function signature(Request $request, Personnel $personnel): BinaryFileResponse|JsonResponse
+    {
+        Gate::authorize('view', $personnel);
+
+        if (! $personnel->signature || ! Storage::disk('local')->exists($personnel->signature)) {
+            return response()->json([
+                'message' => 'Personnel signature not found.',
+            ], 404);
+        }
+
+        return response()->file(
+            Storage::disk('local')->path($personnel->signature),
+            [
+                'Cache-Control' => 'private, max-age=86400',
+                'Content-Disposition' => 'inline; filename="personnel-signature"',
                 'X-Content-Type-Options' => 'nosniff',
             ]
         );
@@ -294,6 +360,15 @@ class PersonnelController extends Controller
                 'dimensions:min_width=128,min_height=128,max_width=4000,max_height=4000',
             ],
             'remove_photo' => ['sometimes', 'boolean'],
+            'signature' => [
+                'nullable',
+                'file',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:2048',
+                'dimensions:min_width=100,min_height=40,max_width=3000,max_height=1500',
+            ],
+            'remove_signature' => ['sometimes', 'boolean'],
             'status' => ['required', Rule::in(self::STATUSES)],
         ];
     }
@@ -357,6 +432,15 @@ class PersonnelController extends Controller
             'photo_url' => $personnel->photo
                 ? route(
                     'personnel.photo',
+                    ['personnel' => $personnel],
+                    config('app.frontend_deployment') === 'external'
+                        && ! config('app.frontend_api_proxy')
+                )
+                    .'?v='.($personnel->updated_at?->timestamp ?? 0)
+                : null,
+            'signature_url' => $personnel->signature
+                ? route(
+                    'personnel.signature',
                     ['personnel' => $personnel],
                     config('app.frontend_deployment') === 'external'
                         && ! config('app.frontend_api_proxy')
@@ -447,6 +531,19 @@ class PersonnelController extends Controller
         $path = $request->file('photo')->store('personnel-photos', 'local');
 
         abort_if(! $path, 500, 'The personnel photo could not be stored.');
+
+        return $path;
+    }
+
+    private function storeSignature(Request $request): ?string
+    {
+        if (! $request->hasFile('signature')) {
+            return null;
+        }
+
+        $path = $request->file('signature')->store('personnel-signatures', 'local');
+
+        abort_if(! $path, 500, 'The personnel signature could not be stored.');
 
         return $path;
     }

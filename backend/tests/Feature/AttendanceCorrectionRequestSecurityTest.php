@@ -471,20 +471,20 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             'last_name' => 'Employee',
             'status' => 'Active',
         ]);
-        $administrator = $this->createUser(
-            'linked-admin',
-            'Administrator',
+        $personnelUser = $this->createUser(
+            'linked-personnel',
+            'Personnel',
             $linkedPersonnel->personnel_id
         );
 
-        $this->actingAs($administrator)
+        $this->actingAs($personnelUser)
             ->postJson('/api/attendance/time-log', [
                 'personnel_id' => $otherPersonnel->personnel_id,
             ])
             ->assertForbidden()
             ->assertJsonPath(
                 'message',
-                'You may only record attendance for your own personnel account. Use QR Attendance for another personnel member.'
+                'Attendance denied. You can only time in or time out using your own linked personnel account.'
             );
     }
 

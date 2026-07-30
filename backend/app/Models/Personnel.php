@@ -30,6 +30,7 @@ class Personnel extends Model
         'contact_number',
         'address',
         'photo',
+        'signature',
         'qr_login_code',
         'qr_valid_from',
         'qr_valid_until',
@@ -39,6 +40,7 @@ class Personnel extends Model
     protected $hidden = [
         'qr_login_code',
         'photo',
+        'signature',
     ];
 
     protected $casts = [

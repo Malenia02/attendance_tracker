@@ -27,6 +27,7 @@ class QrChallengeSecurityTest extends TestCase
             $table->date('employment_start_date')->nullable();
             $table->date('employment_end_date')->nullable();
             $table->string('photo')->nullable();
+            $table->string('signature')->nullable();
             $table->string('qr_login_code')->nullable();
             $table->date('qr_valid_from')->nullable();
             $table->date('qr_valid_until')->nullable();
@@ -157,7 +158,7 @@ class QrChallengeSecurityTest extends TestCase
         $this->assertDatabaseCount('qr_scan_logs', 1);
     }
 
-    public function test_personnel_can_view_their_qr_card_and_start_a_scoped_scan(): void
+    public function test_personnel_can_view_their_qr_card_but_cannot_operate_the_kiosk(): void
     {
         $personnelId = DB::table('personnel')->insertGetId([
             'employee_number' => 'GIP-TEST-001',
@@ -184,7 +185,7 @@ class QrChallengeSecurityTest extends TestCase
         $this->actingAs($user)
             ->getJson('/api/qr-attendance')
             ->assertOk()
-            ->assertJsonPath('can_scan', true)
+            ->assertJsonPath('can_scan', false)
             ->assertJsonPath('can_view_cards', true)
             ->assertJsonPath('can_manage_codes', false)
             ->assertJsonCount(1, 'personnel')
@@ -195,9 +196,53 @@ class QrChallengeSecurityTest extends TestCase
             ->postJson('/api/qr-attendance/challenge', [
                 'device_identifier' => 'personnel-device-001',
             ])
+            ->assertForbidden();
+    }
+
+    public function test_supervisor_and_encoder_cannot_operate_the_qr_kiosk(): void
+    {
+        foreach (['Supervisor', 'Encoder'] as $role) {
+            $user = User::create([
+                'username' => strtolower($role).'-kiosk-denied',
+                'password_hash' => bcrypt('ValidPassword!123'),
+                'user_role' => $role,
+                'status' => 'Active',
+            ]);
+
+            $this->actingAs($user)
+                ->getJson('/api/qr-attendance')
+                ->assertOk()
+                ->assertJsonPath('can_scan', false)
+                ->assertJsonPath('can_manage_codes', false);
+
+            $this->actingAs($user)
+                ->postJson('/api/qr-attendance/challenge', [
+                    'device_identifier' => strtolower($role).'-device-001',
+                ])
+                ->assertForbidden();
+        }
+    }
+
+    public function test_hr_can_operate_the_qr_kiosk(): void
+    {
+        $hr = User::create([
+            'username' => 'hr-kiosk-operator',
+            'password_hash' => bcrypt('ValidPassword!123'),
+            'user_role' => 'HR',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($hr)
+            ->getJson('/api/qr-attendance')
             ->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonStructure(['challenge', 'expires_at']);
+            ->assertJsonPath('can_scan', true);
+
+        $this->actingAs($hr)
+            ->postJson('/api/qr-attendance/challenge', [
+                'device_identifier' => 'hr-kiosk-device-001',
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
     }
 
     public function test_scan_rejects_a_card_outside_its_own_validity_period(): void

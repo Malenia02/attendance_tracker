@@ -6,7 +6,9 @@ use App\Models\Department;
 use App\Models\Personnel;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class PersonnelNumberingSecurityTest extends TestCase
@@ -41,6 +43,7 @@ class PersonnelNumberingSecurityTest extends TestCase
             $table->string('contact_number', 30)->nullable();
             $table->string('address', 255)->nullable();
             $table->string('photo')->nullable();
+            $table->string('signature')->nullable();
             $table->string('qr_login_code', 100)->nullable()->unique();
             $table->date('qr_valid_from')->nullable();
             $table->date('qr_valid_until')->nullable();
@@ -230,6 +233,53 @@ class PersonnelNumberingSecurityTest extends TestCase
         $this->assertSame('2026-12-31', $saved->qr_valid_until->format('Y-m-d'));
     }
 
+    public function test_signature_image_is_stored_privately_and_returned_through_an_authorized_route(): void
+    {
+        Storage::fake('local');
+        $department = $this->department();
+        $administrator = $this->administrator();
+
+        $response = $this->actingAs($administrator)
+            ->post('/api/personnel', [
+                ...$this->gipPayload($department->department_id, 'Signed'),
+                'signature' => UploadedFile::fake()->createWithContent(
+                    'signature.png',
+                    $this->pngImage(600, 200)
+                ),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        $personnel = Personnel::findOrFail($response->json('data.personnel_id'));
+
+        $this->assertNotNull($personnel->signature);
+        Storage::disk('local')->assertExists($personnel->signature);
+        $this->assertNotNull($response->json('data.signature_url'));
+
+        $this->actingAs($administrator)
+            ->get('/api/personnel/'.$personnel->personnel_id.'/signature')
+            ->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+
+        $unrelatedPersonnel = Personnel::create([
+            'employee_number' => 'GIP-UNRELATED-2026-0001',
+            'first_name' => 'Unrelated',
+            'last_name' => 'Personnel',
+            'personnel_type' => 'GIP',
+            'status' => 'Active',
+        ]);
+        $unrelatedUser = User::create([
+            'personnel_id' => $unrelatedPersonnel->personnel_id,
+            'username' => 'unrelated-personnel',
+            'password_hash' => 'not-used',
+            'user_role' => 'Personnel',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($unrelatedUser)
+            ->get('/api/personnel/'.$personnel->personnel_id.'/signature')
+            ->assertForbidden();
+    }
+
     private function department(): Department
     {
         return Department::create([
@@ -261,5 +311,22 @@ class PersonnelNumberingSecurityTest extends TestCase
             'employment_start_date' => '2026-07-01',
             'status' => 'Active',
         ];
+    }
+
+    private function pngImage(int $width, int $height): string
+    {
+        $chunk = static function (string $type, string $data): string {
+            return pack('N', strlen($data))
+                .$type
+                .$data
+                .pack('N', crc32($type.$data));
+        };
+        $header = pack('NNC5', $width, $height, 8, 2, 0, 0, 0);
+        $row = "\x00".str_repeat("\xFF\xFF\xFF", $width);
+
+        return "\x89PNG\r\n\x1A\n"
+            .$chunk('IHDR', $header)
+            .$chunk('IDAT', gzcompress(str_repeat($row, $height), 9))
+            .$chunk('IEND', '');
     }
 }

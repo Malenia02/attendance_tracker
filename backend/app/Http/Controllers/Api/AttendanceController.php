@@ -552,7 +552,9 @@ class AttendanceController extends Controller
 
         if (! $trustedQrScan && (int) $user->personnel_id !== (int) $validated['personnel_id']) {
             return response()->json([
-                'message' => 'You may only record attendance for your own personnel account. Use QR Attendance for another personnel member.',
+                'message' => in_array($user->user_role, ['Administrator', 'HR'], true)
+                    ? 'Attendance denied. Direct time in and time out are limited to your own linked personnel account. Use the authorized QR kiosk to scan another personnel member\'s physical card.'
+                    : 'Attendance denied. You can only time in or time out using your own linked personnel account.',
             ], 403);
         }
 
@@ -1287,6 +1289,45 @@ class AttendanceController extends Controller
                 'action' => $window['action'],
                 'message' => $window['label'].' is available now.',
             ];
+        }
+
+        if ($record) {
+            $lastRecordedWindow = collect($windows)
+                ->reverse()
+                ->first(fn (array $window) => (bool) $record->{$window['action']});
+
+            if ($lastRecordedWindow) {
+                $recordedAt = $record->{$lastRecordedWindow['action']};
+                $message = $lastRecordedWindow['label']
+                    .' was already recorded at '
+                    .$recordedAt->format('h:i A')
+                    .'.';
+                $nextWindow = collect($windows)->first(function (array $window) use ($record, $now): bool {
+                    if ($record->{$window['action']}) {
+                        return false;
+                    }
+
+                    return Carbon::parse(
+                        $now->toDateString().' '.$window['start'],
+                        $now->getTimezone()
+                    )->greaterThan($now);
+                });
+
+                if ($nextWindow) {
+                    $nextStart = Carbon::parse(
+                        $now->toDateString().' '.$nextWindow['start'],
+                        $now->getTimezone()
+                    );
+                    $message .= ' '.$nextWindow['label'].' opens at '.$nextStart->format('h:i A').'.';
+                } else {
+                    $message .= ' No additional attendance action is available at this time.';
+                }
+
+                return [
+                    'action' => null,
+                    'message' => $message,
+                ];
+            }
         }
 
         foreach ($windows as $window) {

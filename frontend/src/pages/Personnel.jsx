@@ -7,6 +7,7 @@ import {
   IdCard,
   ImagePlus,
   Mail,
+  PenLine,
   Pencil,
   Phone,
   Plus,
@@ -97,7 +98,11 @@ export default function Personnel() {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [removePhoto, setRemovePhoto] = useState(false);
+  const [signatureFile, setSignatureFile] = useState(null);
+  const [signaturePreview, setSignaturePreview] = useState("");
+  const [removeSignature, setRemoveSignature] = useState(false);
   const photoObjectUrl = useRef("");
+  const signatureObjectUrl = useRef("");
 
   function releasePhotoObjectUrl() {
     if (photoObjectUrl.current) {
@@ -106,7 +111,17 @@ export default function Personnel() {
     }
   }
 
-  useEffect(() => () => releasePhotoObjectUrl(), []);
+  function releaseSignatureObjectUrl() {
+    if (signatureObjectUrl.current) {
+      URL.revokeObjectURL(signatureObjectUrl.current);
+      signatureObjectUrl.current = "";
+    }
+  }
+
+  useEffect(() => () => {
+    releasePhotoObjectUrl();
+    releaseSignatureObjectUrl();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -156,17 +171,22 @@ export default function Personnel() {
 
   function openCreateModal() {
     releasePhotoObjectUrl();
+    releaseSignatureObjectUrl();
     setEditingRecord(null);
     setForm({ ...emptyForm, ...defaultCardValidity() });
     setPhotoFile(null);
     setPhotoPreview("");
     setRemovePhoto(false);
+    setSignatureFile(null);
+    setSignaturePreview("");
+    setRemoveSignature(false);
     setFieldErrors({});
     setModalOpen(true);
   }
 
   function openEditModal(record) {
     releasePhotoObjectUrl();
+    releaseSignatureObjectUrl();
     setEditingRecord(record);
     setForm({
       employee_number: record.employee_number || "",
@@ -191,6 +211,9 @@ export default function Personnel() {
     setPhotoFile(null);
     setPhotoPreview(record.photo_url || "");
     setRemovePhoto(false);
+    setSignatureFile(null);
+    setSignaturePreview(record.signature_url || "");
+    setRemoveSignature(false);
     setFieldErrors({});
     setModalOpen(true);
   }
@@ -200,9 +223,13 @@ export default function Personnel() {
     setModalOpen(false);
     setEditingRecord(null);
     releasePhotoObjectUrl();
+    releaseSignatureObjectUrl();
     setPhotoFile(null);
     setPhotoPreview("");
     setRemovePhoto(false);
+    setSignatureFile(null);
+    setSignaturePreview("");
+    setRemoveSignature(false);
     setFieldErrors({});
   }
 
@@ -258,6 +285,46 @@ export default function Personnel() {
     setFieldErrors((current) => ({ ...current, photo: undefined }));
   }
 
+  function selectSignature(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setFieldErrors((current) => ({
+        ...current,
+        signature: ["Choose a JPEG, PNG, or WebP signature image."],
+      }));
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setFieldErrors((current) => ({
+        ...current,
+        signature: ["The signature image must not be larger than 2 MB."],
+      }));
+      return;
+    }
+
+    releaseSignatureObjectUrl();
+    signatureObjectUrl.current = URL.createObjectURL(file);
+    setSignatureFile(file);
+    setSignaturePreview(signatureObjectUrl.current);
+    setRemoveSignature(false);
+    setFieldErrors((current) => ({ ...current, signature: undefined }));
+  }
+
+  function clearSignature() {
+    releaseSignatureObjectUrl();
+    setSignatureFile(null);
+    setSignaturePreview("");
+    setRemoveSignature(Boolean(editingRecord?.signature_url));
+    setFieldErrors((current) => ({ ...current, signature: undefined }));
+  }
+
   async function submitForm(event) {
     event.preventDefault();
     setSaving(true);
@@ -268,6 +335,8 @@ export default function Personnel() {
 
     if (photoFile) body.append("photo", photoFile);
     if (removePhoto) body.append("remove_photo", "1");
+    if (signatureFile) body.append("signature", signatureFile);
+    if (removeSignature) body.append("remove_signature", "1");
     if (editingRecord) body.append("_method", "PUT");
 
     try {
@@ -284,9 +353,13 @@ export default function Personnel() {
       setModalOpen(false);
       setEditingRecord(null);
       releasePhotoObjectUrl();
+      releaseSignatureObjectUrl();
       setPhotoFile(null);
       setPhotoPreview("");
       setRemovePhoto(false);
+      setSignatureFile(null);
+      setSignaturePreview("");
+      setRemoveSignature(false);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 3500);
     } catch (error) {
@@ -519,6 +592,36 @@ export default function Personnel() {
                     )}
                   </div>
                   <FieldError errors={fieldErrors} name="photo" />
+                </div>
+              </div>
+
+              <div className="personnel-signature-field">
+                <div className={`personnel-signature-preview ${signaturePreview ? "has-signature" : ""}`}>
+                  {signaturePreview
+                    ? <img src={signaturePreview} alt="Personnel signature preview" />
+                    : <><PenLine size={28} /><span>No signature uploaded</span></>}
+                </div>
+                <div className="personnel-photo-controls">
+                  <strong>Personnel signature <span className="optional-label">Optional</span></strong>
+                  <p>Upload a clear signature on a white or transparent background. JPEG, PNG or WebP, up to 2 MB.</p>
+                  <div>
+                    <label className="secondary-action personnel-photo-button">
+                      <PenLine size={16} />
+                      {signaturePreview ? "Change signature" : "Upload signature"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={selectSignature}
+                      />
+                    </label>
+                    {signaturePreview && (
+                      <button type="button" className="personnel-photo-remove" onClick={clearSignature}>
+                        <Trash2 size={15} />
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <FieldError errors={fieldErrors} name="signature" />
                 </div>
               </div>
 

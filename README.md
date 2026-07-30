@@ -12,7 +12,7 @@ days unless an authorized office-specific working day is created.
 ## Main features
 
 - Modern role-aware dashboard
-- Personnel directory with private photo uploads and optional automatic employee numbers
+- Personnel directory with private photo/signature uploads and optional automatic employee numbers
 - Departments and offices with GPS coordinates and allowed radius
 - Morning and afternoon time in/time out
 - Automatic late, undertime, half-day, absence, holiday, and rest-day handling
@@ -41,11 +41,11 @@ days unless an authorized office-specific working day is created.
 
 | Role | Typical access |
 | --- | --- |
-| Administrator | Full system administration, logs, user management, and DTR generation |
-| HR | Personnel, departments, attendance correction, DTR review, and certification |
-| Supervisor | Department-scoped attendance verification, QR operation, and DTR review |
-| Encoder | Department-scoped attendance, QR operation, and DTR processing |
-| Personnel | Own attendance and DTR information |
+| Administrator | Full system administration, QR kiosk operation, logs, user management, and DTR generation |
+| HR | QR kiosk operation, personnel, departments, attendance correction, DTR review, and certification |
+| Supervisor | Own attendance/card plus department-scoped verification and DTR review |
+| Encoder | Own attendance/card plus department-scoped attendance and DTR processing |
+| Personnel | Own attendance, QR card, and DTR information |
 
 Backend authorization is the security boundary. Hiding a menu item in React
 does not grant or remove API access.
@@ -261,12 +261,17 @@ context. Manual scanning remains available during local development.
 
 - QR payloads are signed by the backend.
 - Scan requests are rate-limited and tied to the authenticated kiosk operator.
+- Only Administrator and HR accounts can operate the QR kiosk. Supervisor,
+  Encoder, and Personnel accounts can view their own cards but cannot scan
+  another personnel member's card.
 - Every scan now requires a 90-second, one-time server challenge bound to the
   current kiosk account and device identifier. Replaying the same API request is
   rejected with `409 Conflict`.
 - GPS coordinates, accuracy, age, and office distance are checked server-side.
 - Personnel photos are stored privately and served only through an authenticated
   API route.
+- Optional personnel signatures are stored privately and printed on the back of
+  the ID as the cardholder signature.
 - A photographed printed card can still be presented at a real authorized
   kiosk. Use a supervised fixed kiosk and compare the displayed personnel photo
   when stronger physical identity assurance is required.
@@ -287,9 +292,10 @@ Before production deployment:
 - Use a least-privilege database account.
 - Set separate random values for `APP_KEY`, `DTR_SIGNING_KEY`, and
   `QR_SIGNING_KEY`.
-- Never commit `.env`, database backups, generated DTRs, or uploaded photos.
+- Never commit `.env`, database backups, generated DTRs, photos, or signatures.
 - Keep `frontend/node_modules`, `frontend/dist`, and `backend/vendor` out of Git.
-- Back up the database and `backend/storage/app/private/personnel-photos`.
+- Back up the database, `backend/storage/app/private/personnel-photos`, and
+  `backend/storage/app/private/personnel-signatures`.
 
 Authentication uses Sanctum session cookies with CSRF protection. Login,
 general API, and QR scan routes have separate rate limits. Repeated login
@@ -342,10 +348,10 @@ PHP Docker image, and `frontend/vercel.json`.
 
 The current free Render service is for testing only. `render.free.yaml` retains
 the Aiven CA certificate configuration and runs migrations during startup, but
-uploaded personnel photos are ephemeral and may disappear after a restart or
-redeploy. Free instances can also take close to a minute to wake after being
-idle, so frontend session verification allows a 60-second cold start. Do not use
-the free instance as the final records system.
+uploaded personnel photos and signatures are ephemeral and may disappear after
+a restart or redeploy. Free instances can also take close to a minute to wake
+after being idle, so frontend session verification allows a 60-second cold
+start. Do not use the free instance as the final records system.
 
 ## Testing and quality checks
 
