@@ -126,11 +126,9 @@ return new class extends Migration
             });
         }
 
-        if (Schema::hasColumn('activity_logs', 'request_id')) {
-            Schema::table('activity_logs', function (Blueprint $table): void {
-                $table->dropColumn('request_id');
-            });
-        }
+        // Keep the audit correlation ID on rollback. Older databases and
+        // forward-only repair migrations may own this column, and removing it
+        // would make authentication/activity logging fail at runtime.
     }
 
     private function assertNoDuplicatePersonnelEmails(): void

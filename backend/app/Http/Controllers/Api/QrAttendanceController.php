@@ -23,7 +23,7 @@ class QrAttendanceController extends Controller
 {
     private const PAGE_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder', 'Personnel'];
 
-    private const KIOSK_ROLES = ['Administrator', 'HR'];
+    private const MULTI_PERSON_SCAN_ROLES = ['Administrator', 'HR'];
 
     private const CODE_MANAGER_ROLES = ['Administrator', 'HR'];
 
@@ -35,7 +35,8 @@ class QrAttendanceController extends Controller
             return response()->json(['message' => 'You do not have access to QR attendance.'], 403);
         }
 
-        $canScan = in_array($user->user_role, self::KIOSK_ROLES, true);
+        $canScan = in_array($user->user_role, self::PAGE_ROLES, true);
+        $canScanOthers = in_array($user->user_role, self::MULTI_PERSON_SCAN_ROLES, true);
         $canManageCodes = in_array($user->user_role, self::CODE_MANAGER_ROLES, true);
         $canViewCards = true;
         $today = now()->toDateString();
@@ -62,6 +63,8 @@ class QrAttendanceController extends Controller
             'server_time' => now()->toISOString(),
             'timezone' => config('app.timezone'),
             'can_scan' => $canScan,
+            'can_scan_others' => $canScanOthers,
+            'scan_scope' => $canScanOthers ? 'all_personnel' : 'self',
             'can_view_cards' => $canViewCards,
             'can_manage_codes' => $canManageCodes,
             'summary' => [
@@ -153,6 +156,15 @@ class QrAttendanceController extends Controller
 
     public function challenge(QrChallengeRequest $request): JsonResponse
     {
+        $user = $request->user();
+
+        if (! in_array($user->user_role, self::MULTI_PERSON_SCAN_ROLES, true)
+            && ! $user->personnel_id) {
+            return response()->json([
+                'message' => 'Your account must be linked to a personnel record before you can use QR attendance.',
+            ], 422);
+        }
+
         $validated = $request->validated();
         $challenge = bin2hex(random_bytes(32));
         $now = now();
@@ -205,6 +217,19 @@ class QrAttendanceController extends Controller
                 'message' => $log->message,
                 'scan' => $this->formatScanLog($log),
             ], 422);
+        }
+
+        $user = $request->user();
+        $canScanOthers = in_array($user->user_role, self::MULTI_PERSON_SCAN_ROLES, true);
+
+        if (! $canScanOthers && (int) $user->personnel_id !== (int) $personnel->personnel_id) {
+            $message = 'You can only record attendance using the QR card linked to your own account. This card belongs to another personnel member.';
+            $log = $this->createScanLog($request, $validated, $personnel, 'Rejected', $message);
+
+            return response()->json([
+                'message' => $message,
+                'scan' => $this->formatScanLog($log),
+            ], 403);
         }
 
         $personnelRateKey = 'qr-personnel:'.$personnel->personnel_id;

@@ -12,6 +12,7 @@
 
 /* Feature pages */
 @import "./styles/pages/dashboard.css";
+@import "./styles/pages/action-center.css";
 @import "./styles/pages/login.css";
 
 /* Shared administration components used by system users and personnel */

@@ -158,7 +158,7 @@ class QrChallengeSecurityTest extends TestCase
         $this->assertDatabaseCount('qr_scan_logs', 1);
     }
 
-    public function test_personnel_can_view_their_qr_card_but_cannot_operate_the_kiosk(): void
+    public function test_personnel_can_view_and_scan_only_their_own_qr_card(): void
     {
         $personnelId = DB::table('personnel')->insertGetId([
             'employee_number' => 'GIP-TEST-001',
@@ -185,7 +185,9 @@ class QrChallengeSecurityTest extends TestCase
         $this->actingAs($user)
             ->getJson('/api/qr-attendance')
             ->assertOk()
-            ->assertJsonPath('can_scan', false)
+            ->assertJsonPath('can_scan', true)
+            ->assertJsonPath('can_scan_others', false)
+            ->assertJsonPath('scan_scope', 'self')
             ->assertJsonPath('can_view_cards', true)
             ->assertJsonPath('can_manage_codes', false)
             ->assertJsonCount(1, 'personnel')
@@ -196,14 +198,26 @@ class QrChallengeSecurityTest extends TestCase
             ->postJson('/api/qr-attendance/challenge', [
                 'device_identifier' => 'personnel-device-001',
             ])
-            ->assertForbidden();
+            ->assertOk()
+            ->assertJsonPath('success', true);
     }
 
-    public function test_supervisor_and_encoder_cannot_operate_the_qr_kiosk(): void
+    public function test_supervisor_and_encoder_can_use_self_service_qr_scanning(): void
     {
         foreach (['Supervisor', 'Encoder'] as $role) {
+            $personnelId = DB::table('personnel')->insertGetId([
+                'employee_number' => strtoupper($role).'-QR-001',
+                'first_name' => $role,
+                'last_name' => 'Scanner',
+                'personnel_type' => 'Regular',
+                'qr_login_code' => hash('sha256', $role.'-scanner-card'),
+                'status' => 'Active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
             $user = User::create([
-                'username' => strtolower($role).'-kiosk-denied',
+                'personnel_id' => $personnelId,
+                'username' => strtolower($role).'-self-scanner',
                 'password_hash' => bcrypt('ValidPassword!123'),
                 'user_role' => $role,
                 'status' => 'Active',
@@ -212,14 +226,18 @@ class QrChallengeSecurityTest extends TestCase
             $this->actingAs($user)
                 ->getJson('/api/qr-attendance')
                 ->assertOk()
-                ->assertJsonPath('can_scan', false)
-                ->assertJsonPath('can_manage_codes', false);
+                ->assertJsonPath('can_scan', true)
+                ->assertJsonPath('can_scan_others', false)
+                ->assertJsonPath('can_manage_codes', false)
+                ->assertJsonCount(1, 'personnel')
+                ->assertJsonPath('personnel.0.personnel_id', $personnelId);
 
             $this->actingAs($user)
                 ->postJson('/api/qr-attendance/challenge', [
                     'device_identifier' => strtolower($role).'-device-001',
                 ])
-                ->assertForbidden();
+                ->assertOk()
+                ->assertJsonPath('success', true);
         }
     }
 
@@ -235,7 +253,9 @@ class QrChallengeSecurityTest extends TestCase
         $this->actingAs($hr)
             ->getJson('/api/qr-attendance')
             ->assertOk()
-            ->assertJsonPath('can_scan', true);
+            ->assertJsonPath('can_scan', true)
+            ->assertJsonPath('can_scan_others', true)
+            ->assertJsonPath('scan_scope', 'all_personnel');
 
         $this->actingAs($hr)
             ->postJson('/api/qr-attendance/challenge', [
@@ -243,6 +263,73 @@ class QrChallengeSecurityTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('success', true);
+    }
+
+    public function test_non_admin_and_non_hr_accounts_cannot_scan_another_personnel_card(): void
+    {
+        $ownPersonnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'GIP-SELF-SCAN-001',
+            'first_name' => 'Self',
+            'last_name' => 'Scanner',
+            'personnel_type' => 'GIP',
+            'qr_login_code' => hash('sha256', 'self-scan-card'),
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $otherCredential = hash('sha256', 'different-personnel-card');
+        $otherPersonnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'GIP-OTHER-SCAN-001',
+            'first_name' => 'Different',
+            'last_name' => 'Personnel',
+            'personnel_type' => 'GIP',
+            'qr_login_code' => $otherCredential,
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $signature = hash_hmac(
+            'sha256',
+            "DILGATTEND|v1|{$otherPersonnelId}|{$otherCredential}",
+            (string) config('attendance.qr_signing_key')
+        );
+
+        foreach (['Supervisor', 'Encoder', 'Personnel'] as $role) {
+            $user = User::create([
+                'personnel_id' => $ownPersonnelId,
+                'username' => strtolower($role).'-other-card-blocked',
+                'password_hash' => bcrypt('ValidPassword!123'),
+                'user_role' => $role,
+                'status' => 'Active',
+            ]);
+            $device = strtolower($role).'-self-only-device';
+            $challenge = $this->actingAs($user)
+                ->postJson('/api/qr-attendance/challenge', [
+                    'device_identifier' => $device,
+                ])
+                ->assertOk()
+                ->json('challenge');
+
+            $this->actingAs($user)
+                ->postJson('/api/qr-attendance/scan', [
+                    'code' => "DILGATTEND:v1:{$otherPersonnelId}:{$signature}",
+                    'challenge' => $challenge,
+                    'device_identifier' => $device,
+                ])
+                ->assertForbidden()
+                ->assertJsonPath(
+                    'message',
+                    'You can only record attendance using the QR card linked to your own account. This card belongs to another personnel member.'
+                );
+
+            $this->actingAs($user)
+                ->getJson('/api/qr-attendance/cards')
+                ->assertForbidden();
+
+            $user->delete();
+        }
+
+        $this->assertDatabaseCount('qr_scan_logs', 3);
     }
 
     public function test_scan_rejects_a_card_outside_its_own_validity_period(): void

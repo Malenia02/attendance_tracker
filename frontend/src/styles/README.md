@@ -27,6 +27,7 @@ order because later feature files intentionally override shared foundations.
 ## Feature pages
 
 - `pages/dashboard.css`
+- `pages/action-center.css`
 - `pages/login.css`
 - `pages/personnel.css`
 - `pages/calendar-holidays.css`

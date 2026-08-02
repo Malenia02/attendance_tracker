@@ -7,6 +7,7 @@ import {
   FileText,
   FileClock,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   QrCode,
   Settings,
@@ -21,6 +22,12 @@ const menuSections = [
     label: "Overview",
     items: [
       { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+      {
+        label: "Action Center",
+        path: "/action-center",
+        icon: ListChecks,
+        roles: ["Administrator", "HR", "Supervisor"],
+      },
     ],
   },
   {

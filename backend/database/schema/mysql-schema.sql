@@ -16,11 +16,13 @@ CREATE TABLE `activity_logs` (
   `entity_id` bigint(20) unsigned DEFAULT NULL,
   `ip_address` varchar(45) DEFAULT NULL,
   `user_agent` varchar(500) DEFAULT NULL,
+  `request_id` char(36) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`activity_log_id`),
   KEY `idx_activity_user_datetime` (`user_id`,`created_at`),
   KEY `idx_activity_type_datetime` (`activity_type`,`created_at`),
   KEY `idx_activity_entity` (`entity_type`,`entity_id`),
+  KEY `idx_activity_request_id` (`request_id`),
   CONSTRAINT `fk_activity_user` FOREIGN KEY (`user_id`) REFERENCES `system_users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

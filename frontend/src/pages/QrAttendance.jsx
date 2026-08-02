@@ -267,6 +267,7 @@ export default function QrAttendance() {
     recent_scans: [],
     personnel: [],
     can_scan: false,
+    can_scan_others: false,
     can_view_cards: false,
     can_manage_codes: false,
   });
@@ -581,12 +582,12 @@ export default function QrAttendance() {
     <section className="qr-page">
       <header className="qr-hero">
         <div>
-          <span><ShieldCheck size={14} /> {data.can_scan ? "Authorized attendance station" : "Personal attendance credential"}</span>
-          <h1>{data.can_scan ? "QR Attendance Kiosk" : "My QR ID"}</h1>
+          <span><ShieldCheck size={14} /> {data.can_scan_others ? "Authorized attendance station" : "Personal QR attendance"}</span>
+          <h1>{data.can_scan_others ? "QR Attendance Kiosk" : "My QR Attendance"}</h1>
           <p>
-            {data.can_scan
+            {data.can_scan_others
               ? "Scan signed personnel cards. The server validates schedules and records the correct attendance action."
-              : "View and print your secure personnel card. Attendance scans remain protected and recorded by authorized kiosks."}
+              : "Use your own QR card or the Daily Attendance page. Other personnel cards are blocked for this account."}
           </p>
         </div>
         <div className="qr-live-time">
@@ -626,9 +627,19 @@ export default function QrAttendance() {
         <div className="qr-kiosk-layout">
           <div className="qr-scanner-card">
             <div className="qr-card-heading">
-              <div><span>Camera scanner</span><h2>Position the QR card inside the frame</h2></div>
+              <div>
+                <span>Camera scanner</span>
+                <h2>{data.can_scan_others ? "Position the QR card inside the frame" : "Scan your own QR card"}</h2>
+              </div>
               <QrCode size={25} />
             </div>
+
+            {!data.can_scan_others && (
+              <div className="qr-security-warning">
+                <ShieldCheck size={17} />
+                <span>This scanner accepts only the personnel card linked to your account.</span>
+              </div>
+            )}
 
             {!window.isSecureContext && !["localhost", "127.0.0.1"].includes(window.location.hostname) && (
               <div className="qr-security-warning">

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ActionCenterController;
 use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
@@ -24,6 +25,8 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
     Route::get('/dashboard', [DashboardController::class, 'index']);
+    Route::get('/action-center', [ActionCenterController::class, 'index'])
+        ->middleware('role:Administrator,HR,Supervisor');
 
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/options', [AttendanceController::class, 'options']);
@@ -48,12 +51,16 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::get('/qr-attendance/cards', [QrAttendanceController::class, 'cards'])
         ->middleware('role:Administrator,HR');
 
-    Route::middleware('role:Administrator,HR')->group(function (): void {
-        Route::post('/qr-attendance/challenge', [QrAttendanceController::class, 'challenge'])
-            ->middleware('throttle:qr-challenge');
-        Route::post('/qr-attendance/scan', [QrAttendanceController::class, 'scan'])
-            ->middleware('throttle:qr-scan');
-    });
+    Route::post('/qr-attendance/challenge', [QrAttendanceController::class, 'challenge'])
+        ->middleware([
+            'role:Administrator,HR,Supervisor,Encoder,Personnel',
+            'throttle:qr-challenge',
+        ]);
+    Route::post('/qr-attendance/scan', [QrAttendanceController::class, 'scan'])
+        ->middleware([
+            'role:Administrator,HR,Supervisor,Encoder,Personnel',
+            'throttle:qr-scan',
+        ]);
 
     Route::post('/qr-attendance/personnel/{personnel}/regenerate', [QrAttendanceController::class, 'regenerate'])
         ->middleware(['role:Administrator,HR', 'throttle:20,1']);

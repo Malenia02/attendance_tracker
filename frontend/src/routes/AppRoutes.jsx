@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
 import Dashboard from "../pages/Dashboard";
@@ -14,6 +15,8 @@ import ActivityLogs from "../pages/ActivityLogs";
 import ErrorPage from "../pages/ErrorPage";
 import Schedules from "../pages/Schedules";
 import LeaveRequests from "../pages/LeaveRequests";
+
+const ActionCenter = lazy(() => import("../pages/ActionCenter"));
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -46,6 +49,14 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="/dashboard" replace />} />
 
         <Route path="dashboard" element={<Dashboard />} />
+        <Route
+          path="action-center"
+          element={
+            <Suspense fallback={<PlaceholderPage title="Action Center" description="Loading secure action queues…" />}>
+              <ActionCenter />
+            </Suspense>
+          }
+        />
         <Route path="attendance" element={<Attendance />} />
         <Route path="leave-requests" element={<LeaveRequests />} />
         <Route path="personnel" element={<Personnel />} />
