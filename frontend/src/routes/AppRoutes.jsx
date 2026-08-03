@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import MainLayout from "../components/layout/MainLayout";
-import Dashboard from "../pages/Dashboard";
 import Attendance from "../pages/Attendance";
 import Personnel from "../pages/Personnel";
 import Login from "../pages/Login";
@@ -17,6 +16,7 @@ import Schedules from "../pages/Schedules";
 import LeaveRequests from "../pages/LeaveRequests";
 
 const ActionCenter = lazy(() => import("../pages/ActionCenter"));
+const Dashboard = lazy(() => import("../pages/Dashboard"));
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -48,7 +48,14 @@ export default function AppRoutes() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
 
-        <Route path="dashboard" element={<Dashboard />} />
+        <Route
+          path="dashboard"
+          element={
+            <Suspense fallback={<PlaceholderPage title="Dashboard" description="Loading your secured workspace…" />}>
+              <Dashboard />
+            </Suspense>
+          }
+        />
         <Route
           path="action-center"
           element={

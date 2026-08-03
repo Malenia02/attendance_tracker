@@ -1,28 +1,61 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
+  Building2,
   CalendarClock,
   CalendarDays,
-  CheckCircle2,
   ClipboardCheck,
   Clock3,
-  Coffee,
   FileCheck2,
   FileWarning,
-  MapPin,
+  ListChecks,
+  LockKeyhole,
   QrCode,
+  ShieldCheck,
   Sparkles,
   TimerReset,
   UserCheck,
+  UserRoundCog,
   Users,
   X,
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
 import { formatDuration } from "../lib/duration";
+
+const QUEUE_LABELS = {
+  attendance_verification: ["Attendance verification", "/attendance", ClipboardCheck],
+  correction_requests: ["Correction requests", "/action-center?queue=correction_requests", TimerReset],
+  leave_requests: ["Leave requests", "/leave-requests", CalendarDays],
+  submitted_dtrs: ["Submitted DTRs", "/dtr", FileCheck2],
+  returned_dtrs: ["Returned DTRs", "/dtr", FileWarning],
+};
+
+const VIEW_CONTENT = {
+  personal: {
+    eyebrow: "My attendance workspace",
+    title: "Personal attendance",
+    description: "Your hours, schedule, leave, and DTR progress in one private view.",
+  },
+  supervisor: {
+    eyebrow: "Department operations",
+    title: "Supervisor overview",
+    description: "Monitor your assigned office and act on department approvals.",
+  },
+  hr: {
+    eyebrow: "Workforce workflow",
+    title: "HR operations",
+    description: "Prioritize verification, correction, leave, and DTR queues.",
+  },
+  administrator: {
+    eyebrow: "Operations and security",
+    title: "Administrator command center",
+    description: "System-wide attendance, workforce, workflow, and access health.",
+  },
+};
 
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
@@ -30,12 +63,9 @@ async function readResponse(response) {
   return payload;
 }
 
-function relativeTime(value) {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return "Just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
+function formatDate(value, options = { month: "short", day: "numeric", year: "numeric" }) {
+  if (!value) return "—";
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-PH", options);
 }
 
 function greeting() {
@@ -45,14 +75,240 @@ function greeting() {
   return "Good evening";
 }
 
+function MetricCard({ label, value, helper, icon: Icon, tone = "blue", path }) {
+  const navigate = useNavigate();
+  const content = (
+    <>
+      <span className="role-metric-icon"><Icon size={21} /></span>
+      <span><small>{label}</small><strong>{value}</strong><em>{helper}</em></span>
+      {path && <ArrowRight size={15} />}
+    </>
+  );
+
+  return path ? (
+    <button type="button" className={`role-metric ${tone}`} onClick={() => navigate(path)}>
+      {content}
+    </button>
+  ) : <div className={`role-metric ${tone}`}>{content}</div>;
+}
+
+function QueueGrid({ queues, compact = false }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className={`role-queue-grid ${compact ? "compact" : ""}`}>
+      {Object.entries(queues || {}).map(([key, count]) => {
+        const [label, path, Icon] = QUEUE_LABELS[key] || [key, "/action-center", ListChecks];
+        return (
+          <button type="button" key={key} onClick={() => navigate(path)}>
+            <span><Icon size={18} /></span>
+            <div><strong>{count}</strong><small>{label}</small></div>
+            <ArrowRight size={14} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function QueuePreview({ items }) {
+  const navigate = useNavigate();
+
+  return (
+    <article className="role-panel role-preview-panel">
+      <header>
+        <div><span>Oldest first</span><h2>Items requiring attention</h2></div>
+        <button type="button" onClick={() => navigate("/action-center")}>Open Action Center <ArrowRight size={14} /></button>
+      </header>
+      <div className="role-preview-list">
+        {(items || []).map((item) => (
+          <button type="button" key={`${item.type}-${item.id}`} onClick={() => navigate(item.path)}>
+            <span>{item.full_name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>
+            <div><strong>{item.full_name}</strong><small>{item.type} · {item.detail}</small></div>
+            <ArrowRight size={14} />
+          </button>
+        ))}
+        {!items?.length && (
+          <div className="role-empty-state"><BadgeCheck size={27} /><strong>Queues are clear</strong><small>No pending items need attention.</small></div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function PersonalDashboard({ data }) {
+  const navigate = useNavigate();
+
+  if (!data.profile?.linked) {
+    return (
+      <div className="role-link-warning">
+        <AlertTriangle size={24} />
+        <div><strong>Your account is not linked to a personnel record.</strong><p>Ask an administrator to link your account before using personal attendance features.</p></div>
+      </div>
+    );
+  }
+
+  const today = data.today_attendance;
+  const schedule = data.schedule;
+
+  return (
+    <>
+      <div className="role-metric-grid">
+        <MetricCard label="Hours worked" value={formatDuration(data.metrics.work_minutes)} helper={data.period.month_label} icon={Clock3} tone="blue" path="/attendance" />
+        <MetricCard label="Days present" value={data.metrics.days_present} helper="Present and half days" icon={UserCheck} tone="green" path="/attendance" />
+        <MetricCard label="Late" value={formatDuration(data.metrics.late_minutes)} helper="This month" icon={CalendarClock} tone="orange" path="/attendance" />
+        <MetricCard label="Undertime" value={formatDuration(data.metrics.undertime_minutes)} helper="This month" icon={TimerReset} tone="violet" path="/attendance" />
+      </div>
+
+      <div className="role-content-grid personal-grid">
+        <article className="role-panel today-card">
+          <header><div><span>Today</span><h2>{today.status}</h2></div><Activity size={20} /></header>
+          <div className="personal-time-grid">
+            <span><small>Morning in</small><strong>{today.morning_in || "—"}</strong></span>
+            <span><small>Morning out</small><strong>{today.morning_out || "—"}</strong></span>
+            <span><small>Afternoon in</small><strong>{today.afternoon_in || "—"}</strong></span>
+            <span><small>Afternoon out</small><strong>{today.afternoon_out || "—"}</strong></span>
+          </div>
+          <button type="button" className="role-primary-action" onClick={() => navigate("/attendance")}>Open attendance <ArrowRight size={14} /></button>
+        </article>
+
+        <article className="role-panel schedule-card">
+          <header><div><span>Current assignment</span><h2>Work schedule</h2></div><CalendarClock size={20} /></header>
+          {schedule.assigned ? (
+            <div className="personal-schedule">
+              <strong>{schedule.name}</strong>
+              <p>{schedule.working_days.join(" · ")}</p>
+              <span><small>Morning</small>{schedule.morning || "Not configured"}</span>
+              <span><small>Afternoon</small>{schedule.afternoon || "Not configured"}</span>
+              <em>{formatDuration(schedule.required_minutes)} required per duty day</em>
+            </div>
+          ) : <div className="role-empty-state"><CalendarClock size={25} /><strong>No active schedule</strong><small>Contact HR or your administrator.</small></div>}
+        </article>
+
+        <article className="role-panel leave-dtr-card">
+          <header><div><span>Requests and records</span><h2>Leave and DTR</h2></div><FileCheck2 size={20} /></header>
+          <div className="personal-workflow-summary">
+            <button type="button" onClick={() => navigate("/leave-requests")}><strong>{data.leave.pending}</strong><small>Pending leave</small></button>
+            <button type="button" onClick={() => navigate("/leave-requests")}><strong>{data.leave.approved}</strong><small>Approved leave</small></button>
+            <button type="button" onClick={() => navigate("/dtr")}><strong>{data.dtr.status}</strong><small>{data.period.month_label} DTR</small></button>
+          </div>
+        </article>
+
+        <article className="role-panel personal-history-card">
+          <header><div><span>{data.period.month_label}</span><h2>Recent attendance</h2></div><button type="button" onClick={() => navigate("/attendance")}>View all <ArrowRight size={14} /></button></header>
+          <div className="personal-history-list">
+            {data.recent_attendance.map((record) => (
+              <div key={record.id}>
+                <time>{formatDate(record.date, { month: "short", day: "2-digit" })}</time>
+                <span><strong>{record.status}</strong><small>{formatDuration(record.work_minutes)} worked</small></span>
+                <span className="history-flags">
+                  {!!record.late_minutes && <em>{formatDuration(record.late_minutes)} late</em>}
+                  {!!record.undertime_minutes && <em>{formatDuration(record.undertime_minutes)} under</em>}
+                  {record.verified && <BadgeCheck size={15} />}
+                </span>
+              </div>
+            ))}
+            {!data.recent_attendance.length && <div className="role-empty-state"><Clock3 size={25} /><strong>No attendance yet</strong><small>Your monthly records will appear here.</small></div>}
+          </div>
+        </article>
+      </div>
+    </>
+  );
+}
+
+function SupervisorDashboard({ data }) {
+  if (!data.department?.linked) {
+    return <div className="role-link-warning"><AlertTriangle size={24} /><div><strong>No department assignment</strong><p>A supervisor must be linked to personnel in an office before department data can be displayed.</p></div></div>;
+  }
+
+  return (
+    <>
+      <div className="role-metric-grid">
+        <MetricCard label="Active personnel" value={data.metrics.active_personnel} helper={data.department.code} icon={Users} tone="blue" />
+        <MetricCard label="Present today" value={data.metrics.present_today} helper="Present and half day" icon={UserCheck} tone="green" path="/attendance" />
+        <MetricCard label="Late today" value={data.metrics.late_today} helper="Department arrivals" icon={Clock3} tone="orange" path="/attendance" />
+        <MetricCard label="Incomplete" value={data.metrics.incomplete_today} helper="Needs follow-up" icon={AlertTriangle} tone="violet" path="/attendance" />
+      </div>
+      <div className="role-content-grid supervisor-grid">
+        <article className="role-panel supervisor-queue-panel">
+          <header><div><span>My department</span><h2>Pending approvals</h2></div><ListChecks size={20} /></header>
+          <QueueGrid queues={data.queues} compact />
+        </article>
+        <article className="role-panel status-panel">
+          <header><div><span>Today</span><h2>Attendance distribution</h2></div><Activity size={20} /></header>
+          <div className="status-breakdown">
+            {Object.entries(data.attendance_statuses || {}).map(([status, total]) => (
+              <div key={status}><span>{status}</span><i><b style={{ width: `${Math.min(100, (total / Math.max(1, data.metrics.active_personnel)) * 100)}%` }}></b></i><strong>{total}</strong></div>
+            ))}
+            {!Object.keys(data.attendance_statuses || {}).length && <div className="role-empty-state"><Activity size={25} /><strong>No records today</strong><small>Attendance will appear after personnel time in.</small></div>}
+          </div>
+        </article>
+        <article className="role-panel supervisor-leave-panel">
+          <header><div><span>Oldest first</span><h2>Pending leave requests</h2></div><CalendarDays size={20} /></header>
+          <div className="supervisor-leave-list">
+            {data.pending_leave.map((leave) => (
+              <div key={leave.id}><span>{leave.full_name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><div><strong>{leave.full_name}</strong><small>{leave.type} · {formatDate(leave.date_from)} – {formatDate(leave.date_to)}</small></div></div>
+            ))}
+            {!data.pending_leave.length && <div className="role-empty-state"><BadgeCheck size={25} /><strong>No pending leave</strong><small>Your department queue is clear.</small></div>}
+          </div>
+        </article>
+      </div>
+    </>
+  );
+}
+
+function HrDashboard({ data }) {
+  const total = Object.values(data.queues || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  return (
+    <>
+      <div className="role-summary-strip"><span><ListChecks size={20} /></span><div><small>Open workflow items</small><strong>{total}</strong><p>Across verification, corrections, leave, and DTR review.</p></div></div>
+      <QueueGrid queues={data.queues} />
+      <QueuePreview items={data.queue_preview} />
+    </>
+  );
+}
+
+function AdministratorDashboard({ data }) {
+  const navigate = useNavigate();
+
+  return (
+    <>
+      <div className="admin-section-heading"><div><span>Live operations</span><h2>System-wide overview</h2></div><Activity size={21} /></div>
+      <div className="role-metric-grid admin-metrics">
+        <MetricCard label="Active personnel" value={data.operations.active_personnel} helper="System-wide" icon={Users} tone="blue" path="/personnel" />
+        <MetricCard label="Active offices" value={data.operations.active_departments} helper="Configured departments" icon={Building2} tone="green" path="/departments" />
+        <MetricCard label="Present today" value={data.operations.present_today} helper={`${data.operations.attendance_recorded_today} records`} icon={UserCheck} tone="green" path="/attendance" />
+        <MetricCard label="Late today" value={data.operations.late_today} helper="Requires monitoring" icon={Clock3} tone="orange" path="/attendance" />
+        <MetricCard label="Incomplete" value={data.operations.incomplete_today} helper="Attendance exceptions" icon={AlertTriangle} tone="violet" path="/attendance" />
+        <MetricCard label="Unassigned" value={data.operations.unassigned_personnel} helper="No department" icon={Building2} tone="orange" path="/personnel" />
+        <MetricCard label="No schedule" value={data.operations.without_schedule} helper="Active personnel" icon={CalendarClock} tone="violet" path="/schedules" />
+      </div>
+
+      <div className="admin-dashboard-grid">
+        <article className="role-panel admin-security-panel">
+          <header><div><span>Access protection</span><h2>Security overview</h2></div><ShieldCheck size={21} /></header>
+          <div className="security-metric-grid">
+            <button type="button" onClick={() => navigate("/system-users")}><UserRoundCog size={19} /><strong>{data.security.active_users}</strong><small>Active users</small></button>
+            <button type="button" onClick={() => navigate("/system-users")}><LockKeyhole size={19} /><strong>{data.security.locked_users}</strong><small>Locked users</small></button>
+            <button type="button" onClick={() => navigate("/system-users")}><X size={19} /><strong>{data.security.inactive_users}</strong><small>Inactive users</small></button>
+            <button type="button" onClick={() => navigate("/activity-logs")}><ShieldCheck size={19} /><strong>{data.security.security_events_24h}</strong><small>Security events · 24h</small></button>
+          </div>
+          <p className="security-footnote"><BadgeCheck size={15} />Dashboard data is server-scoped to your Administrator session.</p>
+        </article>
+        <article className="role-panel admin-queue-panel">
+          <header><div><span>Operations backlog</span><h2>Workflow queues</h2></div><ListChecks size={21} /></header>
+          <QueueGrid queues={data.queues} compact />
+        </article>
+      </div>
+      <QueuePreview items={data.queue_preview} />
+    </>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const currentUser = getStoredUser();
-  const isAttendanceManager = ["Administrator", "HR", "Supervisor", "Encoder"]
-    .includes(currentUser?.user_role);
-  const canManagePersonnel = ["Administrator", "HR"].includes(currentUser?.user_role);
   const displayName = currentUser?.personnel?.full_name || currentUser?.username || "System User";
-  const firstName = displayName.split(" ")[0];
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -65,7 +321,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     const controller = new AbortController();
-
     apiFetch("/dashboard", { signal: controller.signal })
       .then(readResponse)
       .then(setData)
@@ -75,315 +330,49 @@ export default function Dashboard() {
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-
     return () => controller.abort();
   }, []);
 
-  const maximumExpected = useMemo(
-    () => Math.max(1, ...(data?.weekly || []).map((day) => day.expected)),
-    [data],
-  );
-
   if (loading) {
-    return (
-      <section className="ops-dashboard">
-        <div className="dashboard-loading">
-          <span><Activity size={25} /></span>
-          <strong>Preparing your operations dashboard…</strong>
-          <small>Calculating live attendance and DTR status</small>
-        </div>
-      </section>
-    );
+    return <section className="ops-dashboard"><div className="dashboard-loading"><span><Activity size={25} /></span><strong>Preparing your secured dashboard…</strong><small>Loading your role-specific workspace</small></div></section>;
   }
 
   if (error || !data) {
-    return (
-      <section className="ops-dashboard">
-        <div className="users-notice error"><X size={18} />{error || "Dashboard data is unavailable."}</div>
-      </section>
-    );
+    return <section className="ops-dashboard"><div className="users-notice error"><X size={18} />{error || "Dashboard data is unavailable."}</div></section>;
   }
 
-  const stats = [
-    {
-      label: "Active Personnel",
-      value: data.today.total_personnel,
-      helper: data.scope,
-      icon: Users,
-      tone: "blue",
-      path: canManagePersonnel ? "/personnel" : "/attendance",
-    },
-    {
-      label: "Present Today",
-      value: data.today.present,
-      helper: `${data.today.attendance_rate}% attendance rate`,
-      icon: UserCheck,
-      tone: "green",
-      path: "/attendance",
-    },
-    {
-      label: "Late Today",
-      value: data.today.late,
-      helper: data.today.late ? "Requires monitoring" : "No late arrivals",
-      icon: Clock3,
-      tone: "orange",
-      path: "/attendance",
-    },
-    {
-      label: "DTR Attention",
-      value: data.dtr.returned + data.dtr.submitted,
-      helper: `${data.dtr.returned} returned · ${data.dtr.submitted} submitted`,
-      icon: FileWarning,
-      tone: "violet",
-      path: "/dtr",
-    },
-  ];
-
-  const quickActions = [
-    { label: "Attendance", icon: Clock3, path: "/attendance" },
-    { label: "DTR Monitoring", icon: ClipboardCheck, path: "/dtr" },
-    ...(isAttendanceManager
-      ? [{ label: "QR Kiosk", icon: QrCode, path: "/qr-attendance" }]
-      : currentUser?.user_role === "Personnel"
-        ? [{ label: "QR Attendance", icon: QrCode, path: "/qr-attendance" }]
-        : []),
-    { label: "Calendar", icon: CalendarDays, path: "/calendar" },
-  ];
+  const view = VIEW_CONTENT[data.view] || VIEW_CONTENT.personal;
+  const quickActions = data.view === "personal"
+    ? [["Attendance", Clock3, "/attendance"], ["QR attendance", QrCode, "/qr-attendance"], ["Leave", CalendarDays, "/leave-requests"], ["My DTR", FileCheck2, "/dtr"]]
+    : data.view === "supervisor"
+      ? [["Action Center", ListChecks, "/action-center"], ["Attendance", Clock3, "/attendance"], ["Leave approvals", CalendarDays, "/leave-requests"], ["DTR", FileCheck2, "/dtr"]]
+      : data.view === "hr"
+        ? [["Action Center", ListChecks, "/action-center"], ["Verify attendance", ClipboardCheck, "/attendance"], ["Leave queue", CalendarDays, "/leave-requests"], ["DTR queue", FileCheck2, "/dtr"]]
+        : [["Action Center", ListChecks, "/action-center"], ["Personnel", Users, "/personnel"], ["System users", UserRoundCog, "/system-users"], ["Activity logs", ShieldCheck, "/activity-logs"]];
 
   return (
-    <section className="ops-dashboard">
-      <header className="ops-dashboard-hero">
+    <section className={`ops-dashboard role-dashboard role-${data.view}`}>
+      <header className="ops-dashboard-hero role-dashboard-hero">
         <div>
-          <span className="ops-eyebrow"><Sparkles size={14} /> DILG GIP Attendance Command Center</span>
-          <h1>{greeting()}, {firstName}</h1>
-          <p>Here is the live attendance and DTR situation across your assigned scope.</p>
-          <div className="ops-hero-meta">
-            <span><BadgeCheck size={14} /> System operational</span>
-            <span><CalendarClock size={14} /> {data.today.calendar_status}</span>
-          </div>
+          <span className="ops-eyebrow"><Sparkles size={14} /> {view.eyebrow}</span>
+          <h1>{greeting()}, {displayName.split(" ")[0]}</h1>
+          <p>{view.description}</p>
+          <div className="ops-hero-meta"><span><ShieldCheck size={14} /> {data.role} access</span><span><BadgeCheck size={14} /> {data.scope}</span></div>
         </div>
-        <div className="ops-live-clock">
-          <small>{data.today.day_label}</small>
-          <strong>{now.toLocaleTimeString("en-PH", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          })}</strong>
-          <span>{data.scope}</span>
-        </div>
+        <div className="ops-live-clock"><small>{data.period.today_label}</small><strong>{now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong><span>{view.title}</span></div>
         <i></i>
       </header>
 
-      <div className="ops-quick-actions" aria-label="Quick actions">
-        {quickActions.map(({ label, icon: Icon, path }) => (
-          <button type="button" key={label} onClick={() => navigate(path)}>
-            <span><Icon size={17} /></span>
-            <b>{label}</b>
-            <ArrowRight size={14} />
-          </button>
+      <nav className="ops-quick-actions" aria-label="Role quick actions">
+        {quickActions.map(([label, Icon, path]) => (
+          <button type="button" key={label} onClick={() => navigate(path)}><span><Icon size={17} /></span><b>{label}</b><ArrowRight size={14} /></button>
         ))}
-      </div>
+      </nav>
 
-      <div className="ops-stat-grid">
-        {stats.map(({ label, value, helper, icon: Icon, tone, path }, index) => (
-          <button
-            type="button"
-            className={`ops-stat-card ${tone}`}
-            key={label}
-            onClick={() => navigate(path)}
-            style={{ "--delay": `${index * 55}ms` }}
-          >
-            <span className="ops-stat-icon"><Icon size={21} /></span>
-            <div><small>{label}</small><strong>{value}</strong><p>{helper}</p></div>
-            <ArrowRight size={16} />
-          </button>
-        ))}
-      </div>
-
-      <div className="ops-dashboard-grid">
-        <div className="ops-dashboard-main">
-          <article className="ops-panel ops-weekly-panel">
-            <header>
-              <div>
-                <span>Attendance pulse</span>
-                <h2>This week at a glance</h2>
-                <p>Expected duty versus recorded attendance, including approved optional days.</p>
-              </div>
-              <div className="ops-chart-legend">
-                <span><i className="expected"></i>Expected</span>
-                <span><i className="present"></i>Present</span>
-                <span><i className="late"></i>Late</span>
-              </div>
-            </header>
-
-            <div className="ops-weekly-chart">
-              {data.weekly.map((day) => {
-                const expectedHeight = (day.expected / maximumExpected) * 100;
-                const presentHeight = (day.present / maximumExpected) * 100;
-
-                return (
-                  <div className={`ops-chart-day ${day.is_future ? "future" : ""}`} key={day.date}>
-                    <div className="ops-chart-values">
-                      {!!day.present && <b style={{ bottom: `calc(${presentHeight}% + 7px)` }}>{day.present}</b>}
-                      <span className="expected-bar" style={{ height: `${expectedHeight}%` }}></span>
-                      <span className="present-bar" style={{ height: `${presentHeight}%` }}></span>
-                      {!!day.late && <em title={`${day.late} late`}>{day.late}</em>}
-                    </div>
-                    <strong>{day.day}</strong>
-                    <small>{day.calendar_label}</small>
-                  </div>
-                );
-              })}
-            </div>
-          </article>
-
-          <div className="ops-dual-panels">
-            <article className="ops-panel ops-dtr-panel">
-              <header>
-                <div><span>Monthly workflow</span><h2>DTR Pipeline</h2><p>{data.dtr.month_label}</p></div>
-                <button type="button" onClick={() => navigate("/dtr")}>Open DTR <ArrowRight size={14} /></button>
-              </header>
-              <div className="ops-dtr-progress" aria-label="DTR certification progress">
-                {[
-                  ["Draft", data.dtr.draft, "draft"],
-                  ["Submitted", data.dtr.submitted, "submitted"],
-                  ["Returned", data.dtr.returned, "returned"],
-                  ["Certified", data.dtr.certified, "certified"],
-                ].map(([label, value, className]) => (
-                  <div key={label}>
-                    <span><i className={className}></i>{label}</span>
-                    <strong>{value}</strong>
-                    <small>{data.dtr.total ? Math.round((value / data.dtr.total) * 100) : 0}%</small>
-                  </div>
-                ))}
-              </div>
-              <div className="ops-certification-track">
-                <i style={{
-                  width: `${data.dtr.total ? (data.dtr.certified / data.dtr.total) * 100 : 0}%`,
-                }}></i>
-              </div>
-              <p className="ops-certification-copy">
-                <FileCheck2 size={15} />
-                {data.dtr.certified} of {data.dtr.total} personnel DTRs certified
-              </p>
-            </article>
-
-            <article className="ops-panel ops-department-panel">
-              <header>
-                <div><span>Workforce</span><h2>Personnel by Office</h2></div>
-                <MapPin size={20} />
-              </header>
-              <div className="ops-department-list">
-                {data.departments.map((department) => (
-                  <div key={department.code}>
-                    <span title={department.name}>{department.code}<small>{department.name}</small></span>
-                    <div><i style={{
-                      width: `${data.today.total_personnel
-                        ? (department.count / data.today.total_personnel) * 100
-                        : 0}%`,
-                    }}></i></div>
-                    <strong>{department.count}</strong>
-                  </div>
-                ))}
-                {!data.departments.length && <p className="ops-empty">No office assignments available.</p>}
-              </div>
-            </article>
-          </div>
-
-          <article className="ops-panel ops-recent-panel">
-            <header>
-              <div><span>Live stream</span><h2>Recent Attendance Activity</h2></div>
-              <button type="button" onClick={() => navigate("/attendance")}>View attendance <ArrowRight size={14} /></button>
-            </header>
-            <div className="ops-recent-grid">
-              {data.recent_logs.map((log) => (
-                <div key={log.id}>
-                  <span className={log.action.includes("Out") ? "out" : "in"}>
-                    {log.action.includes("Out") ? <Clock3 size={15} /> : <CheckCircle2 size={15} />}
-                  </span>
-                  <div><strong>{log.full_name}</strong><small>{log.action} · {log.source}</small></div>
-                  <time>{relativeTime(log.logged_at)}</time>
-                </div>
-              ))}
-              {!data.recent_logs.length && <p className="ops-empty">No attendance activity has been recorded yet.</p>}
-            </div>
-          </article>
-        </div>
-
-        <aside className="ops-dashboard-side">
-          <article className="ops-panel ops-today-panel">
-            <header><div><span>Today</span><h2>Attendance Health</h2></div><Activity size={20} /></header>
-            <div className="ops-donut-row">
-              <div
-                className="ops-attendance-donut"
-                style={{ "--rate": `${data.today.attendance_rate * 3.6}deg` }}
-              >
-                <div><strong>{data.today.attendance_rate}%</strong><small>present</small></div>
-              </div>
-              <div className="ops-today-counts">
-                <span><i className="green"></i><b>{data.today.present}</b>Present</span>
-                <span><i className="blue"></i><b>{data.today.timed_in}</b>Timed in</span>
-                <span><i className="orange"></i><b>{data.today.late}</b>Late</span>
-                <span><i className="red"></i><b>{data.today.incomplete}</b>Incomplete</span>
-              </div>
-            </div>
-            <div className="ops-today-foot">
-              <span><Coffee size={14} />{data.today.half_day} half day</span>
-              <span><TimerReset size={14} />{data.today.not_started} not started</span>
-            </div>
-          </article>
-
-          <article className="ops-panel ops-exception-panel">
-            <header>
-              <div><span>Action needed</span><h2>Attendance Exceptions</h2></div>
-              <AlertTriangle size={20} />
-            </header>
-            <div className="ops-exception-list">
-              {data.exceptions.map((item) => (
-                <button
-                  type="button"
-                  key={item.personnel_id}
-                  onClick={() => navigate(
-                    `/attendance?date=${data.today.date}&personnel=${item.personnel_id}`,
-                  )}
-                >
-                  <span>{item.full_name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>
-                  <div><strong>{item.full_name}</strong><small>{item.department} · {item.status}</small></div>
-                  {item.is_late && <em>{formatDuration(item.late_minutes)} late</em>}
-                  <ArrowRight size={13} />
-                </button>
-              ))}
-              {!data.exceptions.length && (
-                <div className="ops-exception-clear">
-                  <BadgeCheck size={24} /><strong>No active exceptions</strong><small>Attendance looks healthy.</small>
-                </div>
-              )}
-            </div>
-          </article>
-
-          <article className="ops-panel ops-calendar-panel">
-            <header>
-              <div><span>Next 45 days</span><h2>Calendar Notices</h2></div>
-              <button type="button" onClick={() => navigate("/calendar")}><CalendarDays size={18} /></button>
-            </header>
-            <div className="ops-event-list">
-              {data.upcoming_events.map((event) => (
-                <div key={event.id}>
-                  <time>
-                    <strong>{new Date(`${event.date}T00:00:00`).toLocaleDateString("en-PH", { day: "2-digit" })}</strong>
-                    <small>{new Date(`${event.date}T00:00:00`).toLocaleDateString("en-PH", { month: "short" })}</small>
-                  </time>
-                  <span className={event.is_working_day ? "working" : ""}>
-                    <strong>{event.name}</strong>
-                    <small>{event.is_working_day ? "Authorized duty day" : event.type} · {event.scope}</small>
-                  </span>
-                </div>
-              ))}
-              {!data.upcoming_events.length && <p className="ops-empty">No upcoming calendar notices.</p>}
-            </div>
-          </article>
-        </aside>
-      </div>
+      {data.view === "personal" && <PersonalDashboard data={data} />}
+      {data.view === "supervisor" && <SupervisorDashboard data={data} />}
+      {data.view === "hr" && <HrDashboard data={data} />}
+      {data.view === "administrator" && <AdministratorDashboard data={data} />}
     </section>
   );
 }
