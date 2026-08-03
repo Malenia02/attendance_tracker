@@ -17,6 +17,7 @@ import LeaveRequests from "../pages/LeaveRequests";
 
 const ActionCenter = lazy(() => import("../pages/ActionCenter"));
 const Dashboard = lazy(() => import("../pages/Dashboard"));
+const Notifications = lazy(() => import("../pages/Notifications"));
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -61,6 +62,14 @@ export default function AppRoutes() {
           element={
             <Suspense fallback={<PlaceholderPage title="Action Center" description="Loading secure action queues…" />}>
               <ActionCenter />
+            </Suspense>
+          }
+        />
+        <Route
+          path="notifications"
+          element={
+            <Suspense fallback={<PlaceholderPage title="Notifications" description="Loading your secured notifications…" />}>
+              <Notifications />
             </Suspense>
           }
         />

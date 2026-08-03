@@ -9,10 +9,12 @@
 @import "./styles/layout/sidebar.css";
 @import "./styles/layout/app-layout.css";
 @import "./styles/layout/footer.css";
+@import "./styles/components/notification-bell.css";
 
 /* Feature pages */
 @import "./styles/pages/dashboard.css";
 @import "./styles/pages/action-center.css";
+@import "./styles/pages/notifications.css";
 @import "./styles/pages/login.css";
 
 /* Shared administration components used by system users and personnel */

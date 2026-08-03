@@ -12,6 +12,8 @@ days unless an authorized office-specific working day is created.
 ## Main features
 
 - Modern role-aware dashboard
+- Secured, role-aware Notification Center with unread tracking, workflow links,
+  pagination, and automatic retention
 - Personnel directory with private photo/signature uploads and optional automatic employee numbers
 - Departments and offices with GPS coordinates and allowed radius
 - Morning and afternoon time in/time out

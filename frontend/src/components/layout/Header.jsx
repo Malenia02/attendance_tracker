@@ -1,5 +1,4 @@
 import {
-  Bell,
   Grid3X3,
   Menu,
   Moon,
@@ -10,6 +9,7 @@ import {
 import DilgSeal from "../branding/DilgSeal";
 import { useTheme } from "../../context/ThemeContext";
 import { getStoredUser } from "../../lib/auth";
+import NotificationBell from "../notifications/NotificationBell";
 
 export default function Header({ onToggleSidebar, sidebarToggled }) {
   const { theme, toggleTheme } = useTheme();
@@ -51,10 +51,7 @@ export default function Header({ onToggleSidebar, sidebarToggled }) {
           <Grid3X3 size={18} />
         </button>
 
-        <button type="button" className="square-button notification-button">
-          <Bell size={18} />
-          <span className="notification-badge">4</span>
-        </button>
+        <NotificationBell />
 
         <button
           type="button"

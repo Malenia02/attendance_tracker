@@ -1,0 +1,115 @@
+.notification-bell { position: relative; }
+
+.notification-button.active {
+  color: var(--primary);
+  background: var(--bg-hover);
+}
+
+.notification-popover {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: -80px;
+  z-index: 250;
+  width: min(390px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  color: var(--text-body);
+  background: var(--bg-card);
+  box-shadow: 0 24px 65px rgba(7, 26, 63, 0.24);
+  animation: notificationPopoverIn 180ms ease-out;
+}
+
+.notification-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 18px 19px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(65, 84, 241, 0.1), rgba(20, 184, 166, 0.07));
+}
+
+.notification-popover > header span,
+.notification-popover > header strong { display: block; }
+.notification-popover > header span { color: var(--text-muted); font-size: 0.69rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.notification-popover > header strong { margin-top: 3px; color: var(--text-main); font-size: 0.94rem; }
+.notification-popover > header button,
+.notification-popover > footer button {
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.notification-popover-list { max-height: min(480px, calc(100vh - 190px)); overflow-y: auto; }
+
+.notification-preview {
+  position: relative;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+  color: var(--text-body);
+  background: transparent;
+  transition: background 160ms ease;
+}
+
+.notification-preview:hover { background: var(--bg-hover); }
+.notification-preview.unread { background: rgba(65, 84, 241, 0.045); }
+.notification-preview.unread::before { content: ""; position: absolute; inset: 17px auto auto 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--primary); }
+.notification-preview > svg { color: var(--text-muted); }
+
+.notification-preview-icon,
+.notification-row-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #3159d9;
+  background: rgba(65, 84, 241, 0.11);
+}
+
+.severity-warning .notification-preview-icon,
+.severity-warning .notification-row-icon { color: #b76a00; background: rgba(245, 158, 11, 0.14); }
+.severity-danger .notification-preview-icon,
+.severity-danger .notification-row-icon { color: #d53939; background: rgba(239, 68, 68, 0.12); }
+.severity-success .notification-preview-icon,
+.severity-success .notification-row-icon { color: #078565; background: rgba(16, 185, 129, 0.12); }
+
+.notification-preview-copy { min-width: 0; }
+.notification-preview-copy strong,
+.notification-preview-copy small,
+.notification-preview-copy time { display: block; }
+.notification-preview-copy strong { overflow: hidden; color: var(--text-main); font-size: 0.81rem; text-overflow: ellipsis; white-space: nowrap; }
+.notification-preview-copy small { overflow: hidden; margin-top: 3px; color: var(--text-soft); font-size: 0.72rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.notification-preview-copy time { margin-top: 5px; color: var(--text-muted); font-size: 0.65rem; }
+.notification-preview.read { opacity: 0.78; }
+
+.notification-empty { min-height: 180px; padding: 28px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 7px; text-align: center; color: var(--text-muted); }
+.notification-empty > svg { color: #10a67a; }
+.notification-empty.error > svg { color: #e24b4b; }
+.notification-empty strong { color: var(--text-main); }
+.notification-empty button { margin-top: 5px; border: 1px solid var(--border); padding: 7px 12px; border-radius: 8px; color: var(--primary); background: var(--bg-card); }
+
+.notification-popover > footer { padding: 12px 16px; background: var(--bg-soft); }
+.notification-popover > footer button { width: 100%; justify-content: center; }
+
+@keyframes notificationPopoverIn {
+  from { opacity: 0; transform: translateY(-7px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 700px) {
+  .notification-popover { position: fixed; top: calc(var(--topbar-height) + 8px); right: 12px; }
+}

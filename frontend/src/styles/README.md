@@ -24,10 +24,14 @@ order because later feature files intentionally override shared foundations.
   filters, notices, actions, forms, validation, and modals used by System Users
   and Personnel
 
+The header notification preview is maintained in
+`components/notification-bell.css`.
+
 ## Feature pages
 
 - `pages/dashboard.css`
 - `pages/action-center.css`
+- `pages/notifications.css`
 - `pages/login.css`
 - `pages/personnel.css`
 - `pages/calendar-holidays.css`

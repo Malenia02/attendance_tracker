@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DtrController;
 use App\Http\Controllers\Api\DtrReopenController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\LeaveRequestController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\ScheduleController;
@@ -27,6 +28,13 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/action-center', [ActionCenterController::class, 'index'])
         ->middleware('role:Administrator,HR,Supervisor');
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/summary', [NotificationController::class, 'summary']);
+    Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])
+        ->middleware('throttle:20,1');
+    Route::patch('/notifications/{notificationId}/read', [NotificationController::class, 'markRead'])
+        ->whereNumber('notificationId')
+        ->middleware('throttle:30,1');
 
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/options', [AttendanceController::class, 'options']);

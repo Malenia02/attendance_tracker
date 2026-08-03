@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'notification_retention_days' => (int) env('NOTIFICATION_RETENTION_DAYS', 90),
     /*
     |--------------------------------------------------------------------------
     | DTR Certification Signing Key

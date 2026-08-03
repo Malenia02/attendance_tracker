@@ -117,4 +117,13 @@ class User extends Authenticatable
             'user_id'
         );
     }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(
+            UserNotification::class,
+            'user_id',
+            'user_id'
+        );
+    }
 }
