@@ -319,6 +319,23 @@
   transition: width 0.45s ease;
 }
 
+.dtr-progress.unavailable strong {
+  color: #b54708;
+}
+
+.dtr-progress.unavailable > span i {
+  background: #b54708;
+}
+
+.dtr-setup-required {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #b54708;
+  font-size: 8px;
+  font-weight: 800;
+}
+
 .dtr-count-pills,
 .dtr-exceptions,
 .dtr-issues {
@@ -595,6 +612,8 @@
 .dtr-day-status.leave,
 .dtr-day-status.holiday { color: #7c3aed; }
 .dtr-day-status.rest-day { color: #73809a; }
+.dtr-day-status.not-covered { color: #667085; }
+.dtr-day-status.unscheduled-attendance { color: #b54708; }
 
 .dtr-day-meta small {
   color: #c8610b;
@@ -622,6 +641,14 @@
   color: #158754;
 }
 
+.dtr-verification.not-applicable {
+  color: var(--text-muted);
+}
+
+.dtr-verification.requires-review {
+  color: #b54708;
+}
+
 .dtr-review-day {
   height: 28px;
   padding: 0 7px;
@@ -639,6 +666,7 @@
 
 .dtr-return-notice,
 .dtr-reopen-notice,
+.dtr-schedule-notice,
 .dtr-correction-summary {
   margin: 0 24px 13px;
   padding: 12px 14px;
@@ -646,6 +674,68 @@
   align-items: center;
   gap: 11px;
   border-radius: 9px;
+}
+
+.dtr-schedule-notice {
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid;
+}
+
+.dtr-schedule-notice.missing {
+  color: #b54708;
+  border-color: #fedf89;
+  background: #fffaeb;
+}
+
+.dtr-schedule-notice.partial {
+  color: #175cd3;
+  border-color: #b2ddff;
+  background: #eff8ff;
+}
+
+.dtr-schedule-notice > div {
+  min-width: 0;
+}
+
+.dtr-schedule-notice strong,
+.dtr-schedule-notice p,
+.dtr-schedule-notice small {
+  display: block;
+}
+
+.dtr-schedule-notice strong {
+  font-size: 10px;
+}
+
+.dtr-schedule-notice p,
+.dtr-schedule-notice small {
+  margin-top: 3px;
+  color: inherit;
+  opacity: 0.82;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.dtr-schedule-notice p {
+  margin-bottom: 0;
+}
+
+.dtr-schedule-notice button {
+  min-width: max-content;
+  height: 31px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .dtr-return-notice {
@@ -1281,12 +1371,22 @@
 
   .dtr-return-notice,
   .dtr-reopen-notice,
+  .dtr-schedule-notice,
   .dtr-reopen-request,
   .dtr-version-history,
   .dtr-correction-summary,
   .dtr-status-history,
   .dtr-return-form {
     margin-inline: 15px;
+  }
+
+  .dtr-schedule-notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dtr-schedule-notice button {
+    justify-content: center;
   }
 
   .dtr-reopen-form {

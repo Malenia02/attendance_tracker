@@ -106,6 +106,14 @@ class DtrController extends Controller
             ->selectRaw('SUM(CASE WHEN late_minutes > 0 THEN 1 ELSE 0 END) as late_occurrences')
             ->selectRaw("SUM(CASE WHEN attendance_status = 'Half Day' THEN 1 ELSE 0 END) as half_days")
             ->first();
+        $coveredPersonnel = (clone $personnelQuery)
+            ->whereHas('scheduleAssignments', fn ($assignments) => $assignments
+                ->whereDate('effective_from', '<=', $cutoff)
+                ->where(fn ($dates) => $dates
+                    ->whereNull('effective_to')
+                    ->orWhereDate('effective_to', '>=', $month))
+                ->whereHas('schedule'))
+            ->count();
 
         $paginator = (clone $personnelQuery)
             ->with([
@@ -173,6 +181,7 @@ class DtrController extends Controller
                 'certified' => (int) ($certificationSummary['Certified'] ?? 0),
                 'late_occurrences' => (int) ($attendanceSummary?->late_occurrences ?? 0),
                 'half_days' => (int) ($attendanceSummary?->half_days ?? 0),
+                'schedule_setup_required' => max(0, $totalPersonnel - $coveredPersonnel),
             ],
         ]);
     }
@@ -226,24 +235,35 @@ class DtrController extends Controller
             'dtr_year' => $year,
             'dtr_month' => $month,
         ];
-        DtrCertification::query()->firstOrCreate(
-            $certificationKey,
-            ['certification_status' => 'Draft']
-        );
         $monitorRow = null;
 
         if (in_array($status, ['Submitted', 'Certified'], true)) {
-            $monitorRequest = Request::create('/api/dtr', 'GET', ['month' => $validated['month']]);
+            $monitorRequest = Request::create('/api/dtr', 'GET', [
+                'month' => $validated['month'],
+                'personnel_ids' => [$personnel->personnel_id],
+            ]);
             $monitorRequest->setUserResolver(fn () => $user);
             $monitorData = $this->index($monitorRequest)->getData(true);
             $monitorRow = collect($monitorData['data'])->firstWhere('personnel_id', $personnel->personnel_id);
 
+            if (! $monitorRow || ! ($monitorRow['dtr_eligibility']['can_prepare'] ?? false)) {
+                return response()->json([
+                    'message' => $monitorRow['dtr_eligibility']['message']
+                        ?? 'An effective work schedule must cover this reporting month before the DTR can be submitted or certified.',
+                ], 422);
+            }
+
             if (! $monitorRow || ! $monitorRow['is_ready']) {
                 return response()->json([
-                    'message' => 'Resolve all missing, incomplete, and unverified attendance records before submission or certification.',
+                    'message' => 'Resolve all missing, incomplete, unverified, and unscheduled attendance records before submission or certification.',
                 ], 422);
             }
         }
+
+        DtrCertification::query()->firstOrCreate(
+            $certificationKey,
+            ['certification_status' => 'Draft']
+        );
 
         $result = DB::transaction(function () use (
             $certificationKey,
@@ -456,6 +476,21 @@ class DtrController extends Controller
             ], 409);
         }
 
+        $ineligibleReports = $reports->filter(function (array $report): bool {
+            if (array_key_exists('dtr_eligibility', $report)) {
+                return ! ($report['dtr_eligibility']['can_prepare'] ?? false);
+            }
+
+            return (int) ($report['expected_days'] ?? 0) < 1;
+        });
+
+        if ($ineligibleReports->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Official DTR documents cannot be generated for personnel without effective schedule coverage: '
+                    .$ineligibleReports->pluck('full_name')->take(3)->implode(', ').'.',
+            ], 422);
+        }
+
         $generatedDirectory = storage_path('app/generated-dtr');
         File::ensureDirectoryExists($generatedDirectory);
         $batchId = Str::uuid()->toString();
@@ -535,6 +570,9 @@ class DtrController extends Controller
             fn (AttendanceRecord $record) => $record->attendance_date->toDateString()
         );
         $daily = collect();
+        $coveredSchedules = collect();
+        $notCoveredDays = 0;
+        $unscheduledRecords = 0;
 
         foreach (CarbonPeriod::create($month, $monthEnd) as $date) {
             if ($date->greaterThan($cutoff)) {
@@ -553,6 +591,36 @@ class DtrController extends Controller
                 && (! $assignment->effective_to || $assignment->effective_to->gte($date))
             );
             $schedule = $assignment?->schedule;
+            $record = $records->get($date->toDateString());
+
+            if (! $schedule) {
+                $notCoveredDays++;
+                $unscheduledRecords += $record ? 1 : 0;
+                $daily->push([
+                    'attendance_id' => $record?->attendance_id,
+                    'date' => $date->toDateString(),
+                    'day' => $date->format('D'),
+                    'day_number' => $date->day,
+                    'day_type' => 'Not Covered',
+                    'is_duty_day' => false,
+                    'is_authorized_duty_day' => false,
+                    'is_unscheduled' => (bool) $record,
+                    'holiday' => null,
+                    'status' => $record ? 'Unscheduled Attendance' : 'Not Covered',
+                    'morning_time_in' => $record?->morning_time_in?->toISOString(),
+                    'morning_time_out' => $record?->morning_time_out?->toISOString(),
+                    'afternoon_time_in' => $record?->afternoon_time_in?->toISOString(),
+                    'afternoon_time_out' => $record?->afternoon_time_out?->toISOString(),
+                    'work_minutes' => 0,
+                    'late_minutes' => 0,
+                    'undertime_minutes' => 0,
+                    'is_verified' => false,
+                ]);
+
+                continue;
+            }
+
+            $coveredSchedules->push($schedule);
             $dayField = strtolower($date->format('l'));
             $dateEvents = $holidays->get($date->toDateString(), collect());
             $holiday = $this->applicableHoliday($dateEvents, $person);
@@ -562,7 +630,6 @@ class DtrController extends Controller
             $isRegularDutyDay = (bool) ($schedule?->{$dayField});
             $isAuthorizedDutyDay = ! $isRegularDutyDay && $isSpecialWorkingDay && ! $holiday;
             $isDutyDay = ($isRegularDutyDay || $isAuthorizedDutyDay) && ! $holiday;
-            $record = $records->get($date->toDateString());
             $attendanceRecord = $isDutyDay ? $record : null;
             $status = $holiday
                 ? 'Holiday'
@@ -585,6 +652,7 @@ class DtrController extends Controller
                 'day_type' => $dayType,
                 'is_duty_day' => $isDutyDay,
                 'is_authorized_duty_day' => $isAuthorizedDutyDay,
+                'is_unscheduled' => false,
                 'holiday' => $holiday?->holiday_name,
                 'status' => $status,
                 'morning_time_in' => $attendanceRecord?->morning_time_in?->toISOString(),
@@ -598,6 +666,21 @@ class DtrController extends Controller
             ]);
         }
 
+        $hasScheduleCoverage = $coveredSchedules->isNotEmpty();
+        $hasCompleteScheduleCoverage = $hasScheduleCoverage && $notCoveredDays === 0;
+        $coverageStatus = ! $hasScheduleCoverage
+            ? 'Missing'
+            : ($notCoveredDays > 0 ? 'Partial' : 'Covered');
+        $eligibilityMessage = match ($coverageStatus) {
+            'Missing' => "No effective work schedule covers {$month->format('F Y')}. Assign a schedule with the correct effective date before preparing this DTR.",
+            'Partial' => "Schedule coverage is partial for {$month->format('F Y')}. Dates outside the effective assignment are marked Not Covered.",
+            default => "An effective work schedule covers {$month->format('F Y')}.",
+        };
+
+        if (! $hasScheduleCoverage) {
+            $daily = collect();
+        }
+
         $expectedDays = $daily->where('is_duty_day', true)->count();
         $missingDays = $daily->where('status', 'Missing')->count();
         $incompleteDays = $daily->where('status', 'Incomplete')->count();
@@ -608,7 +691,7 @@ class DtrController extends Controller
             ->count();
         $resolvedDays = max(0, $expectedDays - $missingDays - $incompleteDays);
         $certification = $person->dtrCertifications->first();
-        $primarySchedule = $person->scheduleAssignments->first()?->schedule;
+        $primarySchedule = $coveredSchedules->first();
         $officialHours = $this->formatOfficialHours($primarySchedule);
 
         return [
@@ -637,15 +720,30 @@ class DtrController extends Controller
             'total_work_minutes' => $daily->sum('work_minutes'),
             'completion_percent' => $expectedDays
                 ? (int) round(($resolvedDays / $expectedDays) * 100)
-                : 100,
-            'is_ready' => $expectedDays > 0
+                : null,
+            'is_ready' => $hasCompleteScheduleCoverage
+                && $expectedDays > 0
                 && $missingDays === 0
                 && $incompleteDays === 0
-                && $unverifiedDays === 0,
+                && $unverifiedDays === 0
+                && $unscheduledRecords === 0,
+            'dtr_eligibility' => [
+                'code' => match ($coverageStatus) {
+                    'Missing' => 'no_schedule',
+                    'Partial' => 'partial_schedule',
+                    default => 'schedule_covered',
+                },
+                'status' => $coverageStatus,
+                'can_prepare' => $hasCompleteScheduleCoverage,
+                'message' => $eligibilityMessage,
+                'not_covered_days' => $notCoveredDays,
+                'unscheduled_records' => $unscheduledRecords,
+            ],
             'issues' => [
                 'missing' => $missingDays,
                 'incomplete' => $incompleteDays,
                 'unverified' => $unverifiedDays,
+                'unscheduled' => $unscheduledRecords,
             ],
             'certification' => $this->formatCertification($certification),
             'daily_records' => $daily->values(),

@@ -14,6 +14,7 @@ import {
   ExternalLink,
   FileCheck2,
   FileClock,
+  CalendarX2,
   PencilLine,
   RefreshCw,
   Search,
@@ -69,6 +70,7 @@ export default function DtrMonitoring() {
     certified: 0,
     late_occurrences: 0,
     half_days: 0,
+    schedule_setup_required: 0,
   });
   const [meta, setMeta] = useState({
     month_label: "",
@@ -313,7 +315,7 @@ export default function DtrMonitoring() {
       row.incomplete_days,
       row.unverified_days,
       formatMinutes(row.total_work_minutes),
-      `${row.completion_percent}%`,
+      row.completion_percent === null ? "N/A" : `${row.completion_percent}%`,
       row.certification.status,
     ]);
     const escape = (value) => `"${String(value).replaceAll('"', '""')}"`;
@@ -389,6 +391,7 @@ export default function DtrMonitoring() {
     { label: "Certified", value: summary.certified, icon: ShieldCheck, tone: "violet" },
     { label: "Late Records", value: summary.late_occurrences, icon: Clock3, tone: "red" },
     { label: "Half Days", value: summary.half_days, icon: FileClock, tone: "cyan" },
+    { label: "Schedule Setup", value: summary.schedule_setup_required || 0, icon: CalendarX2, tone: "orange" },
   ];
 
   return (
@@ -536,9 +539,12 @@ export default function DtrMonitoring() {
                     </div>
                   </td>
                   <td>
-                    <div className="dtr-progress">
-                      <div><strong>{row.completion_percent}%</strong><small>{row.recorded_days}/{row.expected_days} days</small></div>
-                      <span><i style={{ width: `${row.completion_percent}%` }}></i></span>
+                    <div className={`dtr-progress${row.completion_percent === null ? " unavailable" : ""}`}>
+                      <div>
+                        <strong>{row.completion_percent === null ? "N/A" : `${row.completion_percent}%`}</strong>
+                        <small>{row.dtr_eligibility?.code === "no_schedule" ? "No schedule" : `${row.recorded_days}/${row.expected_days} days`}</small>
+                      </div>
+                      <span><i style={{ width: `${row.completion_percent || 0}%` }}></i></span>
                     </div>
                   </td>
                   <td>
@@ -556,11 +562,14 @@ export default function DtrMonitoring() {
                   <td>
                     {row.is_ready ? (
                       <span className="dtr-ready"><CheckCircle2 size={13} />Ready</span>
+                    ) : row.dtr_eligibility?.code === "no_schedule" ? (
+                      <span className="dtr-setup-required"><CalendarX2 size={13} />Setup required</span>
                     ) : (
                       <div className="dtr-issues">
                         {!!row.issues.missing && <span>{row.issues.missing} missing</span>}
                         {!!row.issues.incomplete && <span>{row.issues.incomplete} incomplete</span>}
                         {!!row.issues.unverified && <span>{row.issues.unverified} unverified</span>}
+                        {!!row.issues.unscheduled && <span>{row.issues.unscheduled} unscheduled</span>}
                       </div>
                     )}
                   </td>
@@ -609,6 +618,7 @@ export default function DtrMonitoring() {
           onReview={(date) => navigate(
             `/attendance?date=${date}&personnel=${selected.personnel_id}&correction=1`,
           )}
+          onManageSchedule={() => navigate(`/schedules?personnel=${selected.personnel_id}`)}
         />
       )}
     </section>
@@ -632,6 +642,7 @@ function DtrDetails({
   onRequestReopen,
   onReviewReopen,
   onReview,
+  onManageSchedule,
 }) {
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [showReopenForm, setShowReopenForm] = useState(false);
@@ -641,8 +652,17 @@ function DtrDetails({
   const [rejectionRequestId, setRejectionRequestId] = useState(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [correctionDay, setCorrectionDay] = useState(null);
+  const eligibility = row.dtr_eligibility || {
+    code: row.expected_days > 0 ? "schedule_covered" : "no_schedule",
+    can_prepare: row.expected_days > 0,
+    message: row.expected_days > 0
+      ? "Resolve all attendance issues before submission."
+      : "Assign an effective work schedule before preparing this DTR.",
+    unscheduled_records: 0,
+  };
   const problemDays = row.daily_records.filter((day) => (
     ["Missing", "Incomplete"].includes(day.status)
+    || day.is_unscheduled
     || (day.is_duty_day && !["Missing", "Holiday"].includes(day.status) && !day.is_verified)
   ));
   const verificationOpen = ["Draft", "Returned", "Reopened"].includes(
@@ -651,6 +671,7 @@ function DtrDetails({
   const verifiableDays = problemDays.filter((day) => (
     verificationOpen
     && day.attendance_id
+    && !day.is_unscheduled
     && !day.is_verified
     && !["Missing", "Incomplete"].includes(day.status)
   ));
@@ -694,8 +715,36 @@ function DtrDetails({
         <div className="dtr-detail-metrics">
           <div><small>Work time</small><strong>{formatMinutes(row.total_work_minutes)}</strong></div>
           <div><small>Late total</small><strong>{formatDuration(row.late_minutes)}</strong></div>
-          <div><small>Completion</small><strong>{row.completion_percent}%</strong></div>
+          <div><small>Completion</small><strong>{row.completion_percent === null ? "N/A" : `${row.completion_percent}%`}</strong></div>
         </div>
+
+        {eligibility.code === "no_schedule" && (
+          <div className="dtr-schedule-notice missing">
+            <CalendarX2 size={20} />
+            <div>
+              <strong>Setup required — no effective work schedule</strong>
+              <p>{eligibility.message}</p>
+              {!!eligibility.unscheduled_records && (
+                <small>{eligibility.unscheduled_records} unscheduled attendance record(s) are excluded pending HR review.</small>
+              )}
+            </div>
+            {canCorrect && <button type="button" onClick={onManageSchedule}>Assign schedule</button>}
+          </div>
+        )}
+
+        {eligibility.code === "partial_schedule" && (
+          <div className="dtr-schedule-notice partial">
+            <CalendarX2 size={20} />
+            <div>
+              <strong>Partial schedule coverage</strong>
+              <p>{eligibility.message}</p>
+              {!!eligibility.unscheduled_records && (
+                <small>{eligibility.unscheduled_records} unscheduled attendance record(s) require HR review.</small>
+              )}
+            </div>
+            {canCorrect && <button type="button" onClick={onManageSchedule}>Review schedule</button>}
+          </div>
+        )}
 
         {row.certification.status === "Returned" && (
           <div className="dtr-return-notice">
@@ -753,7 +802,7 @@ function DtrDetails({
           </div>
         )}
 
-        {!row.is_ready && (
+        {!row.is_ready && eligibility.can_prepare && (
           <div className="dtr-correction-summary">
             <div>
               <strong>{problemDays.length} date{problemDays.length === 1 ? "" : "s"} need attention</strong>
@@ -772,8 +821,15 @@ function DtrDetails({
                 </button>
               )}
               {problemDays[0] && canCorrect && (
-                <button type="button" disabled={exceptionBusy} onClick={() => setCorrectionDay(problemDays[0])}>
-                  Resolve first issue <PencilLine size={14} />
+                <button
+                  type="button"
+                  disabled={exceptionBusy}
+                  onClick={() => problemDays[0].is_unscheduled
+                    ? onManageSchedule()
+                    : setCorrectionDay(problemDays[0])}
+                >
+                  {problemDays[0].is_unscheduled ? "Review schedule" : "Resolve first issue"}
+                  {problemDays[0].is_unscheduled ? <CalendarX2 size={14} /> : <PencilLine size={14} />}
                 </button>
               )}
             </div>
@@ -783,7 +839,7 @@ function DtrDetails({
         <div className="dtr-detail-list">
           <div className="dtr-detail-list-head">
             <strong>Daily records</strong>
-            <span>{row.expected_days} expected duty days</span>
+            <span>{eligibility.code === "no_schedule" ? "No schedule coverage" : `${row.expected_days} expected duty days`}</span>
           </div>
           {row.daily_records.length ? row.daily_records.map((day) => (
             <article
@@ -801,10 +857,16 @@ function DtrDetails({
                 {day.holiday && <small className="holiday-name">{day.holiday}</small>}
                 {!!day.late_minutes && <small>Late {formatDuration(day.late_minutes)}</small>}
               </div>
-              <span className={`dtr-verification ${day.is_verified ? "verified" : ""}`}>
-                {day.is_verified ? <BadgeCheck size={13} /> : <TimerReset size={13} />}
-                {day.is_verified ? "Verified" : "Unverified"}
-              </span>
+              {day.is_unscheduled ? (
+                <span className="dtr-verification requires-review"><AlertCircle size={13} />HR review</span>
+              ) : day.is_duty_day ? (
+                <span className={`dtr-verification ${day.is_verified ? "verified" : ""}`}>
+                  {day.is_verified ? <BadgeCheck size={13} /> : <TimerReset size={13} />}
+                  {day.is_verified ? "Verified" : "Unverified"}
+                </span>
+              ) : (
+                <span className="dtr-verification not-applicable">—</span>
+              )}
               {verifiableDays.some((candidate) => candidate.date === day.date) && canVerify ? (
                 <button
                   type="button"
@@ -819,15 +881,25 @@ function DtrDetails({
                 <button
                   type="button"
                   className="dtr-review-day"
-                  onClick={() => canCorrect ? setCorrectionDay(day) : onReview(day.date)}
+                  onClick={() => day.is_unscheduled
+                    ? onManageSchedule()
+                    : (canCorrect ? setCorrectionDay(day) : onReview(day.date))}
                   aria-label={`${canCorrect ? "Resolve" : "Review"} attendance for ${day.date}`}
                 >
-                  {canCorrect ? "Resolve" : "Review"}
-                  {canCorrect ? <PencilLine size={12} /> : <ExternalLink size={12} />}
+                  {day.is_unscheduled ? "Schedule" : (canCorrect ? "Resolve" : "Review")}
+                  {day.is_unscheduled
+                    ? <CalendarX2 size={12} />
+                    : (canCorrect ? <PencilLine size={12} /> : <ExternalLink size={12} />)}
                 </button>
               )}
             </article>
-          )) : <div className="dtr-no-days">No expected duty days for this month.</div>}
+          )) : (
+            <div className="dtr-no-days">
+              {eligibility.code === "no_schedule"
+                ? "Daily records will appear after an effective work schedule is assigned."
+                : "No expected duty days for this month."}
+            </div>
+          )}
         </div>
 
         {!!latestHistory.length && (
@@ -1023,7 +1095,7 @@ function DtrDetails({
                 type="button"
                 className="submit"
                 disabled={busy || !row.is_ready}
-                title={!row.is_ready ? "Resolve missing, incomplete, and unverified records first." : ""}
+                title={!row.is_ready ? eligibility.message : ""}
                 onClick={() => onStatus("Submitted")}
               >
                 <FileCheck2 size={15} />

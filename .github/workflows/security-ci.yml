@@ -48,6 +48,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare backend environment file
+        working-directory: backend
+        run: cp .env.example .env
+
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.3"
@@ -84,6 +88,13 @@ jobs:
 
       - name: Run backend tests
         working-directory: backend
+        env:
+          # The migration checks above intentionally use MySQL. The test
+          # classes create purpose-specific schemas and must run in a fresh,
+          # isolated database instead of reusing that migrated service.
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ":memory:"
+          DB_URL: ""
         run: php artisan test
 
       - name: Check backend formatting
