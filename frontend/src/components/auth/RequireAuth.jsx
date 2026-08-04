@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate } from "react-router";
 import DilgSeal from "../branding/DilgSeal";
 import {
   clearAuth,

@@ -15,7 +15,7 @@ import {
   Users,
   UserRoundCheck,
 } from "lucide-react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router";
 import { apiFetch, clearAuth, getStoredUser } from "../../lib/auth";
 
 const menuSections = [

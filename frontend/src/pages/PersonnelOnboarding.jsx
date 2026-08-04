@@ -12,7 +12,7 @@ import {
   UserRoundCog,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Pagination from "../components/common/Pagination";
 import { apiFetch, getStoredUser } from "../lib/auth";
 

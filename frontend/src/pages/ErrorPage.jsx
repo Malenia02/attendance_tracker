@@ -6,7 +6,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import DilgSeal from "../components/branding/DilgSeal";
 import { getStoredUser } from "../lib/auth";
 import "../styles/pages/error-page.css";

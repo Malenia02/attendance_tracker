@@ -1,4 +1,4 @@
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router";
 import AppErrorBoundary from "./components/errors/AppErrorBoundary";
 import AppRoutes from "./routes/AppRoutes";
 
