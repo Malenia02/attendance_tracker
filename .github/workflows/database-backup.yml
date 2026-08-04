@@ -1,0 +1,85 @@
+name: Encrypted production database backup
+
+on:
+  schedule:
+    # 02:30 Asia/Manila (UTC+8). The Philippines does not observe DST.
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+    inputs:
+      initialize_repository:
+        description: Initialize a new empty Restic repository
+        required: false
+        default: false
+        type: boolean
+      integrity_subset:
+        description: Percentage of encrypted repository data to verify
+        required: false
+        default: "5%"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup-and-restore-test:
+    name: Backup, restore, and verify
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULED_BACKUPS == 'true'
+    runs-on: ubuntu-latest
+    # environment removed to avoid validation error in this repository
+    timeout-minutes: 60
+    env:
+      DB_HOST: ${{ secrets.BACKUP_DB_HOST }}
+      DB_PORT: ${{ secrets.BACKUP_DB_PORT }}
+      DB_DATABASE: ${{ secrets.BACKUP_DB_DATABASE }}
+      DB_USERNAME: ${{ secrets.BACKUP_DB_USERNAME }}
+      DB_PASSWORD: ${{ secrets.BACKUP_DB_PASSWORD }}
+      MYSQL_SSL_CA_BASE64: ${{ secrets.BACKUP_MYSQL_SSL_CA_BASE64 }}
+      RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+      RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.BACKUP_S3_REGION || 'auto' }}
+      BACKUP_KEEP_LAST: "3"
+      BACKUP_KEEP_DAILY: "14"
+      BACKUP_KEEP_WEEKLY: "8"
+      BACKUP_KEEP_MONTHLY: "12"
+      RESTIC_HOST: dilg-attendance-production
+
+    steps:
+      - name: Check out trusted backup code
+        uses: actions/checkout@v4
+
+      - name: Select verification policy
+        shell: bash
+        env:
+          REQUESTED_AUTO_INIT: ${{ inputs.initialize_repository }}
+          REQUESTED_CHECK_SUBSET: ${{ inputs.integrity_subset }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "RESTIC_AUTO_INIT=${REQUESTED_AUTO_INIT:-false}" >> "${GITHUB_ENV}"
+            echo "RESTIC_CHECK_SUBSET=${REQUESTED_CHECK_SUBSET:-5%}" >> "${GITHUB_ENV}"
+          else
+            echo "RESTIC_AUTO_INIT=false" >> "${GITHUB_ENV}"
+            echo "RESTIC_CHECK_SUBSET=5%" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Create encrypted backup and prove restoration
+        shell: bash
+        run: bash deployment/backups/backup-and-verify.sh
+
+      - name: Write successful backup summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## Production database backup verified"
+            echo
+            echo "- Encrypted snapshot uploaded"
+            echo "- Latest snapshot restored into disposable MySQL 8"
+            echo "- Critical attendance tables verified"
+            echo "- Retention applied: 14 daily, 8 weekly, 12 monthly"
+          } >> "${GITHUB_STEP_SUMMARY}"

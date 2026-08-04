@@ -14,6 +14,7 @@
 /* Feature pages */
 @import "./styles/pages/dashboard.css";
 @import "./styles/pages/action-center.css";
+@import "./styles/pages/personnel-onboarding.css";
 @import "./styles/pages/notifications.css";
 @import "./styles/pages/login.css";
 
@@ -36,6 +37,7 @@
 /* Final shared modal contract. Keep this last so legacy page rules cannot
    create conflicting dialog spacing or mobile behavior. */
 @import "./styles/components/modals.css";
+@import "./styles/components/admin-form-modal.css";
 
 /* Unified application form fields. Keep after modal/page styles so every
    administrative workflow uses the same Schedule-page control treatment. */

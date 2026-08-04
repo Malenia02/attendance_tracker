@@ -105,7 +105,9 @@ class SystemUserController extends Controller
                 'email',
                 'status',
             ])
-            ->where('status', 'Active')
+            // Inactive personnel are eligible during onboarding; the account
+            // itself remains unusable for attendance until activation succeeds.
+            ->whereIn('status', ['Active', 'Inactive'])
             ->when(
                 ($validated['personnel_search'] ?? null) || isset($validated['personnel_id']),
                 function ($query) use ($validated): void {
@@ -122,7 +124,7 @@ class SystemUserController extends Controller
                         }
 
                         if (isset($validated['personnel_id'])) {
-                            $query->orWhereKey($validated['personnel_id']);
+                            $query->orWhere('personnel_id', $validated['personnel_id']);
                         }
                     });
                 }

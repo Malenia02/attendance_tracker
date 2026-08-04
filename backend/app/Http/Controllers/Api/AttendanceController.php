@@ -14,6 +14,7 @@ use App\Models\PersonnelSchedule;
 use App\Models\TimeLog;
 use App\Models\User;
 use App\Models\WorkSchedule;
+use App\Services\PersonnelOnboardingService;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -44,7 +45,7 @@ class AttendanceController extends Controller
         'afternoon_time_out' => 'Afternoon Out',
     ];
 
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, PersonnelOnboardingService $onboarding): JsonResponse
     {
         $validated = $request->validate([
             'date' => ['nullable', 'date'],
@@ -68,6 +69,7 @@ class AttendanceController extends Controller
 
         $personnelQuery = Personnel::query()
             ->where('status', 'Active')
+            ->when($isToday, fn ($query) => $onboarding->applyOperationalScope($query, $date))
             ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
             ->when($search, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -261,7 +263,7 @@ class AttendanceController extends Controller
         ]);
     }
 
-    public function options(Request $request): JsonResponse
+    public function options(Request $request, PersonnelOnboardingService $onboarding): JsonResponse
     {
         $validated = $request->validate([
             'personnel_search' => ['nullable', 'string', 'max:100'],
@@ -278,6 +280,7 @@ class AttendanceController extends Controller
             'can_manage_others' => $canManageOthers,
             'personnel' => Personnel::query()
                 ->where('status', 'Active')
+                ->tap(fn ($query) => $onboarding->applyOperationalScope($query))
                 ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
                 ->when(
                     ($validated['personnel_search'] ?? null) || isset($validated['personnel_id']),
@@ -294,7 +297,7 @@ class AttendanceController extends Controller
                             }
 
                             if (isset($validated['personnel_id'])) {
-                                $query->orWhereKey($validated['personnel_id']);
+                                $query->orWhere('personnel_id', $validated['personnel_id']);
                             }
                         });
                     }
@@ -641,7 +644,7 @@ class AttendanceController extends Controller
         ]);
     }
 
-    public function recordTime(Request $request): JsonResponse
+    public function recordTime(Request $request, PersonnelOnboardingService $onboarding): JsonResponse
     {
         $validated = $request->validate([
             'personnel_id' => ['required', 'integer', 'exists:personnel,personnel_id'],
@@ -669,6 +672,11 @@ class AttendanceController extends Controller
             ->findOrFail($validated['personnel_id']);
         $now = now();
         $date = $now->toDateString();
+
+        if ($reason = $onboarding->operationalBlockReason($personnel, $date)) {
+            return response()->json(['message' => $reason], 422);
+        }
+
         $schedule = $this->effectiveSchedule($personnel->personnel_id, $date);
         $calendarEvents = Holiday::query()
             ->whereDate('holiday_date', $date)

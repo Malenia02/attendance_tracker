@@ -17,6 +17,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import ModalPortal from "../components/common/ModalPortal";
 
 const emptyForm = {
   personnel_id: "",
@@ -420,10 +421,11 @@ export default function SystemUsers() {
       </div>
 
       {modalOpen && (
+        <ModalPortal>
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>
-          <div className="user-modal form-modal" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
+          <div className="user-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
             <div className="user-modal-header">
               <div>
                 <span className="modal-icon"><KeyRound size={20} /></span>
@@ -435,112 +437,136 @@ export default function SystemUsers() {
               <button type="button" onClick={closeModal} aria-label="Close"><X size={20} /></button>
             </div>
 
-            <form onSubmit={submitForm} className="user-form">
+            <form onSubmit={submitForm} className="user-form admin-form-layout">
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
-              <div className="form-field form-field-full">
-                <label htmlFor="personnel_id">Linked personnel <span>Optional</span></label>
-                <input
-                  type="search"
-                  value={personnelLookupSearch}
-                  onChange={(event) => setPersonnelLookupSearch(event.target.value)}
-                  placeholder="Search personnel by name or employee number..."
-                  aria-label="Search personnel to link"
-                />
-                <select id="personnel_id" name="personnel_id" value={form.personnel_id} onChange={updateForm}>
-                  <option value="">No personnel assignment</option>
-                  {availablePersonnel.map((person) => (
-                    <option key={person.personnel_id} value={person.personnel_id}>
-                      {person.full_name} — {person.employee_number}
-                    </option>
-                  ))}
-                </select>
-                {fieldErrors.personnel_id && <small className="field-error">{fieldErrors.personnel_id[0]}</small>}
-              </div>
-
-              <div className="form-field form-field-full">
-                <label htmlFor="username">Username</label>
-                <input id="username" name="username" value={form.username} onChange={updateForm} placeholder="e.g. juan.delacruz" required />
-                {fieldErrors.username && <small className="field-error">{fieldErrors.username[0]}</small>}
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="user_role">Role</label>
-                <select id="user_role" name="user_role" value={form.user_role} onChange={updateForm} required>
-                  {options.roles.map((role) => <option key={role}>{role}</option>)}
-                </select>
-                {fieldErrors.user_role && <small className="field-error">{fieldErrors.user_role[0]}</small>}
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="status">Status</label>
-                <select id="status" name="status" value={form.status} onChange={updateForm} required>
-                  {options.statuses.map((status) => <option key={status}>{status}</option>)}
-                </select>
-                {fieldErrors.status && <small className="field-error">{fieldErrors.status[0]}</small>}
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="user_password">Password {editingUser && <span>Leave blank to keep</span>}</label>
-                <input
-                  id="user_password"
-                  name="password"
-                  type="password"
-                  value={form.password}
-                  onChange={updateForm}
-                  minLength="12"
-                  maxLength="72"
-                  required={!editingUser}
-                  autoComplete="new-password"
-                  aria-describedby="password-requirements"
-                />
-                {fieldErrors.password && <small className="field-error">{fieldErrors.password[0]}</small>}
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="password_confirmation">Confirm password</label>
-                <input
-                  id="password_confirmation"
-                  name="password_confirmation"
-                  type="password"
-                  value={form.password_confirmation}
-                  onChange={updateForm}
-                  minLength="12"
-                  maxLength="72"
-                  required={!editingUser || Boolean(form.password)}
-                  autoComplete="new-password"
-                  aria-describedby="password-requirements"
-                />
-              </div>
-
-              {(!editingUser || passwordChangeStarted) && (
-                <div
-                  id="password-requirements"
-                  className="password-requirements form-field-full"
-                  aria-live="polite"
-                >
-                  <div className="password-requirements-header">
-                    <div>
-                      <strong>Password requirements</strong>
-                      <small>The server also rejects passwords exposed in known data breaches.</small>
-                    </div>
-                    <span>{passwordProgress}%</span>
-                  </div>
-                  <div className="password-strength-track" aria-hidden="true">
-                    <i style={{ width: `${passwordProgress}%` }} />
-                  </div>
-                  <ul>
-                    {passwordChecks.map((requirement) => (
-                      <li className={requirement.met ? "met" : ""} key={requirement.id}>
-                        {requirement.met
-                          ? <CheckCircle2 size={15} />
-                          : <Circle size={15} />}
-                        <span>{requirement.label}</span>
-                      </li>
-                    ))}
-                  </ul>
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <CircleUserRound size={17} />
+                  <div><strong>Personnel connection</strong><small>Link this account to one personnel record</small></div>
                 </div>
-              )}
+                <div className="admin-form-grid">
+                  <div className="form-field form-field-full">
+                    <label htmlFor="personnel_id">Linked personnel <span>Optional</span></label>
+                    <input
+                      type="search"
+                      value={personnelLookupSearch}
+                      onChange={(event) => setPersonnelLookupSearch(event.target.value)}
+                      placeholder="Search personnel by name or employee number..."
+                      aria-label="Search personnel to link"
+                    />
+                    <select id="personnel_id" name="personnel_id" value={form.personnel_id} onChange={updateForm}>
+                      <option value="">No personnel assignment</option>
+                      {availablePersonnel.map((person) => (
+                        <option key={person.personnel_id} value={person.personnel_id}>
+                          {person.full_name} — {person.employee_number}
+                        </option>
+                      ))}
+                    </select>
+                    {fieldErrors.personnel_id && <small className="field-error">{fieldErrors.personnel_id[0]}</small>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <KeyRound size={17} />
+                  <div><strong>Account access</strong><small>Username, role, and account availability</small></div>
+                </div>
+                <div className="admin-form-grid">
+                  <div className="form-field form-field-full">
+                    <label htmlFor="username">Username</label>
+                    <input id="username" name="username" value={form.username} onChange={updateForm} placeholder="e.g. juan.delacruz" required />
+                    {fieldErrors.username && <small className="field-error">{fieldErrors.username[0]}</small>}
+                  </div>
+
+                  <div className="form-field">
+                    <label htmlFor="user_role">Role</label>
+                    <select id="user_role" name="user_role" value={form.user_role} onChange={updateForm} required>
+                      {options.roles.map((role) => <option key={role}>{role}</option>)}
+                    </select>
+                    {fieldErrors.user_role && <small className="field-error">{fieldErrors.user_role[0]}</small>}
+                  </div>
+
+                  <div className="form-field">
+                    <label htmlFor="status">Status</label>
+                    <select id="status" name="status" value={form.status} onChange={updateForm} required>
+                      {options.statuses.map((status) => <option key={status}>{status}</option>)}
+                    </select>
+                    {fieldErrors.status && <small className="field-error">{fieldErrors.status[0]}</small>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <LockKeyhole size={17} />
+                  <div><strong>Password security</strong><small>Strong credentials protected by server validation</small></div>
+                </div>
+                <div className="admin-form-grid">
+                  <div className="form-field">
+                    <label htmlFor="user_password">Password {editingUser && <span>Leave blank to keep</span>}</label>
+                    <input
+                      id="user_password"
+                      name="password"
+                      type="password"
+                      value={form.password}
+                      onChange={updateForm}
+                      minLength="12"
+                      maxLength="72"
+                      required={!editingUser}
+                      autoComplete="new-password"
+                      aria-describedby="password-requirements"
+                    />
+                    {fieldErrors.password && <small className="field-error">{fieldErrors.password[0]}</small>}
+                  </div>
+
+                  <div className="form-field">
+                    <label htmlFor="password_confirmation">Confirm password</label>
+                    <input
+                      id="password_confirmation"
+                      name="password_confirmation"
+                      type="password"
+                      value={form.password_confirmation}
+                      onChange={updateForm}
+                      minLength="12"
+                      maxLength="72"
+                      required={!editingUser || Boolean(form.password)}
+                      autoComplete="new-password"
+                      aria-describedby="password-requirements"
+                    />
+                  </div>
+
+                  {(!editingUser || passwordChangeStarted) && (
+                    <div
+                      id="password-requirements"
+                      className="password-requirements form-field-full"
+                      aria-live="polite"
+                    >
+                      <div className="password-requirements-header">
+                        <div>
+                          <strong>Password requirements</strong>
+                          <small>The server also rejects passwords exposed in known data breaches.</small>
+                        </div>
+                        <span>{passwordProgress}%</span>
+                      </div>
+                      <div className="password-strength-track" aria-hidden="true">
+                        <i style={{ width: `${passwordProgress}%` }} />
+                      </div>
+                      <ul>
+                        {passwordChecks.map((requirement) => (
+                          <li className={requirement.met ? "met" : ""} key={requirement.id}>
+                            {requirement.met
+                              ? <CheckCircle2 size={15} />
+                              : <Circle size={15} />}
+                            <span>{requirement.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               <div className="user-modal-actions">
                 <button type="button" className="secondary-action" onClick={closeModal}>Cancel</button>
@@ -551,6 +577,7 @@ export default function SystemUsers() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
       {confirmationDialog}
     </section>

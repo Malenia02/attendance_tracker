@@ -389,6 +389,16 @@ Redis-backed cache/queues, managed database backups, and monitoring. The free
 services remain appropriate for functional testing, not a live government
 records workload.
 
+The root `render.yaml` remains the free test configuration while the system is
+being evaluated; `render.free.yaml` is an explicit copy of that test setup.
+The paid, always-on configuration is preserved in `render.production.yaml` for
+the later production upgrade. Daily encrypted MySQL backups, retention, and
+disposable restore verification are provided in
+[.github/workflows/database-backup.yml](.github/workflows/database-backup.yml),
+but scheduled runs stay disabled until `ENABLE_SCHEDULED_BACKUPS=true` is set
+as a GitHub Actions repository variable. Complete the one-time setup in
+[docs/BACKUP-RECOVERY.md](docs/BACKUP-RECOVERY.md) before enabling it.
+
 ## Testing and quality checks
 
 Backend:

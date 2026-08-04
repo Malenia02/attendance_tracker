@@ -92,15 +92,24 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
+            // Policy denial messages are deliberately written for the API user.
+            // Preserve those messages while keeping manually thrown authorization
+            // exceptions generic so internal details are never reflected blindly.
+            $policyMessage = $exception->response()?->message();
+            $message = is_string($policyMessage) && trim($policyMessage) !== ''
+                ? $policyMessage
+                : 'You do not have permission to perform this action.';
+            $status = $exception->status() ?? 403;
+
             return response()->json([
                 'success' => false,
-                'message' => 'You do not have permission to perform this action.',
+                'message' => $message,
                 'error' => [
                     'code' => 'FORBIDDEN',
-                    'message' => 'You do not have permission to perform this action.',
+                    'message' => $message,
                 ],
                 'request_id' => RequestId::for($request),
-            ], 403);
+            ], $status);
         });
 
         $exceptions->render(function (ModelNotFoundException|NotFoundHttpException $exception, Request $request) {

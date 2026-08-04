@@ -5,8 +5,7 @@ application on Vercel.
 
 ## Free test deployment
 
-For evaluation, the root `render.yaml` is the default free-test Blueprint.
-`render.free.yaml` is an identical explicit alias:
+For evaluation, use the default free-test Blueprint:
 
 ```text
 Blueprint Name: dilg-attendance-free-test
@@ -14,8 +13,9 @@ Branch:         main
 Blueprint Path: render.yaml
 ```
 
-The paid production configuration is preserved as
-`render.production.yaml`. The free service:
+The root `render.yaml` and the explicit `render.free.yaml` use the same free
+test configuration. The paid, always-on configuration is retained in
+`render.production.yaml` for the later production upgrade. The free service:
 
 - uses Render's Free web-service plan;
 - runs migrations during startup because pre-deploy commands are paid-only;
@@ -145,6 +145,7 @@ The Blueprint creates:
 - a 1 GB persistent disk mounted at
   `/var/www/html/storage/app/private`
 - a pre-deploy database migration
+- automatic deployment only after repository CI checks pass
 
 During Blueprint creation, enter these secret or deployment-specific values:
 
@@ -161,6 +162,7 @@ DB_PASSWORD=your-random-database-password
 SESSION_DOMAIN=.attendance.example.gov.ph
 SANCTUM_STATEFUL_DOMAINS=attendance.example.gov.ph
 CORS_ALLOWED_ORIGINS=https://attendance.example.gov.ph
+TRUSTED_HOSTS=^(dilg-attendance-api\.onrender\.com|api\.attendance\.example\.gov\.ph|attendance\.example\.gov\.ph)$
 ```
 
 Generate `APP_KEY` locally without changing the local `.env`:
@@ -177,10 +179,9 @@ The Blueprint generates independent DTR and QR signing keys. Preserve all
 three signing/encryption keys in a password manager. Changing them later
 invalidates sessions and can prevent verification of previously signed data.
 
-The Blueprint allows the exact default Render hostname
-`dilg-attendance-api.onrender.com`. Laravel also trusts the configured
-`APP_URL`. If the Render service name is changed, update `TRUSTED_HOSTS` to
-match the new hostname as an anchored regular expression.
+`TRUSTED_HOSTS` must allow only the exact Render API hostname, production API
+domain, and frontend proxy hostname. If the service or domains change, update
+the anchored regular expression and redeploy.
 
 After the first successful deployment, open the paid service shell and run:
 
@@ -245,3 +246,5 @@ Then use a private browser window and verify:
 - Render application logs go to stderr and are visible in the Render dashboard.
 - Keep Vercel and Render production access limited to authorized maintainers.
 - Never add `.env`, database exports, signing keys, or personnel photos to Git.
+- Configure and test the encrypted backup workflow in
+  [BACKUP-RECOVERY.md](BACKUP-RECOVERY.md) before live attendance begins.

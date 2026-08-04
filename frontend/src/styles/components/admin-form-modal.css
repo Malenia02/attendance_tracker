@@ -1,0 +1,143 @@
+/* Shared structured modal used by administrative setup workflows.
+   Mirrors the Work Schedules form without coupling other pages to schedule CSS. */
+
+.admin-form-modal {
+  width: min(900px, calc(100vw - 48px));
+  height: min(820px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 13px;
+}
+
+.admin-form-modal .user-modal-header {
+  position: relative;
+  z-index: 4;
+  min-width: 0;
+  padding: 18px 20px;
+  background: var(--bg-card);
+}
+
+.admin-form-layout {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  padding: 18px 20px 20px;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(112, 132, 171, 0.58) transparent;
+  scrollbar-width: thin;
+}
+
+.admin-form-layout::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-form-layout::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-form-layout::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(112, 132, 171, 0.58);
+  background-clip: padding-box;
+}
+
+.admin-form-section {
+  min-width: 0;
+  padding: 15px;
+  display: grid;
+  gap: 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card-soft);
+}
+
+.admin-form-section-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.admin-form-section-title > svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.admin-form-section-title > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.admin-form-section-title strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.admin-form-section-title small {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.admin-form-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.admin-form-grid > .form-field {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0;
+}
+
+.admin-form-layout .user-modal-actions {
+  position: sticky;
+  z-index: 4;
+  bottom: -20px;
+  margin: 2px -20px -20px;
+  padding: 14px 20px;
+  box-shadow: 0 -10px 24px rgba(1, 22, 61, 0.06);
+}
+
+@media (max-width: 640px) {
+  .admin-form-modal {
+    width: 100%;
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 18px 18px 12px 12px;
+  }
+
+  .admin-form-layout {
+    padding: 15px 16px 16px;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form-layout .form-field-full,
+  .admin-form-layout .personnel-photo-field,
+  .admin-form-layout .personnel-signature-field {
+    grid-column: 1;
+  }
+
+  .admin-form-layout .user-modal-actions {
+    bottom: -16px;
+    margin: 2px -16px -16px;
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  }
+}

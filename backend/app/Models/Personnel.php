@@ -122,6 +122,15 @@ class Personnel extends Model
         );
     }
 
+    public function activationLogs(): HasMany
+    {
+        return $this->hasMany(
+            PersonnelActivationLog::class,
+            'personnel_id',
+            'personnel_id'
+        )->orderByDesc('created_at');
+    }
+
     public function getFullNameAttribute(): string
     {
         return collect([

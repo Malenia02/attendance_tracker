@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PersonnelController;
+use App\Http\Controllers\Api\PersonnelOnboardingController;
 use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SystemUserController;
@@ -107,6 +108,12 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         ->name('personnel.signature');
 
     Route::middleware('role:Administrator,HR')->group(function (): void {
+        Route::get('/personnel-onboarding', [PersonnelOnboardingController::class, 'index']);
+        Route::patch('/personnel-onboarding/bulk', [PersonnelOnboardingController::class, 'updateBulk'])
+            ->middleware('throttle:10,1');
+        Route::patch('/personnel-onboarding/{personnel}', [PersonnelOnboardingController::class, 'update'])
+            ->middleware('throttle:20,1');
+
         Route::apiResource('/departments', DepartmentController::class)
             ->except(['show']);
 

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
+import ModalPortal from "../components/common/ModalPortal";
 
 const emptyForm = {
   department_code: "",
@@ -296,10 +297,11 @@ export default function Departments() {
       </div>
 
       {modalOpen && (
+        <ModalPortal>
         <div className="modal-backdrop department-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>
-          <div className="user-modal form-modal department-modal" role="dialog" aria-modal="true" aria-labelledby="department-modal-title">
+          <div className="user-modal admin-form-modal department-modal" role="dialog" aria-modal="true" aria-labelledby="department-modal-title">
             <div className="user-modal-header">
               <div>
                 <span className="modal-icon"><Building2 size={21} /></span>
@@ -311,67 +313,83 @@ export default function Departments() {
               <button type="button" onClick={closeModal} aria-label="Close"><X size={20} /></button>
             </div>
 
-            <form className="user-form department-form" onSubmit={submitForm}>
+            <form className="user-form admin-form-layout department-form" onSubmit={submitForm}>
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
-              <div className="form-field">
-                <label htmlFor="department_code">Department code</label>
-                <input id="department_code" name="department_code" value={form.department_code} onChange={updateForm} placeholder="e.g. DILG-IPIL" maxLength="30" required />
-                <FieldError errors={fieldErrors} name="department_code" />
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="department_status">Status</label>
-                <select id="department_status" name="status" value={form.status} onChange={updateForm}>
-                  <option>Active</option>
-                  <option>Inactive</option>
-                </select>
-                <FieldError errors={fieldErrors} name="status" />
-              </div>
-
-              <div className="form-field form-field-full">
-                <label htmlFor="department_name">Department name</label>
-                <input id="department_name" name="department_name" value={form.department_name} onChange={updateForm} placeholder="Enter the full department name" required />
-                <FieldError errors={fieldErrors} name="department_name" />
-              </div>
-
-              <div className="form-field form-field-full">
-                <label htmlFor="office_location">DILG office address</label>
-                <input id="office_location" name="office_location" value={form.office_location} onChange={updateForm} placeholder="Building, municipality, province" required />
-                <FieldError errors={fieldErrors} name="office_location" />
-              </div>
-
-              <div className="department-location-capture form-field-full">
-                <div>
-                  <MapPin size={18} />
-                  <span><strong>Office GPS coordinates</strong><small>Stand at the office and use a phone with precise location enabled.</small></span>
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <Building2 size={17} />
+                  <div><strong>Department identity</strong><small>Office name, code, and availability</small></div>
                 </div>
-                <button type="button" onClick={captureCoordinates} disabled={locating}>
-                  <Crosshair size={16} />{locating ? "Locating…" : "Use current location"}
-                </button>
-                {locationAccuracy !== null && <p>Coordinates captured with approximately ±{locationAccuracy} m accuracy.</p>}
-                {fieldErrors.location && <small className="field-error">{fieldErrors.location[0]}</small>}
-              </div>
+                <div className="admin-form-grid">
+                  <div className="form-field">
+                    <label htmlFor="department_code">Department code</label>
+                    <input id="department_code" name="department_code" value={form.department_code} onChange={updateForm} placeholder="e.g. DILG-IPIL" maxLength="30" required />
+                    <FieldError errors={fieldErrors} name="department_code" />
+                  </div>
 
-              <div className="form-field">
-                <label htmlFor="department_latitude">Latitude</label>
-                <input id="department_latitude" name="latitude" type="number" step="0.0000001" min="-90" max="90" value={form.latitude} onChange={updateForm} placeholder="7.7845000" required />
-                <FieldError errors={fieldErrors} name="latitude" />
-              </div>
+                  <div className="form-field">
+                    <label htmlFor="department_status">Status</label>
+                    <select id="department_status" name="status" value={form.status} onChange={updateForm}>
+                      <option>Active</option>
+                      <option>Inactive</option>
+                    </select>
+                    <FieldError errors={fieldErrors} name="status" />
+                  </div>
 
-              <div className="form-field">
-                <label htmlFor="department_longitude">Longitude</label>
-                <input id="department_longitude" name="longitude" type="number" step="0.0000001" min="-180" max="180" value={form.longitude} onChange={updateForm} placeholder="122.5868000" required />
-                <FieldError errors={fieldErrors} name="longitude" />
-              </div>
-
-              <div className="form-field form-field-full">
-                <label htmlFor="allowed_radius_meters">Allowed attendance radius <span>25–5,000 meters</span></label>
-                <div className="radius-input">
-                  <input id="allowed_radius_meters" name="allowed_radius_meters" type="number" min="25" max="5000" value={form.allowed_radius_meters} onChange={updateForm} required />
-                  <strong>meters</strong>
+                  <div className="form-field form-field-full">
+                    <label htmlFor="department_name">Department name</label>
+                    <input id="department_name" name="department_name" value={form.department_name} onChange={updateForm} placeholder="Enter the full department name" required />
+                    <FieldError errors={fieldErrors} name="department_name" />
+                  </div>
                 </div>
-                <FieldError errors={fieldErrors} name="allowed_radius_meters" />
+              </div>
+
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <MapPin size={17} />
+                  <div><strong>Office location and attendance radius</strong><small>Secure GPS boundary used for onsite attendance</small></div>
+                </div>
+                <div className="admin-form-grid">
+                  <div className="form-field form-field-full">
+                    <label htmlFor="office_location">DILG office address</label>
+                    <input id="office_location" name="office_location" value={form.office_location} onChange={updateForm} placeholder="Building, municipality, province" required />
+                    <FieldError errors={fieldErrors} name="office_location" />
+                  </div>
+
+                  <div className="department-location-capture form-field-full">
+                    <div>
+                      <MapPin size={18} />
+                      <span><strong>Office GPS coordinates</strong><small>Stand at the office and use a phone with precise location enabled.</small></span>
+                    </div>
+                    <button type="button" onClick={captureCoordinates} disabled={locating}>
+                      <Crosshair size={16} />{locating ? "Locating…" : "Use current location"}
+                    </button>
+                    {locationAccuracy !== null && <p>Coordinates captured with approximately ±{locationAccuracy} m accuracy.</p>}
+                    {fieldErrors.location && <small className="field-error">{fieldErrors.location[0]}</small>}
+                  </div>
+
+                  <div className="form-field">
+                    <label htmlFor="department_latitude">Latitude</label>
+                    <input id="department_latitude" name="latitude" type="number" step="0.0000001" min="-90" max="90" value={form.latitude} onChange={updateForm} placeholder="7.7845000" required />
+                    <FieldError errors={fieldErrors} name="latitude" />
+                  </div>
+
+                  <div className="form-field">
+                    <label htmlFor="department_longitude">Longitude</label>
+                    <input id="department_longitude" name="longitude" type="number" step="0.0000001" min="-180" max="180" value={form.longitude} onChange={updateForm} placeholder="122.5868000" required />
+                    <FieldError errors={fieldErrors} name="longitude" />
+                  </div>
+
+                  <div className="form-field form-field-full">
+                    <label htmlFor="allowed_radius_meters">Allowed attendance radius <span>25–5,000 meters</span></label>
+                    <div className="radius-input">
+                      <input id="allowed_radius_meters" name="allowed_radius_meters" type="number" min="25" max="5000" value={form.allowed_radius_meters} onChange={updateForm} required />
+                      <strong>meters</strong>
+                    </div>
+                    <FieldError errors={fieldErrors} name="allowed_radius_meters" />
+                  </div>
+                </div>
               </div>
 
               <div className="user-modal-actions">
@@ -383,6 +401,7 @@ export default function Departments() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
       {confirmationDialog}
     </section>

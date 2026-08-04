@@ -13,6 +13,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  UserRoundCheck,
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { apiFetch, clearAuth, getStoredUser } from "../../lib/auth";
@@ -31,7 +32,7 @@ const menuSections = [
     ],
   },
   {
-    label: "Attendance Operations",
+    label: "Daily Operations",
     items: [
       {
         label: "QR Attendance Kiosk",
@@ -51,12 +52,30 @@ const menuSections = [
     ],
   },
   {
-    label: "Workforce & Work Rules",
+    label: "Personnel Setup & Work Rules",
     items: [
+      {
+        label: "Personnel Directory",
+        path: "/personnel",
+        icon: Users,
+        roles: ["Administrator", "HR"],
+      },
+      {
+        label: "System Users",
+        path: "/system-users",
+        icon: ShieldCheck,
+        roles: ["Administrator"],
+      },
       {
         label: "Departments & Office GPS",
         path: "/departments",
         icon: Building2,
+        roles: ["Administrator", "HR"],
+      },
+      {
+        label: "Assign & Activate Personnel",
+        path: "/personnel-onboarding",
+        icon: UserRoundCheck,
         roles: ["Administrator", "HR"],
       },
       {
@@ -66,23 +85,15 @@ const menuSections = [
         roles: ["Administrator", "HR"],
       },
       {
-        label: "Personnel Directory",
-        path: "/personnel",
-        icon: Users,
-        roles: ["Administrator", "HR"],
+        label: "Calendar & Duty Days",
+        path: "/calendar",
+        icon: CalendarRange,
       },
-      { label: "Calendar & Duty Days", path: "/calendar", icon: CalendarRange },
     ],
   },
   {
     label: "Security & Audit",
     items: [
-      {
-        label: "System Users",
-        path: "/system-users",
-        icon: ShieldCheck,
-        roles: ["Administrator"],
-      },
       {
         label: "Activity Logs",
         path: "/activity-logs",

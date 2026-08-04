@@ -18,6 +18,7 @@ import LeaveRequests from "../pages/LeaveRequests";
 const ActionCenter = lazy(() => import("../pages/ActionCenter"));
 const Dashboard = lazy(() => import("../pages/Dashboard"));
 const Notifications = lazy(() => import("../pages/Notifications"));
+const PersonnelOnboarding = lazy(() => import("../pages/PersonnelOnboarding"));
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -76,6 +77,14 @@ export default function AppRoutes() {
         <Route path="attendance" element={<Attendance />} />
         <Route path="leave-requests" element={<LeaveRequests />} />
         <Route path="personnel" element={<Personnel />} />
+        <Route
+          path="personnel-onboarding"
+          element={
+            <Suspense fallback={<PlaceholderPage title="Onboarding & Readiness" description="Checking workforce readiness..." />}>
+              <PersonnelOnboarding />
+            </Suspense>
+          }
+        />
         <Route path="departments" element={<Departments />} />
         <Route path="calendar" element={<HolidayCalendar />} />
 

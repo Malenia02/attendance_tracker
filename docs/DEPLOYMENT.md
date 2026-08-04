@@ -187,6 +187,10 @@ resource limitations. Use it only for a demonstration with fake records.
 
 ## Backups and recovery
 
+The repository includes an encrypted daily database backup with automatic
+restore verification. Configure it using
+[BACKUP-RECOVERY.md](BACKUP-RECOVERY.md) before real personnel use.
+
 Back up and encrypt:
 
 - The MySQL/MariaDB database

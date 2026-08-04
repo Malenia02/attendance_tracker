@@ -24,4 +24,10 @@ final class PersonnelPolicy
         return in_array($user->user_role, ['Administrator', 'HR'], true)
             && PersonnelAccess::canAccess($user, $personnel);
     }
+
+    public function manageOnboarding(User $user, Personnel $personnel): bool
+    {
+        return in_array($user->user_role, ['Administrator', 'HR'], true)
+            && PersonnelAccess::canAccess($user, $personnel);
+    }
 }

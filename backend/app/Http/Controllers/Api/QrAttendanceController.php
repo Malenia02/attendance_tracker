@@ -10,6 +10,7 @@ use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\QrScanLog;
 use App\Models\TimeLog;
+use App\Services\PersonnelOnboardingService;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -191,8 +192,10 @@ class QrAttendanceController extends Controller
         ]);
     }
 
-    public function scan(QrScanRequest $request): JsonResponse
-    {
+    public function scan(
+        QrScanRequest $request,
+        PersonnelOnboardingService $onboarding
+    ): JsonResponse {
         $validated = $request->validated();
         $qrToken = $this->consumeChallenge(
             $request,
@@ -257,6 +260,16 @@ class QrAttendanceController extends Controller
 
             return response()->json([
                 'message' => $log->message,
+                'scan' => $this->formatScanLog($log),
+                'personnel' => $this->formatPersonnelIdentity($personnel),
+            ], 422);
+        }
+
+        if ($reason = $onboarding->operationalBlockReason($personnel, $now)) {
+            $log = $this->createScanLog($request, $validated, $personnel, 'Setup Incomplete', $reason);
+
+            return response()->json([
+                'message' => $reason,
                 'scan' => $this->formatScanLog($log),
                 'personnel' => $this->formatPersonnelIdentity($personnel),
             ], 422);

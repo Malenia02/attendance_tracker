@@ -119,6 +119,9 @@ class PersonnelController extends Controller
         }
 
         $validated = $this->normalizeCredentialValidity($validated);
+        // New records enter the controlled onboarding workflow. Client-supplied
+        // status values must never bypass readiness validation and activation.
+        $validated['status'] = 'Inactive';
         $photoPath = $this->storePhoto($request);
         $signaturePath = null;
 
@@ -164,7 +167,7 @@ class PersonnelController extends Controller
         $personnel->load(['department', 'user']);
 
         return response()->json([
-            'message' => 'Personnel record created successfully.',
+            'message' => 'Personnel record created. Complete onboarding before activation.',
             'data' => $this->formatPersonnel($personnel),
         ], 201);
     }
@@ -175,7 +178,10 @@ class PersonnelController extends Controller
         unset(
             $validated['remove_photo'],
             $validated['remove_signature'],
-            $validated['auto_generate_employee_number']
+            $validated['auto_generate_employee_number'],
+            // Status changes are handled by PersonnelOnboardingController so
+            // every activation is readiness-checked and immutably audited.
+            $validated['status']
         );
         $validated = $this->normalizeCredentialValidity($validated, $personnel);
         $wasGip = $personnel->personnel_type === 'GIP';
@@ -366,7 +372,10 @@ class PersonnelController extends Controller
                 'dimensions:min_width=100,min_height=40,max_width=3000,max_height=1500',
             ],
             'remove_signature' => ['sometimes', 'boolean'],
-            'status' => ['required', Rule::in(self::STATUSES)],
+            'status' => [
+                $personnel ? 'required' : 'sometimes',
+                Rule::in(self::STATUSES),
+            ],
         ];
     }
 

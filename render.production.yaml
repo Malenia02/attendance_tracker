@@ -6,6 +6,7 @@ services:
     region: singapore
     dockerfilePath: ./deployment/render/Dockerfile
     dockerContext: .
+    autoDeployTrigger: checksPass
     preDeployCommand: php artisan migrate --force && php artisan production:check
     healthCheckPath: /health/ready
     disk:
@@ -30,7 +31,7 @@ services:
       - key: FRONTEND_URL
         sync: false
       - key: TRUSTED_HOSTS
-        value: ^dilg-attendance-api\.onrender\.com$
+        sync: false
       - key: TRUSTED_PROXIES
         value: "*"
       - key: APP_TIMEZONE

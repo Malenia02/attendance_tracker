@@ -8,3 +8,8 @@
 backend/public/app/
 release/
 .codex-*/
+*.sql
+*.sql.gz
+*.dump
+*.backup
+restic-repository/

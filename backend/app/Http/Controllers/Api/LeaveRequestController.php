@@ -11,6 +11,7 @@ use App\Models\LeaveRequestLog;
 use App\Models\Personnel;
 use App\Models\User;
 use App\Services\LeaveAttendanceService;
+use App\Services\PersonnelOnboardingService;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -137,7 +138,8 @@ class LeaveRequestController extends Controller
 
     public function store(
         StoreLeaveRequest $request,
-        LeaveAttendanceService $attendanceService
+        LeaveAttendanceService $attendanceService,
+        PersonnelOnboardingService $onboarding
     ): JsonResponse {
         $user = $request->user();
         $personnel = Personnel::query()
@@ -150,6 +152,10 @@ class LeaveRequestController extends Controller
             return response()->json([
                 'message' => 'Your account must be linked to active personnel with an assigned office.',
             ], 422);
+        }
+
+        if ($reason = $onboarding->operationalBlockReason($personnel)) {
+            return response()->json(['message' => $reason], 422);
         }
 
         $validated = $request->validated();

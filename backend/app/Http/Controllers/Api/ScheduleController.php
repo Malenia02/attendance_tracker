@@ -57,7 +57,9 @@ class ScheduleController extends Controller
             ->orderBy('schedule_name')
             ->get();
 
-        $activePersonnelQuery = Personnel::query()->where('status', 'Active');
+        // Include inactive onboarding records so HR can assign the schedule
+        // required before activation. Completed/terminated records stay hidden.
+        $activePersonnelQuery = Personnel::query()->whereIn('status', ['Active', 'Inactive']);
         $activePersonnelCount = (clone $activePersonnelQuery)->count();
         $assignedPersonnel = (clone $activePersonnelQuery)
             ->whereHas('scheduleAssignments', fn ($query) => $query
@@ -191,7 +193,9 @@ class ScheduleController extends Controller
                 'required',
                 'integer',
                 'distinct',
-                Rule::exists('personnel', 'personnel_id')->where('status', 'Active'),
+                Rule::exists('personnel', 'personnel_id')->where(
+                    fn ($query) => $query->whereIn('status', ['Active', 'Inactive'])
+                ),
             ],
             'effective_from' => ['required', 'date'],
             'effective_to' => ['nullable', 'date', 'after_or_equal:effective_from'],

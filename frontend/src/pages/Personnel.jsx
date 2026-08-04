@@ -20,6 +20,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import ModalPortal from "../components/common/ModalPortal";
 
 function toDateInput(date) {
   const year = date.getFullYear();
@@ -57,7 +58,7 @@ const emptyForm = {
   email: "",
   contact_number: "",
   address: "",
-  status: "Active",
+  status: "Inactive",
 };
 
 async function readResponse(response) {
@@ -562,6 +563,7 @@ export default function Personnel() {
       </div>
 
       {modalOpen && (
+        <ModalPortal>
         <div
           className="modal-backdrop"
           role="presentation"
@@ -569,7 +571,7 @@ export default function Personnel() {
             if (event.target === event.currentTarget) closeModal();
           }}
         >
-          <div className="user-modal form-modal personnel-modal" role="dialog" aria-modal="true" aria-labelledby="personnel-modal-title">
+          <div className="user-modal admin-form-modal personnel-modal" role="dialog" aria-modal="true" aria-labelledby="personnel-modal-title">
             <div className="user-modal-header">
               <div>
                 <span className="modal-icon"><IdCard size={21} /></span>
@@ -581,10 +583,16 @@ export default function Personnel() {
               <button type="button" onClick={closeModal} aria-label="Close"><X size={20} /></button>
             </div>
 
-            <form className="user-form personnel-form" onSubmit={submitForm}>
+            <form className="user-form admin-form-layout personnel-form" onSubmit={submitForm}>
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
-              <div className="personnel-photo-field">
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <IdCard size={17} />
+                  <div><strong>Credential media</strong><small>Photo and optional signature used on the personnel card</small></div>
+                </div>
+                <div className="admin-form-grid">
+                  <div className="personnel-photo-field">
                 <div className={`personnel-photo-preview ${photoPreview ? "has-photo" : ""}`}>
                   <span>{initials(form.first_name, form.last_name)}</span>
                   {photoPreview && <img src={photoPreview} alt="Personnel preview" />}
@@ -612,9 +620,9 @@ export default function Personnel() {
                   </div>
                   <FieldError errors={fieldErrors} name="photo" />
                 </div>
-              </div>
+                  </div>
 
-              <div className="personnel-signature-field">
+                  <div className="personnel-signature-field">
                 <div className={`personnel-signature-preview ${signaturePreview ? "has-signature" : ""}`}>
                   {signaturePreview
                     ? <img src={signaturePreview} alt="Personnel signature preview" />
@@ -642,9 +650,16 @@ export default function Personnel() {
                   </div>
                   <FieldError errors={fieldErrors} name="signature" />
                 </div>
+                  </div>
+                </div>
               </div>
 
-              <h3 className="form-section-title">Personal information</h3>
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <Users size={17} />
+                  <div><strong>Personal information</strong><small>Identity and contact details</small></div>
+                </div>
+                <div className="admin-form-grid">
               <FormField label="First name" name="first_name" form={form} errors={fieldErrors} onChange={updateForm} required />
               <FormField label="Middle name" name="middle_name" form={form} errors={fieldErrors} onChange={updateForm} />
               <FormField label="Last name" name="last_name" form={form} errors={fieldErrors} onChange={updateForm} required />
@@ -661,8 +676,15 @@ export default function Personnel() {
               <FormField label="Contact number" name="contact_number" form={form} errors={fieldErrors} onChange={updateForm} />
               <FormField label="Email address" name="email" type="email" form={form} errors={fieldErrors} onChange={updateForm} />
               <FormField label="Address" name="address" form={form} errors={fieldErrors} onChange={updateForm} full />
+                </div>
+              </div>
 
-              <h3 className="form-section-title">Employment information</h3>
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <BriefcaseBusiness size={17} />
+                  <div><strong>Employment information</strong><small>Personnel type, assignment, and employment period</small></div>
+                </div>
+                <div className="admin-form-grid">
               <div className="form-field">
                 <label htmlFor="personnel_type">Personnel type</label>
                 <select id="personnel_type" name="personnel_type" value={form.personnel_type} onChange={updateForm} required>
@@ -747,8 +769,15 @@ export default function Personnel() {
               <FormField label="Position title" name="position_title" form={form} errors={fieldErrors} onChange={updateForm} full />
               <FormField label="Employment start" name="employment_start_date" type="date" form={form} errors={fieldErrors} onChange={updateForm} />
               <FormField label="Employment end" name="employment_end_date" type="date" form={form} errors={fieldErrors} onChange={updateForm} />
+                </div>
+              </div>
 
-              <h3 className="form-section-title">Personnel card validity</h3>
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <IdCard size={17} />
+                  <div><strong>Personnel card validity</strong><small>Independent validity period for QR attendance access</small></div>
+                </div>
+                <div className="admin-form-grid">
               <div className="form-field form-field-full">
                 <small className="field-hint">
                   These dates control the QR card independently. They must remain within the configured employment period.
@@ -756,13 +785,20 @@ export default function Personnel() {
               </div>
               <FormField label="Card valid from" name="qr_valid_from" type="date" form={form} errors={fieldErrors} onChange={updateForm} required />
               <FormField label="Card valid until" name="qr_valid_until" type="date" form={form} errors={fieldErrors} onChange={updateForm} required />
+                </div>
+              </div>
 
-              <div className="form-field form-field-full">
-                <label htmlFor="personnel_status">Status</label>
-                <select id="personnel_status" name="status" value={form.status} onChange={updateForm} required>
-                  {options.statuses.map((status) => <option key={status}>{status}</option>)}
-                </select>
-                <FieldError errors={fieldErrors} name="status" />
+              <div className="admin-form-section">
+                <div className="admin-form-section-title">
+                  <UserCheck size={17} />
+                  <div><strong>Activation readiness</strong><small>Account activation remains protected by onboarding checks</small></div>
+                </div>
+                <div className="form-field form-field-full personnel-activation-hint">
+                  <strong>Activation status: {editingRecord ? form.status : "Inactive - onboarding required"}</strong>
+                  <small>
+                    Status is protected. Complete the department, employment, schedule, system account, and QR requirements in Onboarding &amp; Readiness before activation.
+                  </small>
+                </div>
               </div>
 
               <div className="user-modal-actions">
@@ -774,6 +810,7 @@ export default function Personnel() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
       {confirmationDialog}
     </section>
