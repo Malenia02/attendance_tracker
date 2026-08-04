@@ -15,6 +15,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -110,6 +111,33 @@ return Application::configure(basePath: dirname(__DIR__))
                 ],
                 'request_id' => RequestId::for($request),
             ], $status);
+        });
+
+        $exceptions->render(function (AccessDeniedHttpException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            // Laravel prepares authorization failures as AccessDeniedHttpException
+            // before rendering. Only trust a message attached to a deliberate
+            // policy response; all other 403 exceptions retain the generic text.
+            $authorization = $exception->getPrevious();
+            $policyMessage = $authorization instanceof AuthorizationException
+                ? $authorization->response()?->message()
+                : null;
+            $message = is_string($policyMessage) && trim($policyMessage) !== ''
+                ? $policyMessage
+                : 'You do not have permission to perform this action.';
+
+            return response()->json([
+                'success' => false,
+                'message' => $message,
+                'error' => [
+                    'code' => 'FORBIDDEN',
+                    'message' => $message,
+                ],
+                'request_id' => RequestId::for($request),
+            ], 403);
         });
 
         $exceptions->render(function (ModelNotFoundException|NotFoundHttpException $exception, Request $request) {
