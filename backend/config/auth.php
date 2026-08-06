@@ -114,4 +114,16 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Remembered Login Lifetime
+    |--------------------------------------------------------------------------
+    |
+    | Persistent browser logins are opt-in and expire after this many minutes.
+    | The ordinary session idle timeout remains configured in session.php.
+    |
+    */
+
+    'remember_duration' => (int) env('AUTH_REMEMBER_DURATION', 21600),
+
 ];

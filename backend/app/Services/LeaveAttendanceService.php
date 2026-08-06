@@ -9,6 +9,7 @@ use App\Models\LeaveRecord;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Models\User;
+use App\Support\DtrPeriod;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Collection;
@@ -188,15 +189,31 @@ class LeaveAttendanceService
             $start->copy()->startOfMonth(),
             '1 month',
             $end->copy()->startOfMonth()
-        ))->map(fn (Carbon $month) => [$month->year, $month->month]);
+        ))->map(function (Carbon $month) use ($start, $end): array {
+            $rangeStart = $start->greaterThan($month) ? $start : $month->copy()->startOfMonth();
+            $monthEnd = $month->copy()->endOfMonth();
+            $rangeEnd = $end->lessThan($monthEnd) ? $end : $monthEnd;
+            $periods = [DtrPeriod::FULL_MONTH];
+
+            if ($rangeStart->day <= 15) {
+                $periods[] = DtrPeriod::FIRST_HALF;
+            }
+
+            if ($rangeEnd->day >= 16) {
+                $periods[] = DtrPeriod::SECOND_HALF;
+            }
+
+            return [$month->year, $month->month, $periods];
+        });
         $locked = DtrCertification::query()
             ->where('personnel_id', $personnelId)
             ->whereIn('certification_status', ['Submitted', 'Certified'])
             ->where(function ($query) use ($months): void {
-                foreach ($months as [$year, $month]) {
+                foreach ($months as [$year, $month, $periods]) {
                     $query->orWhere(fn ($query) => $query
                         ->where('dtr_year', $year)
-                        ->where('dtr_month', $month));
+                        ->where('dtr_month', $month)
+                        ->whereIn('dtr_period', $periods));
                 }
             })
             ->exists();

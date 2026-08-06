@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\UserNotification;
+use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -92,6 +93,7 @@ final class NotificationSecurityTest extends TestCase
             $table->unsignedBigInteger('personnel_id');
             $table->unsignedSmallInteger('dtr_year');
             $table->unsignedTinyInteger('dtr_month');
+            $table->string('dtr_period')->default('full_month');
             $table->string('certification_status')->default('Draft');
             $table->timestamps();
         });
@@ -167,6 +169,35 @@ final class NotificationSecurityTest extends TestCase
             ->firstWhere('type', 'attendance_verification');
         $this->assertNotNull($notification);
         $this->assertStringStartsWith('1 attendance record is', $notification['message']);
+    }
+
+    public function test_personnel_receives_an_overdue_dtr_cutoff_notification(): void
+    {
+        $this->travelTo(Carbon::parse('2026-08-05 09:00:00', 'Asia/Manila'));
+        $department = $this->department('DILG-CUTOFF');
+        $personnel = $this->personnel('GIP-CUTOFF', $department);
+        $schedule = DB::table('work_schedules')->insertGetId([
+            'schedule_name' => 'Cutoff schedule',
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('personnel_schedules')->insert([
+            'personnel_id' => $personnel,
+            'schedule_id' => $schedule,
+            'effective_from' => '2026-07-01',
+            'created_at' => now(),
+        ]);
+        $user = $this->user('gip-cutoff', 'Personnel', $personnel);
+
+        $response = $this->actingAs($user)
+            ->getJson('/api/notifications/summary')
+            ->assertOk();
+
+        $notification = collect($response->json('data'))->firstWhere('type', 'dtr_cutoffs');
+        $this->assertNotNull($notification);
+        $this->assertSame('Your DTR is overdue', $notification['title']);
+        $this->assertStringContainsString('July 16', $notification['message']);
     }
 
     public function test_user_cannot_mark_another_users_notification_as_read(): void

@@ -16,6 +16,10 @@ final class NotificationSyncService
 {
     private const REVIEW_ROLES = ['Administrator', 'HR', 'Supervisor'];
 
+    public function __construct(
+        private readonly DtrCutoffService $cutoffs
+    ) {}
+
     public function syncFor(User $user): void
     {
         $definitions = $this->definitionsFor($user);
@@ -137,6 +141,18 @@ final class NotificationSyncService
             '/action-center?queue=returned_dtrs'
         );
 
+        $dtrCutoffs = $this->cutoffs->outstandingQuery($user)->count();
+        $this->appendCount(
+            $definitions,
+            $dtrCutoffs,
+            'state:review:dtr-cutoffs',
+            'dtr_cutoffs',
+            'DTR cutoff deadlines need attention',
+            "{$dtrCutoffs} personnel ".($dtrCutoffs === 1 ? 'DTR period is' : 'DTR periods are').' due or overdue.',
+            'Warning',
+            '/action-center?queue=dtr_cutoffs'
+        );
+
         if (! in_array($user->user_role, ['Administrator', 'HR'], true)) {
             return;
         }
@@ -226,7 +242,7 @@ final class NotificationSyncService
             'state:personal:returned-dtr',
             'returned_dtrs',
             'Your DTR was returned',
-            "{$returned} monthly ".($returned === 1 ? 'DTR needs' : 'DTRs need').' correction and resubmission.',
+            "{$returned} DTR ".($returned === 1 ? 'period needs' : 'periods need').' correction and resubmission.',
             'Warning',
             '/dtr?status=Returned'
         );
@@ -235,6 +251,8 @@ final class NotificationSyncService
         if (! $personnel) {
             return;
         }
+
+        $this->appendPersonalDtrCutoffs($definitions, $personnel);
 
         if ($personnel->qr_valid_until
             && $personnel->qr_valid_until->betweenIncluded(today(), today()->addDays(30))) {
@@ -269,6 +287,54 @@ final class NotificationSyncService
                 '/dashboard'
             );
         }
+    }
+
+    private function appendPersonalDtrCutoffs(array &$definitions, Personnel $personnel): void
+    {
+        if (! $personnel->department_id) {
+            return;
+        }
+
+        $latestDue = $this->cutoffs->latestDueContext($personnel);
+        if ($this->cutoffs->hasScheduleCoverage($personnel, $latestDue)) {
+            $certification = $this->cutoffs->certificationFor($personnel, $latestDue);
+            $timeline = $this->cutoffs->timeline($latestDue, $certification?->certification_status);
+
+            if (in_array($timeline['state'], ['due', 'overdue'], true)) {
+                $definitions[] = $this->definition(
+                    "state:personal:dtr-cutoff:{$latestDue['month']}:{$latestDue['period']}",
+                    'dtr_cutoffs',
+                    $timeline['state'] === 'overdue' ? 'Your DTR is overdue' : 'Your DTR is due',
+                    $latestDue['label'].'. '.$timeline['message'],
+                    $timeline['state'] === 'overdue' ? 'Danger' : 'Warning',
+                    '/dtr?month='.$latestDue['month'].'&period='.$latestDue['period']
+                );
+            }
+        }
+
+        $current = $this->cutoffs->currentContext($personnel);
+        if ($current['month'] === $latestDue['month'] && $current['period'] === $latestDue['period']) {
+            return;
+        }
+
+        if (! $this->cutoffs->hasScheduleCoverage($personnel, $current)) {
+            return;
+        }
+
+        $certification = $this->cutoffs->certificationFor($personnel, $current);
+        $timeline = $this->cutoffs->timeline($current, $certification?->certification_status);
+        if ($timeline['state'] !== 'due_soon') {
+            return;
+        }
+
+        $definitions[] = $this->definition(
+            "state:personal:dtr-reminder:{$current['month']}:{$current['period']}",
+            'dtr_cutoffs',
+            'Your DTR cutoff is approaching',
+            $current['label'].'. '.$timeline['message'],
+            'Info',
+            '/dtr?month='.$current['month'].'&period='.$current['period']
+        );
     }
 
     private function appendPersonalEvents(array &$definitions, User $user): void

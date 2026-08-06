@@ -39,6 +39,13 @@ function createQrScanner(qrModule) {
   });
 }
 
+function responsiveQrBox(viewfinderWidth, viewfinderHeight) {
+  const shortestEdge = Math.min(viewfinderWidth, viewfinderHeight);
+  const size = Math.floor(Math.min(360, shortestEdge * 0.82));
+
+  return { width: size, height: size };
+}
+
 async function detectQrWithBrowser(file) {
   if (!("BarcodeDetector" in window) || typeof window.createImageBitmap !== "function") {
     return "";
@@ -448,7 +455,7 @@ export default function QrAttendance() {
       scannerRef.current = scanner;
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 245, height: 245 }, aspectRatio: 1 },
+        { fps: 12, qrbox: responsiveQrBox, aspectRatio: 1 },
         (decodedText) => submitScan(decodedText),
         () => {},
       );
@@ -629,7 +636,7 @@ export default function QrAttendance() {
             <div className="qr-card-heading">
               <div>
                 <span>Camera scanner</span>
-                <h2>{data.can_scan_others ? "Position the QR card inside the frame" : "Scan your own QR card"}</h2>
+                <h2>{data.can_scan_others ? "Position the QR card inside the large frame" : "Scan your own QR card"}</h2>
               </div>
               <QrCode size={25} />
             </div>

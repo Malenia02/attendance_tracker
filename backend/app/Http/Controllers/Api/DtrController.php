@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\AttendanceChangeLog;
 use App\Models\AttendanceRecord;
 use App\Models\DtrCertification;
@@ -10,8 +11,11 @@ use App\Models\DtrStatusLog;
 use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
+use App\Services\DtrCutoffService;
 use App\Services\DtrDocumentGenerator;
+use App\Support\DtrPeriod;
 use App\Support\PersonnelAccess;
+use App\Support\RequestId;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\JsonResponse;
@@ -29,10 +33,15 @@ class DtrController extends Controller
 {
     private const MANAGER_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder'];
 
+    public function __construct(
+        private readonly DtrCutoffService $cutoffs
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'month' => ['nullable', 'date_format:Y-m'],
+            'period' => ['nullable', Rule::in(DtrPeriod::values())],
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Certified', 'Returned', 'Reopened'])],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -43,19 +52,25 @@ class DtrController extends Controller
 
         $month = Carbon::createFromFormat('Y-m-d', ($validated['month'] ?? now()->format('Y-m')).'-01')
             ->startOfMonth();
-        $monthEnd = $month->copy()->endOfMonth();
-        $cutoff = $month->isSameMonth(now()) ? now()->endOfDay() : $monthEnd;
+        $period = DtrPeriod::normalize($validated['period'] ?? null);
+        [$periodStart, $periodEnd] = DtrPeriod::bounds($month, $period);
+        $todayCutoff = now()->endOfDay();
+        $cutoff = $todayCutoff->lessThan($periodEnd) ? $todayCutoff : $periodEnd;
         $user = $request->user();
         $canManageOthers = PersonnelAccess::canManageOthers($user);
 
         $holidays = Holiday::query()
-            ->whereBetween('holiday_date', [$month->toDateString(), $monthEnd->toDateString()])
+            ->whereBetween('holiday_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
             ->get()
             ->groupBy(fn (Holiday $holiday) => $holiday->holiday_date->toDateString());
 
         $personnelQuery = Personnel::query()
             ->where('status', 'Active')
             ->whereNotNull('department_id')
+            ->when(
+                in_array($period, [DtrPeriod::FIRST_HALF, DtrPeriod::SECOND_HALF], true),
+                fn ($query) => $query->where('personnel_type', 'GIP')
+            )
             ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
             ->when($validated['personnel_ids'] ?? null, fn ($query, array $ids) => $query
                 ->whereIn('personnel_id', $ids))
@@ -68,16 +83,18 @@ class DtrController extends Controller
                         ->orWhere('last_name', 'like', "%{$search}%");
                 });
             })
-            ->when($validated['status'] ?? null, function ($query, string $status) use ($month): void {
+            ->when($validated['status'] ?? null, function ($query, string $status) use ($month, $period): void {
                 if ($status === 'Draft') {
-                    $query->where(function ($query) use ($month): void {
+                    $query->where(function ($query) use ($month, $period): void {
                         $query
                             ->whereDoesntHave('dtrCertifications', fn ($certifications) => $certifications
                                 ->where('dtr_year', $month->year)
-                                ->where('dtr_month', $month->month))
+                                ->where('dtr_month', $month->month)
+                                ->where('dtr_period', $period))
                             ->orWhereHas('dtrCertifications', fn ($certifications) => $certifications
                                 ->where('dtr_year', $month->year)
                                 ->where('dtr_month', $month->month)
+                                ->where('dtr_period', $period)
                                 ->where('certification_status', 'Draft'));
                     });
 
@@ -87,6 +104,7 @@ class DtrController extends Controller
                 $query->whereHas('dtrCertifications', fn ($certifications) => $certifications
                     ->where('dtr_year', $month->year)
                     ->where('dtr_month', $month->month)
+                    ->where('dtr_period', $period)
                     ->where('certification_status', $status));
             });
         $perPage = $validated['per_page'] ?? 25;
@@ -96,12 +114,13 @@ class DtrController extends Controller
         $certificationSummary = DtrCertification::query()
             ->where('dtr_year', $month->year)
             ->where('dtr_month', $month->month)
+            ->where('dtr_period', $period)
             ->whereIn('personnel_id', clone $personnelIds)
             ->selectRaw('certification_status, COUNT(*) as aggregate')
             ->groupBy('certification_status')
             ->pluck('aggregate', 'certification_status');
         $attendanceSummary = AttendanceRecord::query()
-            ->whereBetween('attendance_date', [$month->toDateString(), $monthEnd->toDateString()])
+            ->whereBetween('attendance_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
             ->whereIn('personnel_id', clone $personnelIds)
             ->selectRaw('SUM(CASE WHEN late_minutes > 0 THEN 1 ELSE 0 END) as late_occurrences')
             ->selectRaw("SUM(CASE WHEN attendance_status = 'Half Day' THEN 1 ELSE 0 END) as half_days")
@@ -111,7 +130,7 @@ class DtrController extends Controller
                 ->whereDate('effective_from', '<=', $cutoff)
                 ->where(fn ($dates) => $dates
                     ->whereNull('effective_to')
-                    ->orWhereDate('effective_to', '>=', $month))
+                    ->orWhereDate('effective_to', '>=', $periodStart))
                 ->whereHas('schedule'))
             ->count();
 
@@ -120,13 +139,13 @@ class DtrController extends Controller
                 'department:department_id,department_code,department_name',
                 'scheduleAssignments' => fn ($query) => $query
                     ->with('schedule')
-                    ->whereDate('effective_from', '<=', $monthEnd)
+                    ->whereDate('effective_from', '<=', $periodEnd)
                     ->where(fn ($query) => $query
                         ->whereNull('effective_to')
-                        ->orWhereDate('effective_to', '>=', $month))
+                        ->orWhereDate('effective_to', '>=', $periodStart))
                     ->orderByDesc('effective_from'),
                 'attendanceRecords' => fn ($query) => $query
-                    ->whereBetween('attendance_date', [$month->toDateString(), $monthEnd->toDateString()])
+                    ->whereBetween('attendance_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
                     ->orderBy('attendance_date'),
                 'dtrCertifications' => fn ($query) => $query
                     ->with([
@@ -136,7 +155,8 @@ class DtrController extends Controller
                         'versions.archivedBy:user_id,username',
                     ])
                     ->where('dtr_year', $month->year)
-                    ->where('dtr_month', $month->month),
+                    ->where('dtr_month', $month->month)
+                    ->where('dtr_period', $period),
             ])
             ->orderBy('last_name')
             ->orderBy('first_name')
@@ -146,16 +166,27 @@ class DtrController extends Controller
             ->map(fn (Personnel $person) => $this->buildPersonnelRow(
                 $person,
                 $month,
-                $monthEnd,
+                $periodStart,
+                $periodEnd,
                 $cutoff,
-                $holidays
+                $holidays,
+                $period
             ));
         $workflowReady = (int) ($certificationSummary['Submitted'] ?? 0)
             + (int) ($certificationSummary['Certified'] ?? 0);
+        $periodTimeline = $this->cutoffs->timeline(
+            $this->cutoffs->context($month, $period),
+            null
+        );
+        $outstanding = max(0, $totalPersonnel - $workflowReady);
 
         return response()->json([
             'month' => $month->format('Y-m'),
-            'month_label' => $month->format('F Y'),
+            'month_label' => DtrPeriod::label($month, $period),
+            'period' => $period,
+            'period_label' => DtrPeriod::label($month, $period),
+            'period_start' => $periodStart->toDateString(),
+            'period_end' => $periodEnd->toDateString(),
             'timezone' => config('app.timezone'),
             'can_manage_others' => $canManageOthers,
             'can_certify' => in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true),
@@ -164,6 +195,8 @@ class DtrController extends Controller
             'can_generate' => $user->user_role === 'Administrator',
             'can_request_reopen' => in_array($user->user_role, ['Administrator', 'HR'], true),
             'can_approve_reopen' => $user->user_role === 'Administrator',
+            'can_full_month_override' => in_array($user->user_role, ['Administrator', 'HR'], true),
+            'cutoff' => $periodTimeline,
             'current_user_id' => $user->user_id,
             'data' => $rows,
             'meta' => ['pagination' => [
@@ -182,6 +215,8 @@ class DtrController extends Controller
                 'late_occurrences' => (int) ($attendanceSummary?->late_occurrences ?? 0),
                 'half_days' => (int) ($attendanceSummary?->half_days ?? 0),
                 'schedule_setup_required' => max(0, $totalPersonnel - $coveredPersonnel),
+                'due' => $periodTimeline['state'] === 'due' ? $outstanding : 0,
+                'overdue' => $periodTimeline['state'] === 'overdue' ? $outstanding : 0,
             ],
         ]);
     }
@@ -190,9 +225,12 @@ class DtrController extends Controller
     {
         $validated = $request->validate([
             'month' => ['required', 'date_format:Y-m'],
+            'period' => ['nullable', Rule::in(DtrPeriod::values())],
             'status' => ['required', Rule::in(['Draft', 'Submitted', 'Certified', 'Returned'])],
             'remarks' => ['nullable', 'string', 'max:255'],
+            'full_month_override_reason' => ['nullable', 'string', 'min:10', 'max:500'],
         ]);
+        $validated['period'] = DtrPeriod::normalize($validated['period'] ?? null);
         $user = $request->user();
         $status = $validated['status'];
         $isOwnRecord = (int) $user->personnel_id === (int) $personnel->personnel_id;
@@ -230,16 +268,53 @@ class DtrController extends Controller
         }
 
         [$year, $month] = array_map('intval', explode('-', $validated['month']));
+        $reportMonth = Carbon::create($year, $month, 1)->startOfMonth();
+        $reportingContext = $this->cutoffs->context($reportMonth, $validated['period']);
+        $isGip = $this->cutoffs->isGip($personnel->personnel_type);
+        $isFullMonthOverride = $isGip && $validated['period'] === DtrPeriod::FULL_MONTH;
+
+        if (! $isGip && $validated['period'] !== DtrPeriod::FULL_MONTH) {
+            return response()->json([
+                'message' => 'This personnel type uses monthly DTR reporting. Select Full month.',
+            ], 422);
+        }
+
+        if (
+            $status === 'Submitted'
+            && $isFullMonthOverride
+            && ! in_array($user->user_role, ['Administrator', 'HR'], true)
+        ) {
+            return response()->json([
+                'message' => 'A GIP full-month DTR requires an Administrator or HR override.',
+            ], 403);
+        }
+
         $certificationKey = [
             'personnel_id' => $personnel->personnel_id,
             'dtr_year' => $year,
             'dtr_month' => $month,
+            'dtr_period' => $validated['period'],
         ];
         $monitorRow = null;
 
         if (in_array($status, ['Submitted', 'Certified'], true)) {
+            $conflictingWorkflow = DtrCertification::query()
+                ->where('personnel_id', $personnel->personnel_id)
+                ->where('dtr_year', $year)
+                ->where('dtr_month', $month)
+                ->whereIn('dtr_period', DtrPeriod::conflictingPeriods($validated['period']))
+                ->where('certification_status', '!=', 'Draft')
+                ->exists();
+
+            if ($conflictingWorkflow) {
+                return response()->json([
+                    'message' => 'This month already has an overlapping DTR workflow. Use either the two cutoff periods or one full-month DTR, not both.',
+                ], 409);
+            }
+
             $monitorRequest = Request::create('/api/dtr', 'GET', [
                 'month' => $validated['month'],
+                'period' => $validated['period'],
                 'personnel_ids' => [$personnel->personnel_id],
             ]);
             $monitorRequest->setUserResolver(fn () => $user);
@@ -258,6 +333,28 @@ class DtrController extends Controller
                     'message' => 'Resolve all missing, incomplete, unverified, and unscheduled attendance records before submission or certification.',
                 ], 422);
             }
+
+            if (
+                $status === 'Submitted'
+                && $isFullMonthOverride
+                && blank($validated['full_month_override_reason'] ?? null)
+            ) {
+                return response()->json([
+                    'message' => 'Provide a reason for overriding the standard semi-monthly GIP DTR policy.',
+                    'errors' => [
+                        'full_month_override_reason' => [
+                            'A full-month override reason is required for GIP personnel.',
+                        ],
+                    ],
+                ], 422);
+            }
+
+            if ($status === 'Submitted' && ! $this->cutoffs->timeline($reportingContext, null)['can_submit']) {
+                return response()->json([
+                    'message' => 'This DTR period is still open. It may be submitted on or after '
+                        .$reportingContext['cutoff']->format('F j, Y').'.',
+                ], 422);
+            }
         }
 
         DtrCertification::query()->firstOrCreate(
@@ -271,7 +368,8 @@ class DtrController extends Controller
             $validated,
             $user,
             $request,
-            $monitorRow
+            $monitorRow,
+            $isFullMonthOverride
         ): array {
             $certification = DtrCertification::query()
                 ->where($certificationKey)
@@ -298,7 +396,10 @@ class DtrController extends Controller
             }
 
             $certification->certification_status = $status;
-            $certification->remarks = $validated['remarks'] ?? null;
+            $overrideReason = $isFullMonthOverride && $status === 'Submitted'
+                ? trim((string) $validated['full_month_override_reason'])
+                : null;
+            $certification->remarks = $validated['remarks'] ?? $overrideReason;
 
             if ($status === 'Submitted') {
                 $certification->prepared_by = $user->user_id;
@@ -330,12 +431,29 @@ class DtrController extends Controller
 
             $certification->save();
 
+            if ($overrideReason) {
+                ActivityLog::create([
+                    'user_id' => $user->user_id,
+                    'activity_type' => 'DTR_FULL_MONTH_OVERRIDE',
+                    'description' => Str::limit(
+                        "{$user->username} authorized a full-month GIP DTR override for personnel {$certification->personnel_id}: {$overrideReason}",
+                        500,
+                        ''
+                    ),
+                    'entity_type' => 'dtr_certifications',
+                    'entity_id' => $certification->dtr_certification_id,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+                    'request_id' => RequestId::for($request),
+                ]);
+            }
+
             DtrStatusLog::create([
                 'dtr_certification_id' => $certification->dtr_certification_id,
                 'changed_by' => $user->user_id,
                 'from_status' => $previousStatus,
                 'to_status' => $status,
-                'remarks' => $validated['remarks'] ?? null,
+                'remarks' => $validated['remarks'] ?? $overrideReason,
                 'ip_address' => $request->ip(),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
                 'request_id' => (string) Str::uuid(),
@@ -382,11 +500,14 @@ class DtrController extends Controller
         $batchLimit = max(1, min(100, (int) config('attendance.dtr_sync_batch_limit', 20)));
         $validated = $request->validate([
             'month' => ['required', 'date_format:Y-m'],
+            'period' => ['nullable', Rule::in(DtrPeriod::values())],
             'personnel_ids' => ['nullable', 'array', "max:{$batchLimit}"],
             'personnel_ids.*' => ['integer', 'distinct', 'exists:personnel,personnel_id'],
         ]);
+        $validated['period'] = DtrPeriod::normalize($validated['period'] ?? null);
         $monitorRequest = Request::create('/api/dtr', 'GET', [
             'month' => $validated['month'],
+            'period' => $validated['period'],
             'status' => 'Certified',
             'personnel_ids' => $validated['personnel_ids'] ?? null,
             'per_page' => $batchLimit,
@@ -437,6 +558,7 @@ class DtrController extends Controller
         $certifications = DtrCertification::query()
             ->where('dtr_year', (int) substr($validated['month'], 0, 4))
             ->where('dtr_month', (int) substr($validated['month'], 5, 2))
+            ->where('dtr_period', $validated['period'])
             ->whereIn('personnel_id', $reports->pluck('personnel_id'))
             ->get()
             ->keyBy('personnel_id');
@@ -498,7 +620,7 @@ class DtrController extends Controller
 
         try {
             foreach ($reports as $report) {
-                $downloadName = $this->dtrFileName($report, $validated['month']);
+                $downloadName = $this->dtrFileName($report, $validated['month'], $validated['period']);
                 $path = $generatedDirectory.DIRECTORY_SEPARATOR
                     .$batchId.'-'.$downloadName;
                 $documents[] = [
@@ -518,7 +640,9 @@ class DtrController extends Controller
                 ->deleteFileAfterSend(true);
         }
 
-        $zipPath = $generatedDirectory.DIRECTORY_SEPARATOR."DTR-{$validated['month']}-{$batchId}.zip";
+        $reportMonth = Carbon::createFromFormat('Y-m-d', $validated['month'].'-01');
+        $periodSuffix = DtrPeriod::fileSuffix($reportMonth, $validated['period']);
+        $zipPath = $generatedDirectory.DIRECTORY_SEPARATOR."DTR-{$periodSuffix}-{$batchId}.zip";
         $archive = new ZipArchive;
 
         if ($archive->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
@@ -537,11 +661,11 @@ class DtrController extends Controller
         File::delete(collect($documents)->pluck('path')->all());
 
         return response()
-            ->download($zipPath, "Certified-DTR-{$validated['month']}.zip")
+            ->download($zipPath, "Certified-DTR-{$periodSuffix}.zip")
             ->deleteFileAfterSend(true);
     }
 
-    private function dtrFileName(array $report, string $month): string
+    private function dtrFileName(array $report, string $month, string $period): string
     {
         $personnelName = Str::of($report['full_name'] ?? '')
             ->ascii()
@@ -556,15 +680,20 @@ class DtrController extends Controller
         $version = (int) ($report['certification']['version_number'] ?? 1);
         $amended = $version > 1 ? "-Amended-v{$version}" : '';
 
-        return "DTR-{$personnelName}-{$month}{$amended}.docx";
+        $reportMonth = Carbon::createFromFormat('Y-m-d', $month.'-01');
+        $periodSuffix = DtrPeriod::fileSuffix($reportMonth, $period);
+
+        return "DTR-{$personnelName}-{$periodSuffix}{$amended}.docx";
     }
 
     private function buildPersonnelRow(
         Personnel $person,
         Carbon $month,
-        Carbon $monthEnd,
+        Carbon $periodStart,
+        Carbon $periodEnd,
         Carbon $cutoff,
-        Collection $holidays
+        Collection $holidays,
+        string $period
     ): array {
         $records = $person->attendanceRecords->keyBy(
             fn (AttendanceRecord $record) => $record->attendance_date->toDateString()
@@ -574,7 +703,7 @@ class DtrController extends Controller
         $notCoveredDays = 0;
         $unscheduledRecords = 0;
 
-        foreach (CarbonPeriod::create($month, $monthEnd) as $date) {
+        foreach (CarbonPeriod::create($periodStart, $periodEnd) as $date) {
             if ($date->greaterThan($cutoff)) {
                 continue;
             }
@@ -671,10 +800,11 @@ class DtrController extends Controller
         $coverageStatus = ! $hasScheduleCoverage
             ? 'Missing'
             : ($notCoveredDays > 0 ? 'Partial' : 'Covered');
+        $periodLabel = DtrPeriod::label($month, $period);
         $eligibilityMessage = match ($coverageStatus) {
-            'Missing' => "No effective work schedule covers {$month->format('F Y')}. Assign a schedule with the correct effective date before preparing this DTR.",
-            'Partial' => "Schedule coverage is partial for {$month->format('F Y')}. Dates outside the effective assignment are marked Not Covered.",
-            default => "An effective work schedule covers {$month->format('F Y')}.",
+            'Missing' => "No effective work schedule covers {$periodLabel}. Assign a schedule with the correct effective date before preparing this DTR.",
+            'Partial' => "Schedule coverage is partial for {$periodLabel}. Dates outside the effective assignment are marked Not Covered.",
+            default => "An effective work schedule covers {$periodLabel}.",
         };
 
         if (! $hasScheduleCoverage) {
@@ -691,15 +821,28 @@ class DtrController extends Controller
             ->count();
         $resolvedDays = max(0, $expectedDays - $missingDays - $incompleteDays);
         $certification = $person->dtrCertifications->first();
+        $reportingContext = $this->cutoffs->context($month, $period);
+        $cutoffTimeline = $this->cutoffs->timeline(
+            $reportingContext,
+            $certification?->certification_status
+        );
         $primarySchedule = $coveredSchedules->first();
         $officialHours = $this->formatOfficialHours($primarySchedule);
 
         return [
-            'month_label' => $month->format('F Y'),
+            'month_label' => DtrPeriod::label($month, $period),
+            'period' => $period,
+            'period_label' => DtrPeriod::label($month, $period),
+            'period_start' => $periodStart->toDateString(),
+            'period_end' => $periodEnd->toDateString(),
             'personnel_id' => $person->personnel_id,
             'employee_number' => $person->employee_number,
             'full_name' => $person->full_name,
             'personnel_type' => $person->personnel_type,
+            'reporting_policy' => $this->cutoffs->isGip($person->personnel_type)
+                ? 'semi_monthly'
+                : 'monthly',
+            'cutoff' => $cutoffTimeline,
             'position_title' => $person->position_title,
             'official_hours' => $officialHours,
             'saturday_hours' => $primarySchedule?->saturday ? $officialHours : 'N/A',
@@ -837,6 +980,7 @@ class DtrController extends Controller
 
         return [
             'id' => $certification?->dtr_certification_id,
+            'period' => $certification?->dtr_period ?? DtrPeriod::FULL_MONTH,
             'status' => $certification?->certification_status ?? 'Draft',
             'version_number' => $certification?->version_number ?? 1,
             'is_amended' => ($certification?->version_number ?? 1) > 1,

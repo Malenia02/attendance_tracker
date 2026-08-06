@@ -470,8 +470,8 @@
   }
 
   .qr-scan-corners {
-    width: min(210px, 68vw);
-    height: min(210px, 68vw);
+    width: 82%;
+    height: auto;
   }
 
   .qr-cards-toolbar > div:last-child {

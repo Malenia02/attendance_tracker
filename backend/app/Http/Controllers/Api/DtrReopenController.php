@@ -8,6 +8,7 @@ use App\Models\DtrCertificationVersion;
 use App\Models\DtrReopenRequest;
 use App\Models\DtrStatusLog;
 use App\Models\Personnel;
+use App\Support\DtrPeriod;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -23,10 +24,12 @@ class DtrReopenController extends Controller
     {
         $validated = $request->validate([
             'month' => ['required', 'date_format:Y-m'],
+            'period' => ['nullable', Rule::in(DtrPeriod::values())],
             'reason' => ['required', 'string', 'min:10', 'max:1000'],
             'affected_dates' => ['required', 'array', 'min:1', 'max:31'],
             'affected_dates.*' => ['required', 'date_format:Y-m-d', 'distinct'],
         ]);
+        $validated['period'] = DtrPeriod::normalize($validated['period'] ?? null);
         $user = $request->user();
 
         if (! PersonnelAccess::canAccess($user, $personnel)) {
@@ -40,13 +43,17 @@ class DtrReopenController extends Controller
         }
 
         $month = Carbon::createFromFormat('Y-m-d', $validated['month'].'-01')->startOfMonth();
+        [$periodStart, $periodEnd] = DtrPeriod::bounds($month, $validated['period']);
         $hasOutsideDate = collect($validated['affected_dates'])->contains(
-            fn (string $date) => ! Carbon::createFromFormat('Y-m-d', $date)->isSameMonth($month)
+            fn (string $date) => ! Carbon::createFromFormat('Y-m-d', $date)->betweenIncluded(
+                $periodStart,
+                $periodEnd
+            )
         );
 
         if ($hasOutsideDate) {
             return response()->json([
-                'message' => 'Every affected date must belong to the selected DTR month.',
+                'message' => 'Every affected date must belong to the selected DTR reporting period.',
             ], 422);
         }
 
@@ -54,6 +61,7 @@ class DtrReopenController extends Controller
             ->where('personnel_id', $personnel->personnel_id)
             ->where('dtr_year', $month->year)
             ->where('dtr_month', $month->month)
+            ->where('dtr_period', $validated['period'])
             ->first();
 
         if (! $certification || $certification->certification_status !== 'Certified') {

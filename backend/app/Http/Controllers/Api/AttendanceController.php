@@ -20,6 +20,7 @@ use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -497,12 +498,15 @@ class AttendanceController extends Controller
         }
 
         if ($validated['action'] === 'Approved') {
-            $certification = DtrCertification::query()
-                ->where('personnel_id', $correctionRequest->personnel_id)
-                ->where('dtr_year', $correctionRequest->attendance_date->year)
-                ->where('dtr_month', $correctionRequest->attendance_date->month)
-                ->first();
-            $certificationStatus = $certification?->certification_status;
+            $certifications = $this->dtrCertificationsCoveringDate(
+                $correctionRequest->personnel_id,
+                $correctionRequest->attendance_date
+            );
+            $certification = $certifications->firstWhere('certification_status', 'Reopened');
+            $lockedCertification = $certifications->first(
+                fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+            );
+            $certificationStatus = $lockedCertification?->certification_status;
 
             if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
                 return response()->json([
@@ -789,12 +793,15 @@ class AttendanceController extends Controller
         $attendance->loadMissing(['personnel', 'schedule']);
         Gate::authorize('verify', $attendance);
 
-        $certification = DtrCertification::query()
-            ->where('personnel_id', $attendance->personnel_id)
-            ->where('dtr_year', $attendance->attendance_date->year)
-            ->where('dtr_month', $attendance->attendance_date->month)
-            ->first();
-        $certificationStatus = $certification?->certification_status;
+        $certifications = $this->dtrCertificationsCoveringDate(
+            $attendance->personnel_id,
+            $attendance->attendance_date
+        );
+        $certification = $certifications->firstWhere('certification_status', 'Reopened');
+        $lockedCertification = $certifications->first(
+            fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+        );
+        $certificationStatus = $lockedCertification?->certification_status;
 
         if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
             return response()->json([
@@ -880,12 +887,15 @@ class AttendanceController extends Controller
         foreach ($records as $record) {
             Gate::authorize('verify', $record);
 
-            $certification = DtrCertification::query()
-                ->where('personnel_id', $record->personnel_id)
-                ->where('dtr_year', $record->attendance_date->year)
-                ->where('dtr_month', $record->attendance_date->month)
-                ->first();
-            $certificationStatus = $certification?->certification_status;
+            $certifications = $this->dtrCertificationsCoveringDate(
+                $record->personnel_id,
+                $record->attendance_date
+            );
+            $certification = $certifications->firstWhere('certification_status', 'Reopened');
+            $lockedCertification = $certifications->first(
+                fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+            );
+            $certificationStatus = $lockedCertification?->certification_status;
 
             if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
                 return response()->json([
@@ -954,19 +964,22 @@ class AttendanceController extends Controller
         $personnel = Personnel::query()->where('status', 'Active')->findOrFail($validated['personnel_id']);
         Gate::authorize('correctAttendance', $personnel);
 
-        $certification = DtrCertification::query()
-            ->where('personnel_id', $personnel->personnel_id)
-            ->where('dtr_year', Carbon::parse($date)->year)
-            ->where('dtr_month', Carbon::parse($date)->month)
-            ->first();
+        $certifications = $this->dtrCertificationsCoveringDate(
+            $personnel->personnel_id,
+            Carbon::parse($date)
+        );
+        $certification = $certifications->firstWhere('certification_status', 'Reopened');
+        $lockedCertification = $certifications->first(
+            fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+        );
 
-        if ($certification?->certification_status === 'Certified') {
+        if ($lockedCertification?->certification_status === 'Certified') {
             return response()->json([
                 'message' => 'This DTR is certified and locked. It must be formally reopened before attendance can change.',
             ], 422);
         }
 
-        if ($certification?->certification_status === 'Submitted') {
+        if ($lockedCertification?->certification_status === 'Submitted') {
             return response()->json([
                 'message' => 'Return the submitted DTR for correction before changing its attendance records.',
             ], 422);
@@ -1760,5 +1773,13 @@ class AttendanceController extends Controller
             ->first();
 
         return in_array($attendanceDate, $approvedRequest?->affected_dates ?? [], true);
+    }
+
+    private function dtrCertificationsCoveringDate(int $personnelId, Carbon $date): Collection
+    {
+        return DtrCertification::query()
+            ->where('personnel_id', $personnelId)
+            ->coveringDate($date)
+            ->get();
     }
 }

@@ -14,6 +14,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [credentials, setCredentials] = useState({ username: "", password: "" });
+  const [remember, setRemember] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -39,7 +40,7 @@ export default function Login() {
       const response = await apiFetch("/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
+        body: JSON.stringify({ ...credentials, remember }),
       });
       const payload = await response.json().catch(() => ({}));
 
@@ -139,6 +140,17 @@ export default function Login() {
                 {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
               </button>
             </div>
+
+            <label className="remember-option" htmlFor="remember">
+              <input
+                id="remember"
+                name="remember"
+                type="checkbox"
+                checked={remember}
+                onChange={(event) => setRemember(event.target.checked)}
+              />
+              <span>Keep me signed in for 15 days on this private device</span>
+            </label>
 
             <button type="submit" className="login-submit" disabled={submitting}>
               {submitting ? "Signing in…" : "Sign in"}

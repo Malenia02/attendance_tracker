@@ -54,6 +54,8 @@ services:
         value: database
       - key: SESSION_LIFETIME
         value: "120"
+      - key: AUTH_REMEMBER_DURATION
+        value: "21600"
       - key: SESSION_ENCRYPT
         value: "true"
       - key: SESSION_SECURE_COOKIE
@@ -78,6 +80,10 @@ services:
         value: "30"
       - key: DTR_SYNC_BATCH_LIMIT
         value: "20"
+      - key: DTR_SUBMISSION_GRACE_DAYS
+        value: "2"
+      - key: DTR_REMINDER_DAYS_BEFORE
+        value: "3"
       - key: FILESYSTEM_DISK
         value: local
       - key: DTR_SIGNING_KEY

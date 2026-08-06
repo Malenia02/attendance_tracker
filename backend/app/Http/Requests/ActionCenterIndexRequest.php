@@ -13,6 +13,7 @@ final class ActionCenterIndexRequest extends FormRequest
         'correction_requests',
         'leave_requests',
         'returned_dtrs',
+        'dtr_cutoffs',
         'expiring_qr_cards',
         'workforce_gaps',
     ];

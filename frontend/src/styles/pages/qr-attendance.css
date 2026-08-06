@@ -369,8 +369,9 @@
   position: absolute;
   pointer-events: none;
   inset: 50%;
-  width: 210px;
-  height: 210px;
+  width: min(82%, 360px);
+  aspect-ratio: 1;
+  height: auto;
   transform: translate(-50%, -50%);
 }
 

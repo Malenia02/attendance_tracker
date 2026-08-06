@@ -11,6 +11,7 @@ use App\Models\LeaveRecord;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Models\User;
+use App\Support\DtrPeriod;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
@@ -104,10 +105,16 @@ final class RoleDashboardService
                 'date_to' => $leave->date_to->toDateString(),
                 'status' => $leave->approval_status,
             ]);
+        $currentDtrPeriod = now()->day <= 15 ? DtrPeriod::FIRST_HALF : DtrPeriod::SECOND_HALF;
         $dtr = DtrCertification::query()
             ->where('personnel_id', $personnel->personnel_id)
             ->where('dtr_year', $monthStart->year)
             ->where('dtr_month', $monthStart->month)
+            ->whereIn('dtr_period', [$currentDtrPeriod, DtrPeriod::FULL_MONTH])
+            ->orderByRaw(
+                'CASE WHEN dtr_period = ? THEN 0 WHEN dtr_period = ? THEN 1 ELSE 2 END',
+                [$currentDtrPeriod, DtrPeriod::FULL_MONTH]
+            )
             ->latest('version_number')
             ->first();
         $recentAttendance = (clone $attendanceQuery)
@@ -149,6 +156,7 @@ final class RoleDashboardService
                 ],
                 'dtr' => [
                     'status' => $dtr?->certification_status ?? 'Not started',
+                    'period' => $dtr?->dtr_period ?? $currentDtrPeriod,
                     'version' => $dtr?->version_number,
                     'updated_at' => $dtr?->updated_at?->toISOString(),
                 ],

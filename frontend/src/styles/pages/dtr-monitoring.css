@@ -87,6 +87,7 @@
 }
 
 .dtr-hero-actions input,
+.dtr-hero-actions select,
 .dtr-hero-actions button {
   height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.23);
@@ -317,6 +318,35 @@
   border-radius: inherit;
   background: linear-gradient(90deg, #3155c6, #20a765);
   transition: width 0.45s ease;
+}
+
+.dtr-cutoff-hero {
+  position: relative;
+  z-index: 2;
+  max-width: 210px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(6, 27, 67, 0.2);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.dtr-cutoff-hero.overdue {
+  border-color: rgba(255, 190, 185, 0.55);
+  background: rgba(160, 28, 25, 0.28);
+}
+
+.dtr-hero-actions select {
+  min-width: 175px;
+  padding: 0 34px 0 12px;
+  color-scheme: dark;
+}
+
+.dtr-hero-actions select option {
+  color: #0b2f66;
+  background: #ffffff;
 }
 
 .dtr-progress.unavailable strong {
@@ -639,6 +669,49 @@
 
 .dtr-verification.verified {
   color: #158754;
+}
+
+.dtr-cutoff-notice {
+  margin: 0 24px 14px;
+  padding: 11px 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgba(49, 85, 198, 0.2);
+  border-radius: 9px;
+  color: #3155c6;
+  background: rgba(49, 85, 198, 0.06);
+}
+
+.dtr-cutoff-notice.due,
+.dtr-cutoff-notice.action_required {
+  color: #9a4b08;
+  border-color: rgba(202, 113, 23, 0.25);
+  background: rgba(248, 155, 55, 0.08);
+}
+
+.dtr-cutoff-notice.overdue {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.25);
+  background: rgba(180, 35, 24, 0.07);
+}
+
+.dtr-cutoff-notice strong,
+.dtr-cutoff-notice p {
+  display: block;
+  margin: 0;
+}
+
+.dtr-cutoff-notice strong {
+  color: inherit;
+  font-size: 9px;
+}
+
+.dtr-cutoff-notice p {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 8px;
+  line-height: 1.45;
 }
 
 .dtr-verification.not-applicable {
@@ -1271,6 +1344,23 @@
   background: rgba(180, 35, 24, 0.06);
 }
 
+.dtr-override-form {
+  border-color: rgba(49, 85, 198, 0.25);
+}
+
+.dtr-override-form > small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 7px;
+}
+
+.dtr-return-form button.confirm-override {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(120deg, #3155c6, #168d70);
+}
+
 .dtr-detail-actions .reopen {
   color: #9a4b08;
   border-color: rgba(217, 119, 6, 0.22);
@@ -1310,6 +1400,7 @@
 
   .dtr-hero-actions label,
   .dtr-hero-actions input,
+  .dtr-hero-actions select,
   .dtr-hero-actions button {
     flex: 1;
   }

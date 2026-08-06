@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   AlertCircle,
   Archive,
@@ -33,6 +33,10 @@ function currentMonthKey() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function currentDtrPeriod() {
+  return new Date().getDate() <= 15 ? "first_half" : "second_half";
+}
+
 function formatMinutes(value) {
   const minutes = Number(value) || 0;
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
@@ -59,7 +63,18 @@ async function readResponse(response) {
 
 export default function DtrMonitoring() {
   const navigate = useNavigate();
-  const [month, setMonth] = useState(currentMonthKey);
+  const [searchParams] = useSearchParams();
+  const requestedMonth = searchParams.get("month");
+  const requestedPeriod = searchParams.get("period");
+  const requestedStatus = searchParams.get("status");
+  const [month, setMonth] = useState(
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth || "") ? requestedMonth : currentMonthKey,
+  );
+  const [period, setPeriod] = useState(
+    ["first_half", "second_half", "full_month"].includes(requestedPeriod)
+      ? requestedPeriod
+      : currentDtrPeriod,
+  );
   const [rows, setRows] = useState([]);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
@@ -71,6 +86,8 @@ export default function DtrMonitoring() {
     late_occurrences: 0,
     half_days: 0,
     schedule_setup_required: 0,
+    due: 0,
+    overdue: 0,
   });
   const [meta, setMeta] = useState({
     month_label: "",
@@ -81,9 +98,15 @@ export default function DtrMonitoring() {
     can_manage_others: false,
     can_request_reopen: false,
     can_approve_reopen: false,
+    can_full_month_override: false,
+    cutoff: null,
   });
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(
+    ["Draft", "Submitted", "Certified", "Returned", "Reopened"].includes(requestedStatus)
+      ? requestedStatus
+      : "",
+  );
   const [readinessFilter, setReadinessFilter] = useState("");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -100,6 +123,7 @@ export default function DtrMonitoring() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({
         month,
+        period,
         page: String(page),
         per_page: "25",
       });
@@ -121,6 +145,8 @@ export default function DtrMonitoring() {
           can_manage_others: payload.can_manage_others,
           can_request_reopen: payload.can_request_reopen,
           can_approve_reopen: payload.can_approve_reopen,
+          can_full_month_override: payload.can_full_month_override,
+          cutoff: payload.cutoff,
         });
         setSelectedIds((current) => current.filter(
           (id) => payload.data.some(
@@ -146,7 +172,7 @@ export default function DtrMonitoring() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [month, search, statusFilter, page, refreshKey]);
+  }, [month, period, search, statusFilter, page, refreshKey]);
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -169,7 +195,7 @@ export default function DtrMonitoring() {
     [filteredRows],
   );
 
-  async function updateStatus(row, status, remarks = null) {
+  async function updateStatus(row, status, remarks = null, fullMonthOverrideReason = null) {
     setBusyId(row.personnel_id);
     setError("");
 
@@ -177,7 +203,13 @@ export default function DtrMonitoring() {
       const payload = await apiFetch(`/dtr/${row.personnel_id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month, status, remarks }),
+        body: JSON.stringify({
+          month,
+          period,
+          status,
+          remarks,
+          full_month_override_reason: fullMonthOverrideReason,
+        }),
       }).then(readResponse);
 
       setNotice(payload.message);
@@ -229,6 +261,7 @@ export default function DtrMonitoring() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           month,
+          period,
           reason,
           affected_dates: affectedDates,
         }),
@@ -323,7 +356,7 @@ export default function DtrMonitoring() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = `DTR-Monitoring-${month}.csv`;
+    link.download = `DTR-Monitoring-${month}-${period}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -341,7 +374,7 @@ export default function DtrMonitoring() {
       const response = await apiFetch("/dtr/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month, personnel_ids: personnelIds }),
+        body: JSON.stringify({ month, period, personnel_ids: personnelIds }),
       });
 
       if (!response.ok) {
@@ -352,7 +385,7 @@ export default function DtrMonitoring() {
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") || "";
       const matchedName = disposition.match(/filename="?([^";]+)"?/i);
-      const filename = matchedName?.[1] || `DTR-${month}.docx`;
+      const filename = matchedName?.[1] || `DTR-${month}-${period}.docx`;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -392,16 +425,23 @@ export default function DtrMonitoring() {
     { label: "Late Records", value: summary.late_occurrences, icon: Clock3, tone: "red" },
     { label: "Half Days", value: summary.half_days, icon: FileClock, tone: "cyan" },
     { label: "Schedule Setup", value: summary.schedule_setup_required || 0, icon: CalendarX2, tone: "orange" },
+    { label: "Due", value: summary.due || 0, icon: CalendarRange, tone: "cyan" },
+    { label: "Overdue", value: summary.overdue || 0, icon: AlertCircle, tone: "red" },
   ];
 
   return (
     <section className="dtr-page">
       <header className="dtr-hero">
         <div>
-          <span><CalendarRange size={14} /> Monthly attendance control</span>
+          <span><CalendarRange size={14} /> Cutoff attendance control</span>
           <h1>DTR Monitoring</h1>
-          <p>Track completeness, attendance exceptions, verification, and certification in one place.</p>
+          <p>Prepare the 1st–15th or 16th–month-end GIP cutoff, with full-month reporting available when needed.</p>
         </div>
+        {meta.cutoff && (
+          <small className={`dtr-cutoff-hero ${meta.cutoff.state}`}>
+            {meta.cutoff.message} Submission deadline: {meta.cutoff.deadline_date}.
+          </small>
+        )}
         <div className="dtr-hero-actions">
           <label>
             <small>Reporting month</small>
@@ -416,6 +456,24 @@ export default function DtrMonitoring() {
                 setPage(1);
               }}
             />
+          </label>
+          <label>
+            <small>Reporting period</small>
+            <select
+              value={period}
+              onChange={(event) => {
+                setLoading(true);
+                setError("");
+                setPeriod(event.target.value);
+                setSelectedIds([]);
+                setSelected(null);
+                setPage(1);
+              }}
+            >
+              <option value="first_half">1st–15th</option>
+              <option value="second_half">16th–month end</option>
+              <option value="full_month">Full month (optional)</option>
+            </select>
           </label>
           <button type="button" onClick={exportCsv} disabled={!filteredRows.length}>
             <Download size={17} /> Export CSV
@@ -457,7 +515,7 @@ export default function DtrMonitoring() {
       <div className="panel dtr-monitor-panel">
         <div className="dtr-panel-header">
           <div>
-            <span>Monthly register</span>
+            <span>DTR reporting period</span>
             <h2>{meta.month_label || "DTR records"}</h2>
           </div>
           <div className="dtr-filters">
@@ -605,10 +663,13 @@ export default function DtrMonitoring() {
           canCorrect={meta.can_correct_attendance}
           canRequestReopen={meta.can_request_reopen}
           canApproveReopen={meta.can_approve_reopen}
+          canFullMonthOverride={meta.can_full_month_override}
           busy={busyId === selected.personnel_id}
           exceptionBusy={exceptionBusy}
           onClose={() => setSelected(null)}
-          onStatus={(status, remarks) => updateStatus(selected, status, remarks)}
+          onStatus={(status, remarks, overrideReason) => (
+            updateStatus(selected, status, remarks, overrideReason)
+          )}
           onCorrect={(day, values) => correctAttendance(selected, day, values)}
           onVerifyBulk={verifyAttendanceBulk}
           onRequestReopen={(reason, dates) => requestReopen(selected, reason, dates)}
@@ -633,6 +694,7 @@ function DtrDetails({
   canCorrect,
   canRequestReopen,
   canApproveReopen,
+  canFullMonthOverride,
   busy,
   exceptionBusy,
   onClose,
@@ -645,8 +707,10 @@ function DtrDetails({
   onManageSchedule,
 }) {
   const [showReturnForm, setShowReturnForm] = useState(false);
+  const [showOverrideForm, setShowOverrideForm] = useState(false);
   const [showReopenForm, setShowReopenForm] = useState(false);
   const [returnReason, setReturnReason] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
   const [reopenReason, setReopenReason] = useState("");
   const [affectedDates, setAffectedDates] = useState([]);
   const [rejectionRequestId, setRejectionRequestId] = useState(null);
@@ -679,6 +743,11 @@ function DtrDetails({
   const reopenRequests = row.certification.reopen_requests || [];
   const archivedVersions = row.certification.versions || [];
   const pendingReopen = reopenRequests.find((request) => request.status === "Pending");
+  const requiresFullMonthOverride = row.personnel_type?.toUpperCase() === "GIP"
+    && row.period === "full_month";
+  const canSubmit = row.is_ready
+    && row.cutoff?.can_submit !== false
+    && (!requiresFullMonthOverride || canFullMonthOverride);
 
   function toggleAffectedDate(date) {
     setAffectedDates((current) => current.includes(date)
@@ -717,6 +786,16 @@ function DtrDetails({
           <div><small>Late total</small><strong>{formatDuration(row.late_minutes)}</strong></div>
           <div><small>Completion</small><strong>{row.completion_percent === null ? "N/A" : `${row.completion_percent}%`}</strong></div>
         </div>
+
+        {row.cutoff && (
+          <div className={`dtr-cutoff-notice ${row.cutoff.state}`}>
+            <CalendarRange size={19} />
+            <div>
+              <strong>{row.cutoff.label} · cutoff {row.cutoff.cutoff_date}</strong>
+              <p>{row.cutoff.message} Submission deadline: {row.cutoff.deadline_date}.</p>
+            </div>
+          </div>
+        )}
 
         {eligibility.code === "no_schedule" && (
           <div className="dtr-schedule-notice missing">
@@ -970,6 +1049,39 @@ function DtrDetails({
           </div>
         )}
 
+        {showOverrideForm && (
+          <div className="dtr-return-form dtr-override-form">
+            <label htmlFor="dtr-override-reason">Reason for using a full-month GIP DTR</label>
+            <textarea
+              id="dtr-override-reason"
+              value={overrideReason}
+              onChange={(event) => setOverrideReason(event.target.value)}
+              minLength={10}
+              maxLength={500}
+              placeholder="Explain why this personnel is not using the standard semi-monthly cutoff..."
+              autoFocus
+            />
+            <small>{overrideReason.trim().length}/500 characters · minimum 10</small>
+            <div>
+              <button type="button" onClick={() => setShowOverrideForm(false)}>Cancel</button>
+              <button
+                type="button"
+                className="confirm-override"
+                disabled={busy || overrideReason.trim().length < 10}
+                onClick={async () => {
+                  const updated = await onStatus("Submitted", null, overrideReason.trim());
+                  if (updated) {
+                    setShowOverrideForm(false);
+                    setOverrideReason("");
+                  }
+                }}
+              >
+                Authorize and submit
+              </button>
+            </div>
+          </div>
+        )}
+
         {showReopenForm && (
           <div className="dtr-reopen-form">
             <header>
@@ -1094,12 +1206,22 @@ function DtrDetails({
               <button
                 type="button"
                 className="submit"
-                disabled={busy || !row.is_ready}
-                title={!row.is_ready ? eligibility.message : ""}
-                onClick={() => onStatus("Submitted")}
+                disabled={busy || !canSubmit}
+                title={!row.is_ready
+                  ? eligibility.message
+                  : row.cutoff?.can_submit === false
+                    ? row.cutoff.message
+                    : requiresFullMonthOverride && !canFullMonthOverride
+                      ? "Only Administrator or HR may authorize a full-month GIP DTR."
+                      : ""}
+                onClick={() => requiresFullMonthOverride
+                  ? setShowOverrideForm(true)
+                  : onStatus("Submitted")}
               >
                 <FileCheck2 size={15} />
-                {row.certification.status === "Draft" ? "Submit DTR" : "Submit amended DTR"}
+                {requiresFullMonthOverride
+                  ? "Authorize full-month DTR"
+                  : row.certification.status === "Draft" ? "Submit DTR" : "Submit amended DTR"}
               </button>
             )}
             {row.certification.status === "Submitted" && canCertify && (

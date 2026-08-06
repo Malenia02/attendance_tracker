@@ -165,6 +165,7 @@ class LeaveRequestWorkflowSecurityTest extends TestCase
             $table->unsignedBigInteger('personnel_id');
             $table->unsignedSmallInteger('dtr_year');
             $table->unsignedTinyInteger('dtr_month');
+            $table->string('dtr_period')->default('full_month');
             $table->string('certification_status')->default('Draft');
             $table->timestamps();
         });

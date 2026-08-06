@@ -27,4 +27,9 @@ return [
     // The free Render web service has limited CPU/RAM and no dedicated queue
     // worker. Keep synchronous document batches deliberately small.
     'dtr_sync_batch_limit' => (int) env('DTR_SYNC_BATCH_LIMIT', 20),
+
+    // DTRs become due on the period cutoff and overdue after this grace
+    // window. Notifications begin shortly before the cutoff.
+    'dtr_submission_grace_days' => (int) env('DTR_SUBMISSION_GRACE_DAYS', 2),
+    'dtr_reminder_days_before' => (int) env('DTR_REMINDER_DAYS_BEFORE', 3),
 ];

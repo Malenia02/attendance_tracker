@@ -26,6 +26,7 @@ const QUEUE_ICONS = {
   correction_requests: FileWarning,
   leave_requests: CalendarClock,
   returned_dtrs: FileCheck2,
+  dtr_cutoffs: CalendarClock,
   expiring_qr_cards: IdCard,
   workforce_gaps: UserRoundCog,
 };
@@ -38,6 +39,7 @@ const ROLE_QUEUES = {
     "missing_time_outs",
     "leave_requests",
     "returned_dtrs",
+    "dtr_cutoffs",
   ],
 };
 

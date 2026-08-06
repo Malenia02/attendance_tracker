@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\ActivityLog;
 use App\Models\User;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -26,6 +28,7 @@ class SecurityAuthenticationTest extends TestCase
             $table->unsignedBigInteger('personnel_id')->nullable()->unique();
             $table->string('username')->unique();
             $table->string('password_hash');
+            $table->rememberToken();
             $table->string('user_role')->default('Personnel');
             $table->string('status')->default('Active');
             $table->unsignedSmallInteger('failed_login_attempts')->default(0);
@@ -104,6 +107,55 @@ class SecurityAuthenticationTest extends TestCase
             ->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.username', 'session-user');
+    }
+
+    public function test_remember_me_uses_a_persistent_cookie_with_the_configured_lifetime(): void
+    {
+        config(['auth.remember_duration' => 21600]);
+        $user = $this->createUser('remembered-user', 'Active');
+
+        $response = $this
+            ->withHeader('Referer', 'http://localhost/login')
+            ->postJson('/api/auth/login', [
+                'username' => $user->username,
+                'password' => 'Strong-Test-Password!2026',
+                'remember' => true,
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('remembered', true);
+
+        $user->refresh();
+        $this->assertNotNull($user->getRememberToken());
+
+        /** @var SessionGuard $guard */
+        $guard = Auth::guard('web');
+        $rememberCookie = collect($response->headers->getCookies())
+            ->first(fn ($cookie) => $cookie->getName() === $guard->getRecallerName());
+
+        $this->assertNotNull($rememberCookie);
+        $this->assertGreaterThan(
+            now()->addDays(14)->timestamp,
+            $rememberCookie->getExpiresTime()
+        );
+        $this->assertLessThanOrEqual(
+            now()->addDays(15)->addMinute()->timestamp,
+            $rememberCookie->getExpiresTime()
+        );
+    }
+
+    public function test_login_rejects_a_non_boolean_remember_value(): void
+    {
+        $user = $this->createUser('invalid-remember-user', 'Active');
+
+        $this->postJson('/api/auth/login', [
+            'username' => $user->username,
+            'password' => 'Strong-Test-Password!2026',
+            'remember' => 'fifteen-days',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('remember');
     }
 
     public function test_unknown_and_inactive_accounts_receive_the_same_generic_response(): void
@@ -239,6 +291,7 @@ class SecurityAuthenticationTest extends TestCase
         $administrator = $this->createUser('security-admin', 'Active');
         $administrator->forceFill(['user_role' => 'Administrator'])->save();
         $victim = $this->createUser('session-victim', 'Active');
+        $victim->forceFill(['remember_token' => 'original-remember-token'])->save();
 
         DB::table('sessions')->insert([
             'id' => 'victim-session',
@@ -264,6 +317,10 @@ class SecurityAuthenticationTest extends TestCase
 
         $this->assertDatabaseMissing('sessions', ['user_id' => $victim->user_id]);
         $this->assertDatabaseMissing('user_access_tokens', ['user_id' => $victim->user_id]);
+        $this->assertNotSame(
+            'original-remember-token',
+            $victim->refresh()->getRememberToken()
+        );
     }
 
     public function test_activity_log_records_cannot_be_modified_through_eloquent(): void

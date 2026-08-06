@@ -100,6 +100,7 @@ class ActionCenterSecurityTest extends TestCase
             $table->unsignedBigInteger('personnel_id');
             $table->unsignedSmallInteger('dtr_year');
             $table->unsignedTinyInteger('dtr_month');
+            $table->string('dtr_period')->default('full_month');
             $table->string('certification_status')->default('Draft');
             $table->string('remarks')->nullable();
             $table->timestamps();
@@ -213,6 +214,7 @@ class ActionCenterSecurityTest extends TestCase
         $this->assertSame(1, $counts['correction_requests']);
         $this->assertSame(1, $counts['leave_requests']);
         $this->assertSame(1, $counts['returned_dtrs']);
+        $this->assertSame(1, $counts['dtr_cutoffs']);
         $this->assertSame(1, $counts['expiring_qr_cards']);
         $this->assertSame(1, $counts['workforce_gaps']);
         $this->assertSame($unassignedId, DB::table('personnel')->whereNull('department_id')->value('personnel_id'));
@@ -242,6 +244,7 @@ class ActionCenterSecurityTest extends TestCase
             'missing_time_outs',
             'leave_requests',
             'returned_dtrs',
+            'dtr_cutoffs',
         ], $keys->all());
 
         $this->actingAs($supervisor)

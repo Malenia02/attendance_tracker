@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
 use App\Support\RequestId;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,6 +25,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'username' => ['required', 'string', 'max:100'],
             'password' => ['required', 'string', 'max:255'],
+            'remember' => ['sometimes', 'boolean'],
         ]);
 
         $user = User::query()
@@ -93,7 +95,12 @@ class AuthController extends Controller
 
         $user->forceFill($successfulLoginChanges)->save();
 
-        Auth::guard('web')->login($user);
+        $remember = (bool) ($validated['remember'] ?? false);
+        $rememberDuration = max(60, (int) config('auth.remember_duration', 21600));
+        /** @var SessionGuard $guard */
+        $guard = Auth::guard('web');
+        $guard->setRememberDuration($rememberDuration);
+        $guard->login($user, $remember);
         $request->session()->regenerate();
         $user->accessTokens()->delete();
 
@@ -107,6 +114,10 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Signed in successfully.',
             'user' => $this->formatUser($user),
+            'remembered' => $remember,
+            'remember_expires_at' => $remember
+                ? now()->addMinutes($rememberDuration)->toISOString()
+                : null,
         ]);
     }
 

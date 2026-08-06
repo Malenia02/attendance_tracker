@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\DtrPeriod;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -16,6 +19,7 @@ class DtrCertification extends Model
         'personnel_id',
         'dtr_year',
         'dtr_month',
+        'dtr_period',
         'version_number',
         'prepared_by',
         'certified_by',
@@ -26,6 +30,14 @@ class DtrCertification extends Model
         'certified_snapshot',
         'certified_hash',
     ];
+
+    public function scopeCoveringDate(Builder $query, Carbon $date): Builder
+    {
+        return $query
+            ->where('dtr_year', $date->year)
+            ->where('dtr_month', $date->month)
+            ->whereIn('dtr_period', DtrPeriod::periodsCoveringDate($date));
+    }
 
     protected $casts = [
         'dtr_year' => 'integer',

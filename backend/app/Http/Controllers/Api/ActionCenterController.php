@@ -10,6 +10,8 @@ use App\Models\DtrCertification;
 use App\Models\LeaveRecord;
 use App\Models\Personnel;
 use App\Models\User;
+use App\Services\DtrCutoffService;
+use App\Support\DtrPeriod;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,6 +19,10 @@ use Illuminate\Http\JsonResponse;
 
 final class ActionCenterController extends Controller
 {
+    public function __construct(
+        private readonly DtrCutoffService $cutoffs
+    ) {}
+
     private const QUEUES = [
         'attendance_verification' => [
             'label' => 'Attendance verification',
@@ -40,7 +46,12 @@ final class ActionCenterController extends Controller
         ],
         'returned_dtrs' => [
             'label' => 'Returned DTRs',
-            'description' => 'Returned monthly DTRs that require personnel action and resubmission.',
+            'description' => 'Returned DTR reporting periods that require personnel action and resubmission.',
+            'roles' => ['Administrator', 'HR', 'Supervisor'],
+        ],
+        'dtr_cutoffs' => [
+            'label' => 'DTR cutoff deadlines',
+            'description' => 'Due and overdue DTR periods that have not been submitted or certified.',
             'roles' => ['Administrator', 'HR', 'Supervisor'],
         ],
         'expiring_qr_cards' => [
@@ -117,6 +128,7 @@ final class ActionCenterController extends Controller
             'correction_requests' => $this->correctionRequestQuery($user, $search),
             'leave_requests' => $this->leaveRequestQuery($user, $search),
             'returned_dtrs' => $this->returnedDtrQuery($user, $search),
+            'dtr_cutoffs' => $this->cutoffs->outstandingQuery($user, $search),
             'expiring_qr_cards' => $this->expiringQrQuery($user, $search),
             'workforce_gaps' => $this->workforceGapQuery($user, $search),
         };
@@ -327,12 +339,16 @@ final class ActionCenterController extends Controller
                 ...$base,
                 'date' => Carbon::create($item->dtr_year, $item->dtr_month, 1)->toDateString(),
                 'status' => $item->certification_status,
-                'detail' => Carbon::create($item->dtr_year, $item->dtr_month, 1)->format('F Y')
+                'detail' => DtrPeriod::label(
+                    Carbon::create($item->dtr_year, $item->dtr_month, 1),
+                    $item->dtr_period
+                )
                     .($item->remarks ? ' · '.$item->remarks : ''),
                 'action_label' => 'Open DTR',
                 'action_url' => '/dtr?month='.sprintf('%04d-%02d', $item->dtr_year, $item->dtr_month)
-                    .'&status=Returned',
+                    .'&period='.$item->dtr_period.'&status=Returned',
             ],
+            'dtr_cutoffs' => $this->formatDtrCutoff($base, $personnel),
             'expiring_qr_cards' => [
                 ...$base,
                 'date' => $item->qr_valid_until->toDateString(),
@@ -373,6 +389,23 @@ final class ActionCenterController extends Controller
         }
 
         return 'No current active work schedule is assigned.';
+    }
+
+    private function formatDtrCutoff(array $base, Personnel $personnel): array
+    {
+        $context = $this->cutoffs->latestDueContext($personnel);
+        $certification = $this->cutoffs->certificationFor($personnel, $context);
+        $timeline = $this->cutoffs->timeline($context, $certification?->certification_status);
+
+        return [
+            ...$base,
+            'date' => $timeline['deadline_date'],
+            'status' => $timeline['label'],
+            'detail' => $context['label'].' · '.$timeline['message']
+                .' Deadline: '.$context['deadline']->format('F j, Y').'.',
+            'action_label' => 'Open DTR',
+            'action_url' => '/dtr?month='.$context['month'].'&period='.$context['period'],
+        ];
     }
 
     private function scopeLabel(User $user): string

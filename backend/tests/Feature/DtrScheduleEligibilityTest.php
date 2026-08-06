@@ -133,6 +133,7 @@ class DtrScheduleEligibilityTest extends TestCase
             $table->unsignedBigInteger('personnel_id');
             $table->unsignedSmallInteger('dtr_year');
             $table->unsignedTinyInteger('dtr_month');
+            $table->string('dtr_period')->default('full_month');
             $table->unsignedSmallInteger('version_number')->default(1);
             $table->unsignedBigInteger('prepared_by')->nullable();
             $table->unsignedBigInteger('certified_by')->nullable();
@@ -293,6 +294,179 @@ class DtrScheduleEligibilityTest extends TestCase
             );
 
         $this->assertDatabaseCount('dtr_certifications', 0);
+    }
+
+    public function test_dtr_register_supports_both_cutoffs_and_optional_full_month(): void
+    {
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-07-01',
+            'created_by' => $administrator->user_id,
+        ]);
+
+        $firstHalf = $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-07&period=first_half')
+            ->assertOk()
+            ->assertJsonPath('period', 'first_half')
+            ->assertJsonPath('period_start', '2026-07-01')
+            ->assertJsonPath('period_end', '2026-07-15')
+            ->json('data.0.daily_records');
+
+        $secondHalf = $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-07&period=second_half')
+            ->assertOk()
+            ->assertJsonPath('period', 'second_half')
+            ->assertJsonPath('period_start', '2026-07-16')
+            ->assertJsonPath('period_end', '2026-07-31')
+            ->json('data.0.daily_records');
+
+        $fullMonth = $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-07&period=full_month')
+            ->assertOk()
+            ->assertJsonPath('period', 'full_month')
+            ->json('data.0.daily_records');
+
+        $this->assertCount(15, $firstHalf);
+        $this->assertSame(1, $firstHalf[0]['day_number']);
+        $this->assertSame(15, $firstHalf[14]['day_number']);
+        $this->assertCount(16, $secondHalf);
+        $this->assertSame(16, $secondHalf[0]['day_number']);
+        $this->assertSame(31, $secondHalf[15]['day_number']);
+        $this->assertCount(31, $fullMonth);
+    }
+
+    public function test_half_month_workflow_is_stored_separately_and_blocks_overlapping_full_month(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-15 19:00:00', 'Asia/Manila'));
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-08-01',
+            'created_by' => $administrator->user_id,
+        ]);
+        foreach (['03', '04', '05', '06', '10', '11', '12', '13'] as $day) {
+            AttendanceRecord::create([
+                'personnel_id' => $personnel->personnel_id,
+                'schedule_id' => $schedule->schedule_id,
+                'attendance_date' => "2026-08-{$day}",
+                'morning_time_in' => "2026-08-{$day} 07:00:00",
+                'morning_time_out' => "2026-08-{$day} 12:00:00",
+                'afternoon_time_in' => "2026-08-{$day} 13:00:00",
+                'afternoon_time_out' => "2026-08-{$day} 18:00:00",
+                'attendance_status' => 'Present',
+                'total_work_minutes' => 600,
+                'is_verified' => true,
+            ]);
+        }
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-08',
+                'period' => 'first_half',
+                'status' => 'Submitted',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('dtr_certifications', [
+            'personnel_id' => $personnel->personnel_id,
+            'dtr_year' => 2026,
+            'dtr_month' => 8,
+            'dtr_period' => 'first_half',
+            'certification_status' => 'Submitted',
+        ]);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-08',
+                'period' => 'full_month',
+                'status' => 'Submitted',
+            ])
+            ->assertConflict()
+            ->assertJsonPath(
+                'message',
+                'This month already has an overlapping DTR workflow. Use either the two cutoff periods or one full-month DTR, not both.'
+            );
+    }
+
+    public function test_gip_full_month_submission_requires_an_authorized_reason_and_respects_cutoff(): void
+    {
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-08-01',
+            'created_by' => $administrator->user_id,
+        ]);
+        AttendanceRecord::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'attendance_date' => '2026-08-03',
+            'morning_time_in' => '2026-08-03 07:00:00',
+            'morning_time_out' => '2026-08-03 12:00:00',
+            'afternoon_time_in' => '2026-08-03 13:00:00',
+            'afternoon_time_out' => '2026-08-03 18:00:00',
+            'attendance_status' => 'Present',
+            'total_work_minutes' => 600,
+            'is_verified' => true,
+        ]);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-08',
+                'period' => 'full_month',
+                'status' => 'Submitted',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Provide a reason for overriding the standard semi-monthly GIP DTR policy.'
+            );
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-08',
+                'period' => 'full_month',
+                'status' => 'Submitted',
+                'full_month_override_reason' => 'The office approved one consolidated DTR for this assignment.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'This DTR period is still open. It may be submitted on or after August 31, 2026.'
+            );
+
+        $this->assertDatabaseMissing('dtr_certifications', [
+            'personnel_id' => $personnel->personnel_id,
+            'dtr_year' => 2026,
+            'dtr_month' => 8,
+        ]);
+    }
+
+    public function test_non_gip_personnel_cannot_use_a_half_month_period(): void
+    {
+        [$administrator, $personnel] = $this->records();
+        $personnel->update(['personnel_type' => 'Regular']);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-08',
+                'period' => 'first_half',
+                'status' => 'Submitted',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'This personnel type uses monthly DTR reporting. Select Full month.'
+            );
     }
 
     private function records(): array

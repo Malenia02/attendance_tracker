@@ -261,6 +261,13 @@ context. Manual scanning remains available during local development.
   to one year for new credentials. Card validity must remain inside the
   employment period, and QR attendance rejects scans outside either period.
 - DTR records move through Draft, Submitted, Returned, and Certified states.
+- GIP personnel use semi-monthly DTR periods (1stâ€“15th and 16thâ€“month end).
+  Other personnel types use a full-month period. A full-month GIP DTR is an
+  exception that requires Administrator or HR authorization, a written reason,
+  and an immutable activity-log entry.
+- A DTR cannot be submitted before its cutoff. It becomes overdue after the
+  configured grace period. Due and overdue records appear in the Action Center,
+  while personnel receive cutoff reminders through the notification panel.
 - Returned records must be corrected and submitted again before certification.
 - Certification creates a signed snapshot. Generated certified DTRs are checked
   against that snapshot to detect later changes.
@@ -310,6 +317,14 @@ Authentication uses Sanctum session cookies with CSRF protection. Login,
 general API, and QR scan routes have separate rate limits. Repeated login
 failures trigger a temporary account lock. Passwords are hashed and validated
 using Laravel's password rules.
+
+The normal login session expires after `SESSION_LIFETIME` minutes of inactivity
+(120 minutes by default). Users may explicitly select **Keep me signed in** on
+a private device; Laravel then issues an encrypted, `HttpOnly` remembered-login
+cookie for `AUTH_REMEMBER_DURATION` minutes (21,600 minutes, or 15 days, by
+default). Passwords and bearer tokens are never stored in browser storage.
+Signing out or changing an account's password, role, or status revokes its
+remembered-login token as well as its active sessions.
 
 API JSON responses retain the existing page-specific fields and also include:
 
@@ -377,6 +392,8 @@ node:
 ```env
 DASHBOARD_CACHE_SECONDS=30
 DTR_SYNC_BATCH_LIMIT=20
+DTR_SUBMISSION_GRACE_DAYS=2
+DTR_REMINDER_DAYS_BEFORE=3
 ```
 
 Run the new scalability migration after deployment. To make a measured capacity
