@@ -53,9 +53,23 @@ export default async function handler(request, response) {
   }
 
   const incomingUrl = new URL(request.url, "https://frontend.invalid");
+  const proxiedPath = String(incomingUrl.searchParams.get("__dilg_path") || "")
+    .replace(/^\/+|\/+$/g, "");
+
+  if (!proxiedPath || proxiedPath.split("/").some((part) => part === "..")) {
+    return response.status(404).json({
+      success: false,
+      message: "The requested API route was not found.",
+    });
+  }
+
+  incomingUrl.searchParams.delete("__dilg_path");
+
+  const upstreamPath = `/api/${proxiedPath}`;
+  const upstreamTarget = `${upstreamPath}${incomingUrl.search}`;
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const method = String(request.method || "GET").toUpperCase();
-  const signaturePayload = [timestamp, method, incomingUrl.pathname, forwarded].join("\n");
+  const signaturePayload = [timestamp, method, upstreamPath, forwarded].join("\n");
   const signature = crypto
     .createHmac("sha256", secret)
     .update(signaturePayload)
@@ -72,14 +86,14 @@ export default async function handler(request, response) {
   headers.set("X-DILG-Proxy-Signature", signature);
 
   let body;
-  if (!['GET', 'HEAD'].includes(method)) {
+  if (!["GET", "HEAD"].includes(method)) {
     const chunks = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     body = Buffer.concat(chunks);
   }
 
   try {
-    const upstream = await fetch(`${BACKEND_ORIGIN}${request.url}`, {
+    const upstream = await fetch(`${BACKEND_ORIGIN}${upstreamTarget}`, {
       method,
       headers,
       body,
