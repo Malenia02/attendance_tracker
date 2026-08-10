@@ -82,6 +82,8 @@ class QrChallengeSecurityTest extends TestCase
             $table->decimal('location_accuracy_meters', 8, 2)->nullable();
             $table->dateTime('position_recorded_at')->nullable();
             $table->decimal('distance_from_office_meters', 10, 2)->nullable();
+            $table->unsignedBigInteger('office_network_id')->nullable();
+            $table->string('location_verification_method', 32)->nullable();
             $table->string('ip_address', 45)->nullable();
             $table->string('user_agent', 500)->nullable();
             $table->string('device_identifier')->nullable();

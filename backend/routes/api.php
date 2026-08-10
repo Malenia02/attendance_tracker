@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\DtrReopenController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\OfficeNetworkController;
 use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\PersonnelOnboardingController;
 use App\Http\Controllers\Api\QrAttendanceController;
@@ -142,5 +143,14 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         Route::apiResource('/system-users', SystemUserController::class)
             ->parameters(['system-users' => 'systemUser'])
             ->except(['show']);
+
+        Route::post(
+            '/departments/{department}/office-networks',
+            [OfficeNetworkController::class, 'store']
+        )->middleware('throttle:5,1');
+        Route::delete(
+            '/departments/{department}/office-networks/{officeNetwork}',
+            [OfficeNetworkController::class, 'destroy']
+        )->middleware('throttle:10,1');
     });
 });

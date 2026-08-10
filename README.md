@@ -276,13 +276,19 @@ context. Manual scanning remains available during local development.
 
 - QR payloads are signed by the backend.
 - Scan requests are rate-limited and tied to the authenticated kiosk operator.
-- Only Administrator and HR accounts can operate the QR kiosk. Supervisor,
-  Encoder, and Personnel accounts can view their own cards but cannot scan
-  another personnel member's card.
+- Administrator and HR accounts can operate a multi-person kiosk. Supervisor,
+  Encoder, and Personnel accounts can scan only the card linked to their own
+  account and can view only their own card.
 - Every scan now requires a 90-second, one-time server challenge bound to the
   current kiosk account and device identifier. Replaying the same API request is
   rejected with `409 Conflict`.
-- GPS coordinates, accuracy, age, and office distance are checked server-side.
+- Phones use server-checked GPS coordinates, accuracy, freshness, and office
+  distance. Laptops may use an Administrator-registered office public IP when
+  browser GPS is missing or inaccurate. A reliable GPS reading that conflicts
+  with the office network is rejected instead of silently accepted.
+- Trusted office networks are exact-IP and department scoped, expire after 30
+  days by default, and are recorded on every accepted QR audit log. The client
+  cannot submit or choose the IP address.
 - Personnel photos are stored privately and served only through an authenticated
   API route.
 - Optional personnel signatures are stored privately and printed on the back of
@@ -369,6 +375,24 @@ subdomains under one parent domain and follow
 [docs/RENDER-VERCEL.md](docs/RENDER-VERCEL.md). The repository includes
 the free-test `render.yaml`, the paid `render.production.yaml`, a production
 PHP Docker image, and `frontend/vercel.json`.
+
+The Vercel API function cryptographically signs the original client IP before
+forwarding it to Render. Generate one random secret and save the exact same
+value as `FRONTEND_PROXY_SIGNING_SECRET` in both the Render service and Vercel
+project. In Vercel also set `BACKEND_API_URL` to the Render origin. Never prefix
+the proxy secret with `VITE_`, because Vite variables are public browser data.
+
+```powershell
+$proxySecretBytes = New-Object byte[] 48
+[Security.Cryptography.RandomNumberGenerator]::Fill($proxySecretBytes)
+[Convert]::ToBase64String($proxySecretBytes)
+```
+
+After both deployments contain the shared secret, edit a department as an
+Administrator while connected to the office internet and select **Register
+current network**. Registration is server-derived and does not accept a pasted
+IP address. Re-register after the ISP changes the office public IP or when the
+30-day verification expires.
 
 The current free Render service is for testing only. `render.free.yaml` retains
 the Aiven CA certificate configuration and runs migrations during startup, but

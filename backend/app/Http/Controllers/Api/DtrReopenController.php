@@ -8,6 +8,7 @@ use App\Models\DtrCertificationVersion;
 use App\Models\DtrReopenRequest;
 use App\Models\DtrStatusLog;
 use App\Models\Personnel;
+use App\Support\ClientIp;
 use App\Support\DtrPeriod;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
@@ -78,7 +79,7 @@ class DtrReopenController extends Controller
                 'affected_dates' => collect($validated['affected_dates'])->sort()->values()->all(),
                 'request_status' => 'Pending',
                 'pending_key' => 'dtr:'.$certification->dtr_certification_id,
-                'ip_address' => $request->ip(),
+                'ip_address' => ClientIp::for($request),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
                 'request_id' => (string) Str::uuid(),
             ]);
@@ -193,7 +194,7 @@ class DtrReopenController extends Controller
                     'from_status' => $previousStatus,
                     'to_status' => 'Reopened',
                     'remarks' => $lockedRequest->reason,
-                    'ip_address' => $request->ip(),
+                    'ip_address' => ClientIp::for($request),
                     'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
                     'request_id' => (string) Str::uuid(),
                 ]);

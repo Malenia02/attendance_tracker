@@ -114,8 +114,13 @@ class ProductionCheck extends Command
             $errors[] = 'DB_CONNECTION must be mysql or mariadb in production; SQLite is not supported by the production image.';
         }
 
-        if (config('app.trusted_proxies') === '*') {
-            $warnings[] = 'TRUSTED_PROXIES=* is safe only when the edge proxy overwrites forwarding headers.';
+        if (config('app.frontend_api_proxy')
+            && ! $this->strongSecret((string) config('security.frontend_proxy_signing_secret'))) {
+            $errors[] = 'FRONTEND_PROXY_SIGNING_SECRET must match Vercel and contain at least 32 random bytes.';
+        }
+
+        if (config('app.trusted_proxies') === '*' && ! config('app.frontend_api_proxy')) {
+            $errors[] = 'TRUSTED_PROXIES=* requires the signed frontend API proxy to prevent client-IP spoofing.';
         }
 
         if (config('queue.default') !== 'sync') {
@@ -195,6 +200,7 @@ class ProductionCheck extends Command
             'activity_logs',
             'attendance_qr_tokens',
             'qr_scan_logs',
+            'office_networks',
             'time_logs',
         ];
 
@@ -214,7 +220,7 @@ class ProductionCheck extends Command
 
         $requiredColumns = [
             'activity_logs' => ['request_id'],
-            'qr_scan_logs' => ['scanned_by', 'qr_token_id'],
+            'qr_scan_logs' => ['scanned_by', 'qr_token_id', 'office_network_id', 'location_verification_method'],
             'holidays' => ['scope_department_key'],
         ];
 
@@ -229,6 +235,7 @@ class ProductionCheck extends Command
             'personnel' => 'uq_personnel_email',
             'time_logs' => 'uq_time_logs_attendance_type',
             'holidays' => 'uq_holiday_date_scope_type',
+            'office_networks' => 'uq_office_network_department_ip',
         ];
 
         foreach ($requiredIndexes as $table => $index) {

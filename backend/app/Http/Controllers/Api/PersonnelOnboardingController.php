@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\Personnel;
 use App\Models\PersonnelActivationLog;
 use App\Services\PersonnelOnboardingService;
+use App\Support\ClientIp;
 use App\Support\RequestId;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -243,7 +244,7 @@ class PersonnelOnboardingController extends Controller
                         'to_status' => $targetStatus,
                         'reason' => filled($reason) ? trim($reason) : null,
                         'readiness_snapshot' => $snapshot,
-                        'ip_address' => $request->ip(),
+                        'ip_address' => ClientIp::for($request),
                         'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
                         'request_id' => RequestId::for($request),
                     ]);

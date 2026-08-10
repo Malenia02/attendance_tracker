@@ -5,10 +5,6 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "https://malenia02-attendance-api-test.onrender.com/api/:path*"
-    },
-    {
       "source": "/sanctum/:path*",
       "destination": "https://malenia02-attendance-api-test.onrender.com/sanctum/:path*"
     },

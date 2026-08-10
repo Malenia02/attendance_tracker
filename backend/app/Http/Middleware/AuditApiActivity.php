@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\ActivityLog;
+use App\Support\ClientIp;
 use App\Support\RequestId;
 use Closure;
 use Illuminate\Http\Request;
@@ -50,7 +51,7 @@ class AuditApiActivity
                 'description' => Str::limit($description, 500, ''),
                 'entity_type' => $resource,
                 'entity_id' => $entityId,
-                'ip_address' => $request->ip(),
+                'ip_address' => ClientIp::for($request),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
                 'request_id' => RequestId::for($request),
             ]);

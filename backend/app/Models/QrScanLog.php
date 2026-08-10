@@ -27,6 +27,8 @@ class QrScanLog extends Model
         'location_accuracy_meters',
         'position_recorded_at',
         'distance_from_office_meters',
+        'office_network_id',
+        'location_verification_method',
         'ip_address',
         'user_agent',
         'device_identifier',
@@ -77,6 +79,15 @@ class QrScanLog extends Model
             User::class,
             'scanned_by',
             'user_id'
+        );
+    }
+
+    public function officeNetwork(): BelongsTo
+    {
+        return $this->belongsTo(
+            OfficeNetwork::class,
+            'office_network_id',
+            'office_network_id'
         );
     }
 }

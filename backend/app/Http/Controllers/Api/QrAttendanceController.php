@@ -10,7 +10,9 @@ use App\Models\Holiday;
 use App\Models\Personnel;
 use App\Models\QrScanLog;
 use App\Models\TimeLog;
+use App\Services\OfficeNetworkVerifier;
 use App\Services\PersonnelOnboardingService;
+use App\Support\ClientIp;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -194,7 +196,8 @@ class QrAttendanceController extends Controller
 
     public function scan(
         QrScanRequest $request,
-        PersonnelOnboardingService $onboarding
+        PersonnelOnboardingService $onboarding,
+        OfficeNetworkVerifier $networkVerifier
     ): JsonResponse {
         $validated = $request->validated();
         $qrToken = $this->consumeChallenge(
@@ -314,6 +317,9 @@ class QrAttendanceController extends Controller
         }
 
         $office = $personnel->department;
+        $officeNetwork = $office
+            ? $networkVerifier->match($request, (int) $office->department_id)
+            : null;
 
         if (! $office?->latitude || ! $office?->longitude) {
             $message = 'The assigned DILG office does not have GPS coordinates configured.';
@@ -326,7 +332,56 @@ class QrAttendanceController extends Controller
             ], 422);
         }
 
-        if (! isset($validated['latitude'], $validated['longitude'])) {
+        $distance = null;
+        $locationMethod = $officeNetwork ? 'Office Network' : 'GPS';
+        $maximumAccuracy = (float) config('attendance.maximum_location_accuracy_meters', 100);
+        $hasCompleteGps = isset(
+            $validated['latitude'],
+            $validated['longitude'],
+            $validated['accuracy'],
+            $validated['position_timestamp']
+        );
+
+        if ($officeNetwork) {
+            if ($hasCompleteGps) {
+                $positionRecordedAt = Carbon::parse($validated['position_timestamp']);
+                $gpsIsFresh = ! $positionRecordedAt->isBefore($now->copy()->subMinute())
+                    && ! $positionRecordedAt->isAfter($now->copy()->addSeconds(10));
+                $gpsIsAccurate = (float) $validated['accuracy'] <= $maximumAccuracy;
+
+                if ($gpsIsFresh && $gpsIsAccurate) {
+                    $distance = $this->distanceInMeters(
+                        (float) $validated['latitude'],
+                        (float) $validated['longitude'],
+                        (float) $office->latitude,
+                        (float) $office->longitude
+                    );
+                    $locationMethod = 'Office Network + GPS';
+                    $allowedRadius = (int) ($office->allowed_radius_meters ?: 100);
+
+                    if ($distance > $allowedRadius) {
+                        $message = 'Location signals conflict: the office network matched, but accurate GPS places this device approximately '
+                            .number_format($distance).' meters from '.$office->office_location.'. Disable any VPN and refresh location.';
+                        $log = $this->createScanLog(
+                            $request,
+                            $validated,
+                            $personnel,
+                            'Outside Location',
+                            $message,
+                            distance: $distance,
+                            officeNetworkId: $officeNetwork->office_network_id,
+                            locationMethod: $locationMethod
+                        );
+
+                        return response()->json([
+                            'message' => $message,
+                            'scan' => $this->formatScanLog($log),
+                            'personnel' => $this->formatPersonnelIdentity($personnel),
+                        ], 422);
+                    }
+                }
+            }
+        } elseif (! isset($validated['latitude'], $validated['longitude'])) {
             $message = 'Device location is required. Enable GPS and allow location access, then scan again.';
             $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
 
@@ -335,9 +390,7 @@ class QrAttendanceController extends Controller
                 'scan' => $this->formatScanLog($log),
                 'personnel' => $this->formatPersonnelIdentity($personnel),
             ], 422);
-        }
-
-        if (! isset($validated['accuracy'], $validated['position_timestamp'])) {
+        } elseif (! isset($validated['accuracy'], $validated['position_timestamp'])) {
             $message = 'A fresh, accurate GPS position is required. Refresh location and scan again.';
             $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
 
@@ -346,11 +399,7 @@ class QrAttendanceController extends Controller
                 'scan' => $this->formatScanLog($log),
                 'personnel' => $this->formatPersonnelIdentity($personnel),
             ], 422);
-        }
-
-        $maximumAccuracy = (float) config('attendance.maximum_location_accuracy_meters', 100);
-
-        if ((float) $validated['accuracy'] > $maximumAccuracy) {
+        } elseif ((float) $validated['accuracy'] > $maximumAccuracy) {
             $message = 'GPS accuracy is too low (±'.number_format((float) $validated['accuracy'])
                 .' m). This kiosk requires ±'.number_format($maximumAccuracy)
                 .' m or better. Enable precise location, then refresh and scan again.';
@@ -363,47 +412,50 @@ class QrAttendanceController extends Controller
             ], 422);
         }
 
-        $positionRecordedAt = Carbon::parse($validated['position_timestamp']);
+        if (! $officeNetwork) {
+            $positionRecordedAt = Carbon::parse($validated['position_timestamp']);
 
-        if (
-            $positionRecordedAt->isBefore($now->copy()->subMinute())
-            || $positionRecordedAt->isAfter($now->copy()->addSeconds(10))
-        ) {
-            $message = 'The GPS position is stale. Refresh location and scan again.';
-            $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
+            if (
+                $positionRecordedAt->isBefore($now->copy()->subMinute())
+                || $positionRecordedAt->isAfter($now->copy()->addSeconds(10))
+            ) {
+                $message = 'The GPS position is stale. Refresh location and scan again.';
+                $log = $this->createScanLog($request, $validated, $personnel, 'Outside Location', $message);
 
-            return response()->json([
-                'message' => $message,
-                'scan' => $this->formatScanLog($log),
-                'personnel' => $this->formatPersonnelIdentity($personnel),
-            ], 422);
-        }
+                return response()->json([
+                    'message' => $message,
+                    'scan' => $this->formatScanLog($log),
+                    'personnel' => $this->formatPersonnelIdentity($personnel),
+                ], 422);
+            }
 
-        $distance = $this->distanceInMeters(
-            (float) $validated['latitude'],
-            (float) $validated['longitude'],
-            (float) $office->latitude,
-            (float) $office->longitude
-        );
-        $allowedRadius = (int) ($office->allowed_radius_meters ?: 100);
-
-        if ($distance > $allowedRadius) {
-            $message = 'Outside the allowed '.$allowedRadius.'-meter radius of '.$office->office_location
-                .' (approximately '.number_format($distance).' meters away).';
-            $log = $this->createScanLog(
-                $request,
-                $validated,
-                $personnel,
-                'Outside Location',
-                $message,
-                distance: $distance
+            $distance = $this->distanceInMeters(
+                (float) $validated['latitude'],
+                (float) $validated['longitude'],
+                (float) $office->latitude,
+                (float) $office->longitude
             );
+            $allowedRadius = (int) ($office->allowed_radius_meters ?: 100);
 
-            return response()->json([
-                'message' => $message,
-                'scan' => $this->formatScanLog($log),
-                'personnel' => $this->formatPersonnelIdentity($personnel),
-            ], 422);
+            if ($distance > $allowedRadius) {
+                $message = 'Outside the allowed '.$allowedRadius.'-meter radius of '.$office->office_location
+                    .' (approximately '.number_format($distance).' meters away).';
+                $log = $this->createScanLog(
+                    $request,
+                    $validated,
+                    $personnel,
+                    'Outside Location',
+                    $message,
+                    distance: $distance,
+                    locationMethod: 'GPS'
+                );
+
+                return response()->json([
+                    'message' => $message,
+                    'scan' => $this->formatScanLog($log),
+                    'personnel' => $this->formatPersonnelIdentity($personnel),
+                ], 422);
+            }
         }
 
         $holiday = Holiday::query()
@@ -416,7 +468,16 @@ class QrAttendanceController extends Controller
 
         if ($holiday) {
             $message = 'Attendance is closed for '.$holiday->holiday_name.'.';
-            $log = $this->createScanLog($request, $validated, $personnel, 'Wrong Schedule', $message);
+            $log = $this->createScanLog(
+                $request,
+                $validated,
+                $personnel,
+                'Wrong Schedule',
+                $message,
+                distance: $distance,
+                officeNetworkId: $officeNetwork?->office_network_id,
+                locationMethod: $locationMethod
+            );
 
             return response()->json([
                 'message' => $message,
@@ -425,7 +486,15 @@ class QrAttendanceController extends Controller
             ], 422);
         }
 
-        $result = DB::transaction(function () use ($request, $validated, $personnel, $now, $distance): array {
+        $result = DB::transaction(function () use (
+            $request,
+            $validated,
+            $personnel,
+            $now,
+            $distance,
+            $officeNetwork,
+            $locationMethod
+        ): array {
             $recentAcceptedScan = QrScanLog::query()
                 ->where('personnel_id', $personnel->personnel_id)
                 ->where('scan_status', 'Accepted')
@@ -435,7 +504,16 @@ class QrAttendanceController extends Controller
 
             if ($recentAcceptedScan) {
                 $message = 'Duplicate scan ignored. Please wait before scanning this card again.';
-                $log = $this->createScanLog($request, $validated, $personnel, 'Duplicate', $message);
+                $log = $this->createScanLog(
+                    $request,
+                    $validated,
+                    $personnel,
+                    'Duplicate',
+                    $message,
+                    distance: $distance,
+                    officeNetworkId: $officeNetwork?->office_network_id,
+                    locationMethod: $locationMethod
+                );
 
                 return ['status' => 409, 'message' => $message, 'log' => $log];
             }
@@ -468,7 +546,16 @@ class QrAttendanceController extends Controller
                     || str_contains(strtolower($message), 'complete')
                     ? 'Duplicate'
                     : 'Wrong Schedule';
-                $log = $this->createScanLog($request, $validated, $personnel, $scanStatus, $message);
+                $log = $this->createScanLog(
+                    $request,
+                    $validated,
+                    $personnel,
+                    $scanStatus,
+                    $message,
+                    distance: $distance,
+                    officeNetworkId: $officeNetwork?->office_network_id,
+                    locationMethod: $locationMethod
+                );
 
                 return ['status' => 422, 'message' => $message, 'log' => $log];
             }
@@ -483,7 +570,9 @@ class QrAttendanceController extends Controller
                 $scanAction.' successfully recorded.',
                 $scanAction,
                 $attendanceId,
-                $distance
+                $distance,
+                $officeNetwork?->office_network_id,
+                $locationMethod
             );
             $timeLog = TimeLog::query()
                 ->where('attendance_id', $attendanceId)
@@ -600,7 +689,9 @@ class QrAttendanceController extends Controller
         string $message,
         string $action = 'Unknown',
         ?int $attendanceId = null,
-        ?float $distance = null
+        ?float $distance = null,
+        ?int $officeNetworkId = null,
+        ?string $locationMethod = null
     ): QrScanLog {
         return QrScanLog::create([
             'qr_token_id' => $request->attributes->get('qr_token_id'),
@@ -613,7 +704,9 @@ class QrAttendanceController extends Controller
             'location_accuracy_meters' => $validated['accuracy'] ?? null,
             'position_recorded_at' => $validated['position_timestamp'] ?? null,
             'distance_from_office_meters' => $distance,
-            'ip_address' => $request->ip(),
+            'office_network_id' => $officeNetworkId,
+            'location_verification_method' => $locationMethod,
+            'ip_address' => ClientIp::for($request),
             'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
             'device_identifier' => $validated['device_identifier'],
             'scanned_by' => $request->user()->user_id,
@@ -708,6 +801,7 @@ class QrAttendanceController extends Controller
             'distance_from_office_meters' => $log->distance_from_office_meters !== null
                 ? (float) $log->distance_from_office_meters
                 : null,
+            'location_verification_method' => $log->location_verification_method,
         ];
     }
 

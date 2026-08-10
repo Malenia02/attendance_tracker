@@ -13,6 +13,7 @@ use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Services\DtrCutoffService;
 use App\Services\DtrDocumentGenerator;
+use App\Support\ClientIp;
 use App\Support\DtrPeriod;
 use App\Support\PersonnelAccess;
 use App\Support\RequestId;
@@ -442,7 +443,7 @@ class DtrController extends Controller
                     ),
                     'entity_type' => 'dtr_certifications',
                     'entity_id' => $certification->dtr_certification_id,
-                    'ip_address' => $request->ip(),
+                    'ip_address' => ClientIp::for($request),
                     'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
                     'request_id' => RequestId::for($request),
                 ]);
@@ -454,7 +455,7 @@ class DtrController extends Controller
                 'from_status' => $previousStatus,
                 'to_status' => $status,
                 'remarks' => $validated['remarks'] ?? $overrideReason,
-                'ip_address' => $request->ip(),
+                'ip_address' => ClientIp::for($request),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
                 'request_id' => (string) Str::uuid(),
             ]);

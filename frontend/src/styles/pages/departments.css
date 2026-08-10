@@ -302,6 +302,115 @@
   gap: 9px;
 }
 
+.office-network-section {
+  border-color: color-mix(in srgb, #168d70 28%, var(--border));
+  background: color-mix(in srgb, #168d70 4%, var(--bg-card-soft));
+}
+
+.office-network-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.office-network-list > div {
+  min-height: 52px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-card);
+}
+
+.office-network-list span,
+.office-network-list strong,
+.office-network-list small {
+  display: block;
+}
+
+.office-network-list strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.office-network-list small,
+.office-network-register > small,
+.office-network-readonly {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.office-network-list button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(217, 45, 32, 0.22);
+  border-radius: 7px;
+  color: #d92d20;
+  background: rgba(217, 45, 32, 0.05);
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.office-network-register > label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-soft);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.office-network-register > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.office-network-register input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: 10px;
+}
+
+.office-network-register button {
+  min-height: 42px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(120deg, #4154f1, #168d70);
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.office-network-register button:disabled,
+.office-network-list button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+@media (max-width: 620px) {
+  .office-network-register > div {
+    grid-template-columns: 1fr;
+  }
+}
+
 .department-location-capture > div > svg { color: #e55353; }
 
 .department-location-capture span {

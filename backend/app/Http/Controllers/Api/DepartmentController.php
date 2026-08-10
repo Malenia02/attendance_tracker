@@ -18,6 +18,9 @@ class DepartmentController extends Controller
         ]);
         $baseQuery = Department::query();
         $departments = Department::query()
+            ->with(['officeNetworks' => fn ($query) => $query
+                ->where('status', 'Active')
+                ->orderByDesc('verified_at')])
             ->withCount(['personnel', 'holidays'])
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -36,6 +39,7 @@ class DepartmentController extends Controller
 
         return response()->json([
             'data' => $departments->map(fn (Department $department) => $this->formatDepartment($department)),
+            'can_manage_office_networks' => $request->user()->user_role === 'Administrator',
             'summary' => [
                 'total' => (clone $baseQuery)->count(),
                 'active' => (clone $baseQuery)->where('status', 'Active')->count(),
@@ -70,9 +74,9 @@ class DepartmentController extends Controller
 
     public function destroy(Department $department): JsonResponse
     {
-        $department->loadCount(['personnel', 'holidays', 'qrTokens']);
+        $department->loadCount(['personnel', 'holidays', 'qrTokens', 'officeNetworks']);
 
-        if ($department->personnel_count || $department->holidays_count || $department->qr_tokens_count) {
+        if ($department->personnel_count || $department->holidays_count || $department->qr_tokens_count || $department->office_networks_count) {
             return response()->json([
                 'message' => 'This department is already in use. Set it to Inactive instead of deleting it.',
             ], 422);
@@ -117,6 +121,11 @@ class DepartmentController extends Controller
             'status' => $department->status,
             'personnel_count' => $department->personnel_count ?? $department->personnel()->count(),
             'holidays_count' => $department->holidays_count ?? $department->holidays()->count(),
+            'office_networks' => $department->relationLoaded('officeNetworks')
+                ? $department->officeNetworks
+                    ->map(fn ($network) => OfficeNetworkController::formatNetwork($network))
+                    ->values()
+                : [],
             'created_at' => $department->created_at?->toISOString(),
             'updated_at' => $department->updated_at?->toISOString(),
         ];

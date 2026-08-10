@@ -15,6 +15,7 @@ use App\Models\TimeLog;
 use App\Models\User;
 use App\Models\WorkSchedule;
 use App\Services\PersonnelOnboardingService;
+use App\Support\ClientIp;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -440,7 +441,7 @@ class AttendanceController extends Controller
                 'reason' => $validated['reason'],
                 'request_status' => 'Pending',
                 'pending_key' => $pendingKey,
-                'ip_address' => $request->ip(),
+                'ip_address' => ClientIp::for($request),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
             ]);
 
@@ -761,7 +762,7 @@ class AttendanceController extends Controller
                     'log_datetime' => $now,
                     'log_type' => self::ACTIONS[$action],
                     'log_source' => 'Web Portal',
-                    'ip_address' => $request->ip(),
+                    'ip_address' => ClientIp::for($request),
                     'device_identifier' => $validated['device_identifier'] ?? $request->userAgent(),
                     'created_by' => $user->user_id,
                 ]);

@@ -22,6 +22,8 @@ services:
         value: external
       - key: FRONTEND_API_PROXY
         value: "true"
+      - key: FRONTEND_PROXY_SIGNING_SECRET
+        sync: false
       - key: FRONTEND_URL
         sync: false
       - key: TRUSTED_HOSTS
@@ -92,6 +94,8 @@ services:
         generateValue: true
       - key: MAXIMUM_LOCATION_ACCURACY_METERS
         value: "100"
+      - key: OFFICE_NETWORK_VALIDITY_DAYS
+        value: "30"
       - key: MAIL_MAILER
         value: log
       - key: RUN_MIGRATIONS_ON_START

@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureActiveSession;
 use App\Http\Middleware\EnsureUserRole;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\StandardizeApiResponse;
+use App\Http\Middleware\VerifyFrontendProxy;
 use App\Support\RequestId;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -41,6 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
         );
         $middleware->append(StandardizeApiResponse::class);
         $middleware->append(SecurityHeaders::class);
+        $middleware->append(VerifyFrontendProxy::class);
 
         $middleware->alias([
             'api.auth' => AuthenticateApiToken::class,

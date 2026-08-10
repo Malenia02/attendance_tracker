@@ -6,6 +6,7 @@ use App\Models\AttendanceRecord;
 use App\Models\Personnel;
 use App\Policies\AttendanceRecordPolicy;
 use App\Policies\PersonnelPolicy;
+use App\Support\ClientIp;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
@@ -40,25 +41,25 @@ class AppServiceProvider extends ServiceProvider
 
             return [
                 Limit::perMinute(5)->by(
-                    'login-user:'.$usernameHash.'|'.$request->ip()
+                    'login-user:'.$usernameHash.'|'.ClientIp::for($request)
                 ),
-                Limit::perMinute(60)->by('login-ip:'.$request->ip()),
+                Limit::perMinute(60)->by('login-ip:'.ClientIp::for($request)),
             ];
         });
 
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
-            'api:'.($request->user()?->getAuthIdentifier() ?? $request->ip())
+            'api:'.($request->user()?->getAuthIdentifier() ?? ClientIp::for($request))
         )
         );
 
         RateLimiter::for('qr-scan', fn (Request $request): array => [
             Limit::perMinute(30)->by('qr-user:'.$request->user()->getAuthIdentifier()),
-            Limit::perMinute(60)->by('qr-ip:'.$request->ip()),
+            Limit::perMinute(60)->by('qr-ip:'.ClientIp::for($request)),
         ]);
 
         RateLimiter::for('qr-challenge', fn (Request $request): array => [
             Limit::perMinute(60)->by('qr-challenge-user:'.$request->user()->getAuthIdentifier()),
-            Limit::perMinute(120)->by('qr-challenge-ip:'.$request->ip()),
+            Limit::perMinute(120)->by('qr-challenge-ip:'.ClientIp::for($request)),
         ]);
     }
 }

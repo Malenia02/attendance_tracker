@@ -664,7 +664,7 @@ export default function QrAttendance() {
                     ? `GPS ready (±${Math.round(locationState.accuracy || 0)} m)`
                     : locationState.status === "denied"
                       ? "GPS unavailable — allow location access before scanning"
-                      : "Office GPS verification is required for every scan"}
+                      : "GPS or a registered office network will verify this scan"}
               </span>
             </div>
 
@@ -909,6 +909,12 @@ function ScanResult({ result }) {
             <span>
               <small>Office distance</small>
               <strong>{Math.round(result.scan.distance_from_office_meters).toLocaleString()} m</strong>
+            </span>
+          )}
+          {result.scan.location_verification_method && (
+            <span>
+              <small>Location verification</small>
+              <strong>{result.scan.location_verification_method}</strong>
             </span>
           )}
         </div>

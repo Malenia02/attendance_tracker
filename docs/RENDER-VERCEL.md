@@ -60,13 +60,27 @@ Do not enter a value for `SESSION_DOMAIN` in proxy mode. In Vercel, set:
 
 ```dotenv
 VITE_API_URL=/api
+BACKEND_API_URL=https://your-render-service.onrender.com
+FRONTEND_PROXY_SIGNING_SECRET=use_the_same_random_server_only_value_as_render
 ```
 
-The included Vercel rewrites proxy `/api/*` and `/sanctum/*` to the free
-Render test service. This keeps encrypted session cookies on the Vercel
+The included Vercel serverless function securely proxies `/api/*`, while the
+`/sanctum/*` rewrite initializes CSRF cookies on the free Render test service.
+This keeps encrypted session cookies on the Vercel
 hostname and avoids unreliable third-party cookies between `vercel.app` and
 `onrender.com`. Both hostnames must be included in `TRUSTED_HOSTS` because
 Laravel validates the original Vercel hostname forwarded by the proxy.
+
+Create one 32-byte-or-longer random `FRONTEND_PROXY_SIGNING_SECRET` and set the
+exact same value in Render and Vercel. Set Vercel's `BACKEND_API_URL` to the
+Render origin. The serverless function signs Vercel's non-spoofable original
+client IP, and Laravel rejects unsigned direct calls to the Render API. Never
+name this secret with a `VITE_` prefix.
+
+For a no-lockout rollout, add the shared secret to Render and Vercel first,
+deploy the Vercel proxy function second, and deploy Render last. If the Render
+API is deployed without the secret, it intentionally returns `503` for API
+requests instead of accepting unverifiable client IP headers.
 
 ## Required domain layout
 

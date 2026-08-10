@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Trash2,
   Users,
+  Wifi,
   X,
 } from "lucide-react";
 import useConfirmDialog from "../hooks/useConfirmDialog";
@@ -62,6 +63,9 @@ export default function Departments() {
   const [locating, setLocating] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [canManageNetworks, setCanManageNetworks] = useState(false);
+  const [networkName, setNetworkName] = useState("Main office internet");
+  const [networkBusy, setNetworkBusy] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,6 +79,7 @@ export default function Departments() {
           .then(readResponse);
         setDepartments(payload.data);
         setSummary(payload.summary);
+        setCanManageNetworks(Boolean(payload.can_manage_office_networks));
         setPageError("");
       } catch (error) {
         if (error.name !== "AbortError") setPageError(error.message);
@@ -101,6 +106,7 @@ export default function Departments() {
     setForm(emptyForm);
     setFieldErrors({});
     setLocationAccuracy(null);
+    setNetworkName("Main office internet");
     setModalOpen(true);
   }
 
@@ -117,11 +123,12 @@ export default function Departments() {
     });
     setFieldErrors({});
     setLocationAccuracy(null);
+    setNetworkName("Main office internet");
     setModalOpen(true);
   }
 
   function closeModal() {
-    if (saving || locating) return;
+    if (saving || locating || networkBusy) return;
     setModalOpen(false);
     setEditing(null);
   }
@@ -224,6 +231,63 @@ export default function Departments() {
       setPageError(error.message);
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function registerOfficeNetwork() {
+    if (!editing || !networkName.trim()) return;
+    setNetworkBusy(true);
+    setFieldErrors((current) => ({ ...current, office_network: undefined }));
+
+    try {
+      const payload = await apiFetch(`/departments/${editing.department_id}/office-networks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_name: networkName.trim() }),
+      }).then(readResponse);
+      const networks = [
+        payload.data,
+        ...(editing.office_networks || []).filter(
+          (item) => item.office_network_id !== payload.data.office_network_id,
+        ),
+      ];
+      setEditing((current) => ({ ...current, office_networks: networks }));
+      setDepartments((current) => current.map((item) => (
+        item.department_id === editing.department_id
+          ? { ...item, office_networks: networks }
+          : item
+      )));
+      setNotice(payload.message);
+    } catch (error) {
+      setFieldErrors((current) => ({ ...current, office_network: [error.message] }));
+    } finally {
+      setNetworkBusy(false);
+    }
+  }
+
+  async function revokeOfficeNetwork(network) {
+    if (!editing) return;
+    setNetworkBusy(true);
+
+    try {
+      const payload = await apiFetch(
+        `/departments/${editing.department_id}/office-networks/${network.office_network_id}`,
+        { method: "DELETE" },
+      ).then(readResponse);
+      const networks = (editing.office_networks || []).filter(
+        (item) => item.office_network_id !== network.office_network_id,
+      );
+      setEditing((current) => ({ ...current, office_networks: networks }));
+      setDepartments((current) => current.map((item) => (
+        item.department_id === editing.department_id
+          ? { ...item, office_networks: networks }
+          : item
+      )));
+      setNotice(payload.message);
+    } catch (error) {
+      setFieldErrors((current) => ({ ...current, office_network: [error.message] }));
+    } finally {
+      setNetworkBusy(false);
     }
   }
 
@@ -392,9 +456,61 @@ export default function Departments() {
                 </div>
               </div>
 
+              {editing && (
+                <div className="admin-form-section office-network-section">
+                  <div className="admin-form-section-title">
+                    <Wifi size={17} />
+                    <div>
+                      <strong>Office network verification</strong>
+                      <small>Secure laptop fallback when browser GPS is unavailable or inaccurate</small>
+                    </div>
+                  </div>
+
+                  {(editing.office_networks || []).length > 0 && (
+                    <div className="office-network-list">
+                      {editing.office_networks.map((network) => (
+                        <div key={network.office_network_id}>
+                          <span>
+                            <strong>{network.network_name}</strong>
+                            <small>{network.ip_address} · expires {new Date(network.expires_at).toLocaleDateString()}</small>
+                          </span>
+                          {canManageNetworks && (
+                            <button type="button" onClick={() => revokeOfficeNetwork(network)} disabled={networkBusy}>
+                              Revoke
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {canManageNetworks ? (
+                    <div className="office-network-register">
+                      <label htmlFor="office_network_name">Network label</label>
+                      <div>
+                        <input
+                          id="office_network_name"
+                          value={networkName}
+                          onChange={(event) => setNetworkName(event.target.value)}
+                          maxLength="80"
+                          placeholder="e.g. Main office internet"
+                        />
+                        <button type="button" onClick={registerOfficeNetwork} disabled={networkBusy || !networkName.trim()}>
+                          <Wifi size={15} />{networkBusy ? "Checking…" : "Register current network"}
+                        </button>
+                      </div>
+                      <small>The server records the signed public IP from Vercel—not an address entered in this form. Registration expires automatically.</small>
+                    </div>
+                  ) : (
+                    <p className="office-network-readonly">Only an Administrator can add or revoke a trusted office network.</p>
+                  )}
+                  <FieldError errors={fieldErrors} name="office_network" />
+                </div>
+              )}
+
               <div className="user-modal-actions">
                 <button type="button" className="secondary-action" onClick={closeModal}>Cancel</button>
-                <button type="submit" className="primary-action" disabled={saving || locating}>
+                <button type="submit" className="primary-action" disabled={saving || locating || networkBusy}>
                   {saving ? "Saving…" : editing ? "Save department" : "Add department"}
                 </button>
               </div>

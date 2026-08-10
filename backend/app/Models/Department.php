@@ -53,4 +53,13 @@ class Department extends Model
             'department_id'
         );
     }
+
+    public function officeNetworks(): HasMany
+    {
+        return $this->hasMany(
+            OfficeNetwork::class,
+            'department_id',
+            'department_id'
+        );
+    }
 }

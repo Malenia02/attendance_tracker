@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Support\ClientIp;
 use App\Support\RequestId;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Http\JsonResponse;
@@ -186,7 +187,7 @@ class AuthController extends Controller
             'description' => $description,
             'entity_type' => 'system_users',
             'entity_id' => $user->user_id,
-            'ip_address' => $request->ip(),
+            'ip_address' => ClientIp::for($request),
             'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
             'request_id' => RequestId::for($request),
         ]);
