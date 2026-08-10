@@ -9,7 +9,7 @@
       "destination": "https://malenia02-attendance-api-test.onrender.com/sanctum/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/:path((?!api/|sanctum/).*)",
       "destination": "/index.html"
     }
   ],
