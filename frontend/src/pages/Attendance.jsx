@@ -65,6 +65,7 @@ export default function Attendance() {
   const [searchParams] = useSearchParams();
   const requestedDate = searchParams.get("date");
   const requestedPersonnelId = searchParams.get("personnel");
+  const requestedSearch = searchParams.get("search") || "";
   const currentUser = getStoredUser();
   const canVerify = ["Administrator", "HR", "Supervisor"].includes(currentUser?.user_role);
   const canCorrect = ["Administrator", "HR"].includes(currentUser?.user_role);
@@ -97,7 +98,7 @@ export default function Attendance() {
     timezone: "Asia/Manila",
   });
   const [selectedPersonnelId, setSelectedPersonnelId] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(requestedSearch);
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);

@@ -170,7 +170,7 @@ class ActionCenterSecurityTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        DB::table('attendance_correction_requests')->insert([
+        $correctionRequestId = DB::table('attendance_correction_requests')->insertGetId([
             'attendance_id' => $missingAttendanceId,
             'personnel_id' => $personnelId,
             'attendance_date' => now()->subDay()->toDateString(),
@@ -218,6 +218,15 @@ class ActionCenterSecurityTest extends TestCase
         $this->assertSame(1, $counts['expiring_qr_cards']);
         $this->assertSame(1, $counts['workforce_gaps']);
         $this->assertSame($unassignedId, DB::table('personnel')->whereNull('department_id')->value('personnel_id'));
+
+        $this->actingAs($administrator)
+            ->getJson('/api/action-center?queue=correction_requests')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $correctionRequestId)
+            ->assertJsonPath('data.0.request_id', $correctionRequestId)
+            ->assertJsonPath('data.0.action_type', 'review_correction')
+            ->assertJsonPath('data.0.action_label', 'Review correction')
+            ->assertJsonPath('data.0.personnel_id', $personnelId);
 
         // Counting a queue does not execute eager-load callbacks. Retrieve an
         // actual cutoff row to ensure Laravel can load its HasMany relation.

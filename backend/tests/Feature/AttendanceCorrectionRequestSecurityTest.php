@@ -437,6 +437,42 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_only_an_authorized_reviewer_can_open_exact_request_details(): void
+    {
+        [$employee, $attendance, $date] = $this->createMissingTimeOutFixture();
+        $requestId = $this->actingAs($employee)
+            ->postJson('/api/attendance/correction-requests', [
+                'attendance_date' => $date,
+                'missing_field' => 'morning_time_out',
+                'proposed_time' => '12:05',
+                'reason' => 'I was assisting with an urgent field report and missed the kiosk.',
+            ])
+            ->assertCreated()
+            ->json('data.request_id');
+        $hr = $this->createUser('hr-detail-reviewer', 'HR');
+
+        $this->actingAs($hr)
+            ->getJson("/api/attendance/correction-requests/{$requestId}")
+            ->assertOk()
+            ->assertJsonPath('data.request_id', $requestId)
+            ->assertJsonPath('data.attendance_id', $attendance->attendance_id)
+            ->assertJsonPath('data.personnel.employee_number', 'TEST-0001')
+            ->assertJsonPath('data.attendance.status', 'Incomplete')
+            ->assertJsonPath('data.attendance.morning_time_in', '07:05')
+            ->assertJsonPath('data.attendance.morning_time_out', null)
+            ->assertJsonMissingPath('data.ip_address')
+            ->assertJsonMissingPath('data.user_agent');
+
+        $this->actingAs($employee)
+            ->getJson("/api/attendance/correction-requests/{$requestId}")
+            ->assertForbidden();
+
+        $supervisor = $this->createUser('supervisor-detail-denied', 'Supervisor');
+        $this->actingAs($supervisor)
+            ->getJson("/api/attendance/correction-requests/{$requestId}")
+            ->assertForbidden();
+    }
+
     public function test_unlinked_system_user_gets_a_clear_time_log_error(): void
     {
         $personnel = Personnel::create([

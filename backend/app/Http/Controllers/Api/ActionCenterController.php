@@ -319,12 +319,18 @@ final class ActionCenterController extends Controller
             ],
             'correction_requests' => [
                 ...$base,
+                'request_id' => $item->attendance_correction_request_id,
+                'action_type' => 'review_correction',
                 'date' => $item->attendance_date->toDateString(),
                 'status' => $item->request_status,
                 'detail' => ($item->missing_field === 'morning_time_out' ? 'Morning' : 'Afternoon')
                     .' time-out correction: '.$item->reason,
                 'action_label' => 'Review correction',
-                'action_url' => '/attendance?date='.$item->attendance_date->toDateString(),
+                'action_url' => '/attendance?'.http_build_query([
+                    'date' => $item->attendance_date->toDateString(),
+                    'personnel' => $item->personnel_id,
+                    'search' => $personnel?->employee_number,
+                ]),
             ],
             'leave_requests' => [
                 ...$base,

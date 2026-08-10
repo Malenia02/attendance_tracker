@@ -227,7 +227,12 @@
   border-radius: 10px;
   background: linear-gradient(135deg, #4f6dff, #3453d1);
   box-shadow: 0 8px 18px rgba(52, 83, 209, 0.2);
+  border: 0;
+  cursor: pointer;
 }
+
+.action-center-open:disabled { cursor: wait; opacity: 0.72; }
+.action-center-open .spin { animation: actionSpin 0.9s linear infinite; }
 
 .action-center-state {
   display: grid;

@@ -1,5 +1,6 @@
-import { AlertTriangle, CheckCircle2, Clock3, ShieldCheck, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, ShieldCheck, X, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 
 function formatRequestedTime(value) {
   if (!value) return "—";
@@ -17,6 +18,7 @@ export default function AttendanceCorrectionRequestModal({
   request,
   date,
   busy,
+  contextUrl,
   onClose,
   onSubmit,
 }) {
@@ -101,6 +103,29 @@ export default function AttendanceCorrectionRequestModal({
               <small>Employee explanation</small>
               <p>{request.reason}</p>
             </div>
+
+            {request.attendance && (
+              <div className="attendance-request-context">
+                <div className="attendance-request-context-heading">
+                  <div>
+                    <small>Current attendance record</small>
+                    <strong>{request.attendance.status}</strong>
+                  </div>
+                  <span>{request.attendance.schedule_name || "No schedule snapshot"}</span>
+                </div>
+                <div className="attendance-request-context-times">
+                  <span><small>Morning in</small><strong>{formatRequestedTime(request.attendance.morning_time_in)}</strong></span>
+                  <span><small>Morning out</small><strong>{formatRequestedTime(request.attendance.morning_time_out)}</strong></span>
+                  <span><small>Afternoon in</small><strong>{formatRequestedTime(request.attendance.afternoon_time_in)}</strong></span>
+                  <span><small>Afternoon out</small><strong>{formatRequestedTime(request.attendance.afternoon_time_out)}</strong></span>
+                </div>
+                {contextUrl && (
+                  <Link to={contextUrl} className="attendance-request-context-link">
+                    Open full attendance context <ExternalLink size={14} />
+                  </Link>
+                )}
+              </div>
+            )}
 
             <label>
               Reviewer remarks

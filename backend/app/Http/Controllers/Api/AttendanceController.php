@@ -359,6 +359,33 @@ class AttendanceController extends Controller
         ]);
     }
 
+    public function showCorrectionRequest(
+        Request $request,
+        AttendanceCorrectionRequest $correctionRequest
+    ): JsonResponse {
+        $correctionRequest->loadMissing([
+            'personnel:personnel_id,department_id,employee_number,first_name,middle_name,last_name,suffix',
+            'personnel.department:department_id,department_code,department_name',
+            'attendance:attendance_id,schedule_id,attendance_status,record_source,is_verified,morning_time_in,morning_time_out,afternoon_time_in,afternoon_time_out',
+            'attendance.schedule:schedule_id,schedule_name',
+            'submittedBy:user_id,username',
+            'reviewedBy:user_id,username',
+        ]);
+
+        if (
+            ! $correctionRequest->personnel
+            || ! PersonnelAccess::canAccess($request->user(), $correctionRequest->personnel)
+        ) {
+            return response()->json([
+                'message' => 'This request is outside your authorized office scope.',
+            ], 403);
+        }
+
+        return response()->json([
+            'data' => $this->formatCorrectionRequest($correctionRequest),
+        ]);
+    }
+
     public function submitCorrectionRequest(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -1735,6 +1762,10 @@ class AttendanceController extends Controller
     private function formatCorrectionRequest(
         AttendanceCorrectionRequest $correctionRequest
     ): array {
+        $attendance = $correctionRequest->relationLoaded('attendance')
+            ? $correctionRequest->attendance
+            : null;
+
         return [
             'request_id' => $correctionRequest->attendance_correction_request_id,
             'attendance_id' => $correctionRequest->attendance_id,
@@ -1756,6 +1787,16 @@ class AttendanceController extends Controller
                 'employee_number' => $correctionRequest->personnel->employee_number,
                 'full_name' => $correctionRequest->personnel->full_name,
                 'department_code' => $correctionRequest->personnel->department?->department_code,
+            ] : null,
+            'attendance' => $attendance ? [
+                'status' => $attendance->attendance_status,
+                'record_source' => $attendance->record_source,
+                'is_verified' => $attendance->is_verified,
+                'schedule_name' => $attendance->schedule?->schedule_name,
+                'morning_time_in' => $attendance->morning_time_in?->format('H:i'),
+                'morning_time_out' => $attendance->morning_time_out?->format('H:i'),
+                'afternoon_time_in' => $attendance->afternoon_time_in?->format('H:i'),
+                'afternoon_time_out' => $attendance->afternoon_time_out?->format('H:i'),
             ] : null,
         ];
     }

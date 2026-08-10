@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router";
+import AttendanceCorrectionRequestModal from "../components/attendance/AttendanceCorrectionRequestModal";
 import Pagination from "../components/common/Pagination";
 import { apiFetch, getStoredUser } from "../lib/auth";
 
@@ -85,6 +86,11 @@ export default function ActionCenter() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [correctionLoadingId, setCorrectionLoadingId] = useState(null);
+  const [correctionModal, setCorrectionModal] = useState(null);
+  const [correctionBusy, setCorrectionBusy] = useState(false);
   const [data, setData] = useState({
     scope: "",
     summary: [],
@@ -106,7 +112,12 @@ export default function ActionCenter() {
       setError("");
       apiFetch(`/action-center?${params}`, { signal: controller.signal })
         .then(readResponse)
-        .then(setData)
+        .then((payload) => {
+          setData(payload);
+          if (!payload.data.length && page > 1) {
+            setPage((current) => Math.max(1, current - 1));
+          }
+        })
         .catch((requestError) => {
           if (requestError.name !== "AbortError") setError(requestError.message);
         })
@@ -119,7 +130,7 @@ export default function ActionCenter() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [queue, search, page]);
+  }, [queue, search, page, refreshKey]);
 
   const selectedQueue = useMemo(
     () => data.summary.find((item) => item.key === queue),
@@ -132,6 +143,53 @@ export default function ActionCenter() {
     setPage(1);
     setSearch("");
     setSearchParams({ queue: nextQueue }, { replace: true });
+  }
+
+  async function openCorrectionReview(item) {
+    setCorrectionLoadingId(item.request_id);
+    setError("");
+
+    try {
+      const payload = await apiFetch(
+        `/attendance/correction-requests/${item.request_id}`,
+      ).then(readResponse);
+
+      setCorrectionModal({
+        request: payload.data,
+        attendanceUrl: item.action_url,
+      });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setCorrectionLoadingId(null);
+    }
+  }
+
+  async function reviewCorrectionRequest(values) {
+    if (!correctionModal?.request) return;
+
+    setCorrectionBusy(true);
+    setError("");
+
+    try {
+      const payload = await apiFetch(
+        `/attendance/correction-requests/${correctionModal.request.request_id}/review`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(values),
+        },
+      ).then(readResponse);
+
+      setCorrectionModal(null);
+      setNotice(payload.message);
+      setRefreshKey((key) => key + 1);
+      window.setTimeout(() => setNotice(""), 5500);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setCorrectionBusy(false);
+    }
   }
 
   return (
@@ -150,6 +208,7 @@ export default function ActionCenter() {
       </header>
 
       {error && <div className="users-notice error"><X size={18} />{error}</div>}
+      {notice && <div className="users-notice success"><BadgeCheck size={18} />{notice}</div>}
 
       <div className="action-queue-grid" aria-label="Action Center queues">
         {data.summary.map((item) => {
@@ -210,9 +269,23 @@ export default function ActionCenter() {
                 <span className={`action-status ${statusClass(item.status)}`}>{item.status}</span>
                 <small>{dateLabel(item.date)}</small>
               </div>
-              <Link to={item.action_url} className="action-center-open">
-                {item.action_label}<ArrowRight size={15} />
-              </Link>
+              {item.action_type === "review_correction" ? (
+                <button
+                  type="button"
+                  className="action-center-open"
+                  disabled={correctionLoadingId !== null}
+                  onClick={() => openCorrectionReview(item)}
+                >
+                  {correctionLoadingId === item.request_id ? "Loading review…" : item.action_label}
+                  {correctionLoadingId === item.request_id
+                    ? <RefreshCw className="spin" size={15} />
+                    : <ArrowRight size={15} />}
+                </button>
+              ) : (
+                <Link to={item.action_url} className="action-center-open">
+                  {item.action_label}<ArrowRight size={15} />
+                </Link>
+              )}
             </article>
           )) : (
             <div className="action-center-state complete">
@@ -230,6 +303,19 @@ export default function ActionCenter() {
           itemLabel="actions"
         />
       </div>
+
+      {correctionModal && (
+        <AttendanceCorrectionRequestModal
+          mode="review"
+          request={correctionModal.request}
+          contextUrl={correctionModal.attendanceUrl}
+          busy={correctionBusy}
+          onClose={() => {
+            if (!correctionBusy) setCorrectionModal(null);
+          }}
+          onSubmit={reviewCorrectionRequest}
+        />
+      )}
     </section>
   );
 }

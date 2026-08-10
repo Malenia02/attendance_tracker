@@ -41,12 +41,18 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/options', [AttendanceController::class, 'options']);
     Route::get('/attendance/correction-requests', [AttendanceController::class, 'correctionRequests']);
+    Route::get(
+        '/attendance/correction-requests/{correctionRequest}',
+        [AttendanceController::class, 'showCorrectionRequest']
+    )->whereNumber('correctionRequest')
+        ->middleware('role:Administrator,HR');
     Route::post('/attendance/correction-requests', [AttendanceController::class, 'submitCorrectionRequest'])
         ->middleware('throttle:5,1');
     Route::patch(
         '/attendance/correction-requests/{correctionRequest}/review',
         [AttendanceController::class, 'reviewCorrectionRequest']
-    )->middleware(['role:Administrator,HR', 'throttle:20,1']);
+    )->whereNumber('correctionRequest')
+        ->middleware(['role:Administrator,HR', 'throttle:20,1']);
     Route::post('/attendance/time-log', [AttendanceController::class, 'recordTime'])
         ->middleware('throttle:12,1');
     Route::patch('/attendance/{attendance}/verify', [AttendanceController::class, 'verify'])
