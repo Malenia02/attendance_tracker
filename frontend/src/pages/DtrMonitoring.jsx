@@ -103,7 +103,7 @@ export default function DtrMonitoring() {
   });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(
-    ["Draft", "Submitted", "Certified", "Returned", "Reopened"].includes(requestedStatus)
+    ["Draft", "Submitted", "Submitted Late", "Certified", "Returned", "Reopened"].includes(requestedStatus)
       ? requestedStatus
       : "",
   );
@@ -534,7 +534,7 @@ export default function DtrMonitoring() {
             </select>
             <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
               <option value="">All DTR statuses</option>
-              {["Draft", "Submitted", "Certified", "Returned", "Reopened"].map((status) => (
+              {["Draft", "Submitted", "Submitted Late", "Certified", "Returned", "Reopened"].map((status) => (
                 <option key={status}>{status}</option>
               ))}
             </select>
@@ -1224,7 +1224,7 @@ function DtrDetails({
                   : row.certification.status === "Draft" ? "Submit DTR" : "Submit amended DTR"}
               </button>
             )}
-            {row.certification.status === "Submitted" && canCertify && (
+            {["Submitted", "Submitted Late"].includes(row.certification.status) && canCertify && (
               <>
                 <button
                   type="button"

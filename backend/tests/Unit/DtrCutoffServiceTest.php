@@ -34,5 +34,7 @@ class DtrCutoffServiceTest extends TestCase
         $this->assertSame('2026-08-02', $context['deadline']->toDateString());
         $this->assertSame('overdue', $service->timeline($context, null, $today)['state']);
         $this->assertSame('submitted', $service->timeline($context, 'Submitted', $today)['state']);
+        $this->assertSame('submitted_late', $service->timeline($context, 'Submitted Late', $today)['state']);
+        $this->assertSame('Submitted Late', $service->timeline($context, 'Submitted Late', $today)['label']);
     }
 }

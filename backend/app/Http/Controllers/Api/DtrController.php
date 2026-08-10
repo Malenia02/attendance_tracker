@@ -33,6 +33,7 @@ use ZipArchive;
 class DtrController extends Controller
 {
     private const MANAGER_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder'];
+    private const SUBMITTED_STATUSES = ['Submitted', 'Submitted Late'];
 
     public function __construct(
         private readonly DtrCutoffService $cutoffs
@@ -44,7 +45,7 @@ class DtrController extends Controller
             'month' => ['nullable', 'date_format:Y-m'],
             'period' => ['nullable', Rule::in(DtrPeriod::values())],
             'search' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Certified', 'Returned', 'Reopened'])],
+            'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Submitted Late', 'Certified', 'Returned', 'Reopened'])],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'between:10,100'],
             'personnel_ids' => ['nullable', 'array', 'max:100'],
@@ -174,6 +175,7 @@ class DtrController extends Controller
                 $period
             ));
         $workflowReady = (int) ($certificationSummary['Submitted'] ?? 0)
+            + (int) ($certificationSummary['Submitted Late'] ?? 0)
             + (int) ($certificationSummary['Certified'] ?? 0);
         $periodTimeline = $this->cutoffs->timeline(
             $this->cutoffs->context($month, $period),
@@ -271,6 +273,10 @@ class DtrController extends Controller
         [$year, $month] = array_map('intval', explode('-', $validated['month']));
         $reportMonth = Carbon::create($year, $month, 1)->startOfMonth();
         $reportingContext = $this->cutoffs->context($reportMonth, $validated['period']);
+        $submissionTimeline = $this->cutoffs->timeline($reportingContext, null);
+        $effectiveStatus = $status === 'Submitted' && $submissionTimeline['state'] === 'overdue'
+            ? 'Submitted Late'
+            : $status;
         $isGip = $this->cutoffs->isGip($personnel->personnel_type);
         $isFullMonthOverride = $isGip && $validated['period'] === DtrPeriod::FULL_MONTH;
 
@@ -350,7 +356,7 @@ class DtrController extends Controller
                 ], 422);
             }
 
-            if ($status === 'Submitted' && ! $this->cutoffs->timeline($reportingContext, null)['can_submit']) {
+            if ($status === 'Submitted' && ! $submissionTimeline['can_submit']) {
                 return response()->json([
                     'message' => 'This DTR period is still open. It may be submitted on or after '
                         .$reportingContext['cutoff']->format('F j, Y').'.',
@@ -366,6 +372,7 @@ class DtrController extends Controller
         $result = DB::transaction(function () use (
             $certificationKey,
             $status,
+            $effectiveStatus,
             $validated,
             $user,
             $request,
@@ -382,12 +389,12 @@ class DtrController extends Controller
             $administratorOverride = $user->user_role === 'Administrator';
             $transitionError = match (true) {
                 $previousStatus === 'Certified' => 'This DTR is certified and locked. A separate authorized reopening process is required.',
-                $status === $previousStatus => "This DTR is already {$status}.",
-                $status === 'Draft' => 'A submitted or returned DTR cannot be moved back to Draft.',
-                $status === 'Submitted' && ! in_array($previousStatus, ['Draft', 'Returned', 'Reopened'], true) => 'Only draft, returned, or reopened DTRs may be submitted.',
-                $status === 'Returned' && $previousStatus !== 'Submitted' => 'Only submitted DTRs may be returned for correction.',
-                $status === 'Certified' && $previousStatus !== 'Submitted' => 'The DTR must be submitted before certification.',
-                $status === 'Certified' && ! $administratorOverride && $certification->prepared_by === $user->user_id => 'The person who submitted a DTR cannot also certify it.',
+                $effectiveStatus === $previousStatus => "This DTR is already {$effectiveStatus}.",
+                $effectiveStatus === 'Draft' => 'A submitted or returned DTR cannot be moved back to Draft.',
+                in_array($effectiveStatus, self::SUBMITTED_STATUSES, true) && ! in_array($previousStatus, ['Draft', 'Returned', 'Reopened'], true) => 'Only draft, returned, or reopened DTRs may be submitted.',
+                $effectiveStatus === 'Returned' && ! in_array($previousStatus, self::SUBMITTED_STATUSES, true) => 'Only submitted DTRs may be returned for correction.',
+                $effectiveStatus === 'Certified' && ! in_array($previousStatus, self::SUBMITTED_STATUSES, true) => 'The DTR must be submitted before certification.',
+                $effectiveStatus === 'Certified' && ! $administratorOverride && $certification->prepared_by === $user->user_id => 'The person who submitted a DTR cannot also certify it.',
                 $correctedByCertifier && ! $administratorOverride => 'The person who corrected an amended attendance entry cannot certify that DTR version.',
                 default => null,
             };
@@ -396,20 +403,20 @@ class DtrController extends Controller
                 return ['error' => $transitionError];
             }
 
-            $certification->certification_status = $status;
+            $certification->certification_status = $effectiveStatus;
             $overrideReason = $isFullMonthOverride && $status === 'Submitted'
                 ? trim((string) $validated['full_month_override_reason'])
                 : null;
             $certification->remarks = $validated['remarks'] ?? $overrideReason;
 
-            if ($status === 'Submitted') {
+            if (in_array($effectiveStatus, self::SUBMITTED_STATUSES, true)) {
                 $certification->prepared_by = $user->user_id;
                 $certification->prepared_at = now();
                 $certification->certified_by = null;
                 $certification->certified_at = null;
                 $certification->certified_snapshot = null;
                 $certification->certified_hash = null;
-            } elseif ($status === 'Certified') {
+            } elseif ($effectiveStatus === 'Certified') {
                 $snapshot = $monitorRow;
                 $encodedSnapshot = json_encode(
                     $snapshot,
@@ -423,7 +430,7 @@ class DtrController extends Controller
                     $encodedSnapshot,
                     (string) config('attendance.dtr_signing_key')
                 );
-            } elseif ($status === 'Returned') {
+            } elseif ($effectiveStatus === 'Returned') {
                 $certification->certified_by = null;
                 $certification->certified_at = null;
                 $certification->certified_snapshot = null;
@@ -453,7 +460,7 @@ class DtrController extends Controller
                 'dtr_certification_id' => $certification->dtr_certification_id,
                 'changed_by' => $user->user_id,
                 'from_status' => $previousStatus,
-                'to_status' => $status,
+                'to_status' => $effectiveStatus,
                 'remarks' => $validated['remarks'] ?? $overrideReason,
                 'ip_address' => ClientIp::for($request),
                 'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
@@ -473,12 +480,12 @@ class DtrController extends Controller
         $certification = $result['certification'];
         $previousStatus = $result['previous_status'];
         $wasResubmitted = in_array($previousStatus, ['Returned', 'Reopened'], true)
-            && $status === 'Submitted';
+            && in_array($effectiveStatus, self::SUBMITTED_STATUSES, true);
 
         return response()->json([
             'message' => $wasResubmitted
                 ? 'DTR corrections submitted for independent review.'
-                : 'DTR status updated to '.$status.'.',
+                : 'DTR status updated to '.$effectiveStatus.'.',
             'certification' => $this->formatCertification(
                 $certification->fresh([
                     'statusLogs.changedBy:user_id,username',

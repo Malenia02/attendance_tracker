@@ -76,6 +76,9 @@ dilg-attendance-system/
 See [frontend/src/styles/README.md](frontend/src/styles/README.md) for the CSS
 file map.
 
+See [docs/API-ROUTES.md](docs/API-ROUTES.md) for the API route map, route
+purpose, role access, and common debugging status codes.
+
 ## Requirements
 
 - XAMPP or an equivalent PHP/MySQL environment

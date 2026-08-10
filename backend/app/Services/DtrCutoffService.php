@@ -81,6 +81,9 @@ final class DtrCutoffService
         } elseif ($status === 'Submitted') {
             $state = 'submitted';
             $message = 'This reporting period is submitted and awaiting certification.';
+        } elseif ($status === 'Submitted Late') {
+            $state = 'submitted_late';
+            $message = 'This reporting period was submitted after the deadline and is awaiting certification.';
         } elseif (in_array($status, ['Returned', 'Reopened'], true)) {
             $state = 'action_required';
             $message = 'Corrections and resubmission are required for this reporting period.';
@@ -96,12 +99,16 @@ final class DtrCutoffService
             $message = 'The cutoff is ready for submission.';
         } else {
             $state = 'overdue';
-            $message = 'The DTR submission deadline has passed.';
+            $message = 'The DTR submission deadline has passed. Late submission is still accepted and will be flagged.';
         }
 
         return [
             'state' => $state,
-            'label' => str($state)->replace('_', ' ')->title()->toString(),
+            'label' => match ($state) {
+                'due' => 'Ready for Submission',
+                'submitted_late' => 'Submitted Late',
+                default => str($state)->replace('_', ' ')->title()->toString(),
+            },
             'cutoff_date' => $context['cutoff']->toDateString(),
             'deadline_date' => $context['deadline']->toDateString(),
             'can_submit' => $today->greaterThanOrEqualTo($context['cutoff']),
@@ -196,7 +203,7 @@ final class DtrCutoffService
                 ->whereHas('schedule', fn (Builder $query) => $query->where('status', 'Active')))
             ->whereDoesntHave('dtrCertifications', fn (Builder $query) => $this
                 ->whereCertificationContext($query, $context)
-                ->whereIn('certification_status', ['Submitted', 'Certified']));
+                ->whereIn('certification_status', ['Submitted', 'Submitted Late', 'Certified']));
     }
 
     private function whereCertificationContext(Builder $query, array $context): Builder

@@ -207,7 +207,7 @@ class LeaveAttendanceService
         });
         $locked = DtrCertification::query()
             ->where('personnel_id', $personnelId)
-            ->whereIn('certification_status', ['Submitted', 'Certified'])
+            ->whereIn('certification_status', ['Submitted', 'Submitted Late', 'Certified'])
             ->where(function ($query) use ($months): void {
                 foreach ($months as [$year, $month, $periods]) {
                     $query->orWhere(fn ($query) => $query

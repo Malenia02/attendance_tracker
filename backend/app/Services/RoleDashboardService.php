@@ -200,7 +200,7 @@ final class RoleDashboardService
             ->first();
         $verificationCount = $this->attendanceVerificationQuery($departmentId)->count();
         $leaveCount = $this->leaveQueueQuery($departmentId)->count();
-        $submittedDtrCount = $this->dtrQueueQuery('Submitted', $departmentId)->count();
+        $submittedDtrCount = $this->submittedDtrQueueQuery($departmentId)->count();
         $returnedDtrCount = $this->dtrQueueQuery('Returned', $departmentId)->count();
         $statuses = (clone $todayQuery)
             ->selectRaw('attendance_status, COUNT(*) as total')
@@ -337,7 +337,7 @@ final class RoleDashboardService
                 ->where('request_status', 'Pending')
                 ->count(),
             'leave_requests' => $this->leaveQueueQuery()->count(),
-            'submitted_dtrs' => $this->dtrQueueQuery('Submitted')->count(),
+            'submitted_dtrs' => $this->submittedDtrQueueQuery()->count(),
             'returned_dtrs' => $this->dtrQueueQuery('Returned')->count(),
         ];
     }
@@ -402,6 +402,16 @@ final class RoleDashboardService
     {
         return DtrCertification::query()
             ->where('certification_status', $status)
+            ->when($departmentId, fn (Builder $query) => $query->whereHas(
+                'personnel',
+                fn (Builder $personnel) => $personnel->where('department_id', $departmentId)
+            ));
+    }
+
+    private function submittedDtrQueueQuery(?int $departmentId = null): Builder
+    {
+        return DtrCertification::query()
+            ->whereIn('certification_status', ['Submitted', 'Submitted Late'])
             ->when($departmentId, fn (Builder $query) => $query->whereHas(
                 'personnel',
                 fn (Builder $personnel) => $personnel->where('department_id', $departmentId)

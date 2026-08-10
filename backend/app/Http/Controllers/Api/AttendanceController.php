@@ -29,6 +29,8 @@ use Illuminate\Validation\Rule;
 
 class AttendanceController extends Controller
 {
+    private const LOCKED_DTR_STATUSES = ['Submitted', 'Submitted Late', 'Certified'];
+
     private const STATUS_FILTERS = [
         'Present',
         'Half Day',
@@ -532,11 +534,11 @@ class AttendanceController extends Controller
             );
             $certification = $certifications->firstWhere('certification_status', 'Reopened');
             $lockedCertification = $certifications->first(
-                fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+                fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
             );
             $certificationStatus = $lockedCertification?->certification_status;
 
-            if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
+            if (in_array($certificationStatus, self::LOCKED_DTR_STATUSES, true)) {
                 return response()->json([
                     'message' => $certificationStatus === 'Certified'
                         ? 'This DTR is certified and locked. It must be formally reopened before approving the request.'
@@ -827,11 +829,11 @@ class AttendanceController extends Controller
         );
         $certification = $certifications->firstWhere('certification_status', 'Reopened');
         $lockedCertification = $certifications->first(
-            fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+            fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
         );
         $certificationStatus = $lockedCertification?->certification_status;
 
-        if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
+        if (in_array($certificationStatus, self::LOCKED_DTR_STATUSES, true)) {
             return response()->json([
                 'message' => $certificationStatus === 'Certified'
                     ? 'This DTR is certified and locked.'
@@ -921,11 +923,11 @@ class AttendanceController extends Controller
             );
             $certification = $certifications->firstWhere('certification_status', 'Reopened');
             $lockedCertification = $certifications->first(
-                fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+                fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
             );
             $certificationStatus = $lockedCertification?->certification_status;
 
-            if (in_array($certificationStatus, ['Submitted', 'Certified'], true)) {
+            if (in_array($certificationStatus, self::LOCKED_DTR_STATUSES, true)) {
                 return response()->json([
                     'message' => 'Return submitted DTRs before verifying attendance, and never modify certified DTRs.',
                 ], 422);
@@ -998,7 +1000,7 @@ class AttendanceController extends Controller
         );
         $certification = $certifications->firstWhere('certification_status', 'Reopened');
         $lockedCertification = $certifications->first(
-            fn (DtrCertification $item) => in_array($item->certification_status, ['Submitted', 'Certified'], true)
+            fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
         );
 
         if ($lockedCertification?->certification_status === 'Certified') {
@@ -1007,7 +1009,7 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        if ($lockedCertification?->certification_status === 'Submitted') {
+        if (in_array($lockedCertification?->certification_status, ['Submitted', 'Submitted Late'], true)) {
             return response()->json([
                 'message' => 'Return the submitted DTR for correction before changing its attendance records.',
             ], 422);

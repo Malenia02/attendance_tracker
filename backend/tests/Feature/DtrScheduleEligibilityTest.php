@@ -8,6 +8,7 @@ use App\Models\PersonnelSchedule;
 use App\Models\User;
 use App\Models\WorkSchedule;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -188,12 +189,26 @@ class DtrScheduleEligibilityTest extends TestCase
             $table->char('certified_hash', 64)->nullable();
             $table->timestamp('created_at')->useCurrent();
         });
+
+        Schema::create('activity_logs', function (Blueprint $table): void {
+            $table->id('activity_log_id');
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->string('activity_type', 100);
+            $table->string('description', 500);
+            $table->string('entity_type')->nullable();
+            $table->unsignedBigInteger('entity_id')->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->string('user_agent', 500)->nullable();
+            $table->uuid('request_id')->nullable();
+            $table->timestamp('created_at')->useCurrent();
+        });
     }
 
     protected function tearDown(): void
     {
         Carbon::setTestNow();
 
+        Schema::dropIfExists('activity_logs');
         Schema::dropIfExists('dtr_certification_versions');
         Schema::dropIfExists('dtr_reopen_requests');
         Schema::dropIfExists('dtr_status_logs');
@@ -467,6 +482,65 @@ class DtrScheduleEligibilityTest extends TestCase
                 'message',
                 'This personnel type uses monthly DTR reporting. Select Full month.'
             );
+    }
+
+    public function test_cutoff_dtr_can_still_be_submitted_late_and_certified(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-05 09:00:00', 'Asia/Manila'));
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-07-01',
+            'created_by' => $administrator->user_id,
+        ]);
+
+        foreach (CarbonPeriod::create('2026-07-16', '2026-07-31') as $date) {
+            if (! in_array($date->dayOfWeekIso, [1, 2, 3, 4], true)) {
+                continue;
+            }
+
+            AttendanceRecord::create([
+                'personnel_id' => $personnel->personnel_id,
+                'schedule_id' => $schedule->schedule_id,
+                'attendance_date' => $date->toDateString(),
+                'morning_time_in' => $date->toDateString().' 07:00:00',
+                'morning_time_out' => $date->toDateString().' 12:00:00',
+                'afternoon_time_in' => $date->toDateString().' 13:00:00',
+                'afternoon_time_out' => $date->toDateString().' 18:00:00',
+                'attendance_status' => 'Present',
+                'total_work_minutes' => 600,
+                'is_verified' => true,
+            ]);
+        }
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-07',
+                'period' => 'second_half',
+                'status' => 'Submitted',
+            ])
+            ->assertOk()
+            ->assertJsonPath('certification.status', 'Submitted Late');
+
+        $this->assertDatabaseHas('dtr_certifications', [
+            'personnel_id' => $personnel->personnel_id,
+            'dtr_year' => 2026,
+            'dtr_month' => 7,
+            'dtr_period' => 'second_half',
+            'certification_status' => 'Submitted Late',
+        ]);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-07',
+                'period' => 'second_half',
+                'status' => 'Certified',
+            ])
+            ->assertOk()
+            ->assertJsonPath('certification.status', 'Certified');
     }
 
     private function records(): array

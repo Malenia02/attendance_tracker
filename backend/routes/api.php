@@ -24,9 +24,11 @@ use Illuminate\Support\Facades\Route;
 // an intermediary preserving Sanctum's Origin/Referer stateful-domain signal.
 // The web group also keeps CSRF validation active for every mutating request.
 Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api.audit'])->group(function (): void {
+    // Auth/session: identify the current logged-in user and destroy the session.
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
+    // Overview queues: role-aware dashboards, action queues, and notifications.
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/action-center', [ActionCenterController::class, 'index'])
         ->middleware('role:Administrator,HR,Supervisor');
@@ -38,6 +40,9 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         ->whereNumber('notificationId')
         ->middleware('throttle:30,1');
 
+
+
+    // Daily attendance: list attendance, self time-in/out, verification, and correction workflows.
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/options', [AttendanceController::class, 'options']);
     Route::get('/attendance/correction-requests', [AttendanceController::class, 'correctionRequests']);
@@ -62,6 +67,7 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::post('/attendance/correction', [AttendanceController::class, 'correct'])
         ->middleware(['role:Administrator,HR', 'throttle:20,1']);
 
+    // QR attendance: kiosk/card listing, signed scan challenges, scan submission, and card regeneration.
     Route::get('/qr-attendance', [QrAttendanceController::class, 'index'])
         ->middleware('role:Administrator,HR,Supervisor,Encoder,Personnel');
     Route::get('/qr-attendance/cards', [QrAttendanceController::class, 'cards'])
@@ -80,7 +86,9 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
 
     Route::post('/qr-attendance/personnel/{personnel}/regenerate', [QrAttendanceController::class, 'regenerate'])
         ->middleware(['role:Administrator,HR', 'throttle:20,1']);
+        
 
+    // DTR workflow: monitor cutoff periods, generate documents, submit/certify/return, and reopen.
     Route::get('/dtr', [DtrController::class, 'index']);
     Route::post('/dtr/generate', [DtrController::class, 'generate'])
         ->middleware('throttle:5,1');
@@ -91,6 +99,7 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::patch('/dtr/reopen-requests/{reopenRequest}/review', [DtrReopenController::class, 'review'])
         ->middleware(['role:Administrator', 'throttle:10,1']);
 
+    // Leave and official business: request, review, cancel, and download private attachments.
     Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
     Route::post('/leave-requests', [LeaveRequestController::class, 'store'])
         ->middleware('throttle:5,1');
@@ -107,6 +116,7 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         [LeaveRequestController::class, 'cancel']
     )->middleware('throttle:10,1');
 
+    // Shared reference data and private personnel media.
     Route::get('/holidays', [HolidayController::class, 'index']);
     Route::get('/holidays/options', [HolidayController::class, 'options']);
     Route::get('/personnel/{personnel}/photo', [PersonnelController::class, 'photo'])
@@ -115,6 +125,7 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         ->name('personnel.signature');
 
     Route::middleware('role:Administrator,HR')->group(function (): void {
+        // HR setup: onboarding, departments, schedules, holidays, and personnel directory management.
         Route::get('/personnel-onboarding', [PersonnelOnboardingController::class, 'index']);
         Route::patch('/personnel-onboarding/bulk', [PersonnelOnboardingController::class, 'updateBulk'])
             ->middleware('throttle:10,1');
@@ -143,6 +154,7 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     });
 
     Route::middleware('role:Administrator')->group(function (): void {
+        // Administrator security: immutable activity logs, system users, and office network allowlists.
         Route::get('/activity-logs', [ActivityLogController::class, 'index']);
 
         Route::get('/system-users/options', [SystemUserController::class, 'options']);
