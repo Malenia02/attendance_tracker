@@ -218,6 +218,14 @@ class ActionCenterSecurityTest extends TestCase
         $this->assertSame(1, $counts['expiring_qr_cards']);
         $this->assertSame(1, $counts['workforce_gaps']);
         $this->assertSame($unassignedId, DB::table('personnel')->whereNull('department_id')->value('personnel_id'));
+
+        // Counting a queue does not execute eager-load callbacks. Retrieve an
+        // actual cutoff row to ensure Laravel can load its HasMany relation.
+        $this->actingAs($administrator)
+            ->getJson('/api/action-center?queue=dtr_cutoffs')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.personnel_id', $personnelId);
     }
 
     public function test_supervisor_is_department_scoped_and_cannot_open_hr_only_queues(): void

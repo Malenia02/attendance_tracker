@@ -9,6 +9,7 @@ use App\Support\DtrPeriod;
 use App\Support\PersonnelAccess;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 final class DtrCutoffService
 {
@@ -117,7 +118,7 @@ final class DtrCutoffService
         $query = Personnel::query()
             ->with([
                 'department:department_id,department_code,department_name',
-                'dtrCertifications' => fn (Builder $query) => $query->where(function (Builder $query) use ($gip, $monthly): void {
+                'dtrCertifications' => fn (HasMany $query) => $query->where(function (Builder $query) use ($gip, $monthly): void {
                     $this->whereCertificationContext($query, $gip);
                     $query->orWhere(fn (Builder $query) => $this->whereCertificationContext($query, $monthly));
                 }),
