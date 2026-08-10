@@ -146,6 +146,27 @@ export default function ActionCenter() {
   }
 
   async function openCorrectionReview(item) {
+    setCorrectionModal({
+      request: {
+        request_id: item.request_id,
+        attendance_id: item.attendance_id,
+        personnel_id: item.personnel_id,
+        attendance_date: item.date,
+        missing_field: item.missing_field,
+        missing_label: item.missing_label,
+        proposed_time: item.proposed_time,
+        reason: item.reason,
+        status: item.status,
+        submitted_by: item.submitted_by,
+        personnel: {
+          employee_number: item.employee_number,
+          full_name: item.full_name,
+          department_code: item.department_code,
+        },
+        attendance: item.attendance || null,
+      },
+      attendanceUrl: item.action_url,
+    });
     setCorrectionLoadingId(item.request_id);
     setError("");
 
@@ -159,7 +180,7 @@ export default function ActionCenter() {
         attendanceUrl: item.action_url,
       });
     } catch (requestError) {
-      setError(requestError.message);
+      setError(`${requestError.message} The review form is still open using the queue details.`);
     } finally {
       setCorrectionLoadingId(null);
     }

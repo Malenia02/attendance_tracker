@@ -226,7 +226,11 @@ class ActionCenterSecurityTest extends TestCase
             ->assertJsonPath('data.0.request_id', $correctionRequestId)
             ->assertJsonPath('data.0.action_type', 'review_correction')
             ->assertJsonPath('data.0.action_label', 'Review correction')
-            ->assertJsonPath('data.0.personnel_id', $personnelId);
+            ->assertJsonPath('data.0.personnel_id', $personnelId)
+            ->assertJsonPath('data.0.missing_field', 'morning_time_out')
+            ->assertJsonPath('data.0.missing_label', 'Morning time-out')
+            ->assertJsonPath('data.0.proposed_time', '12:00')
+            ->assertJsonPath('data.0.reason', 'Forgot to record the time-out after field work.');
 
         // Counting a queue does not execute eager-load callbacks. Retrieve an
         // actual cutoff row to ensure Laravel can load its HasMany relation.

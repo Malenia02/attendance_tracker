@@ -192,7 +192,12 @@ final class ActionCenterController extends Controller
     private function correctionRequestQuery(User $user, ?string $search): Builder
     {
         return AttendanceCorrectionRequest::query()
-            ->with('personnel.department:department_id,department_code,department_name')
+            ->with([
+                'personnel.department:department_id,department_code,department_name',
+                'attendance:attendance_id,schedule_id,attendance_status,record_source,is_verified,morning_time_in,morning_time_out,afternoon_time_in,afternoon_time_out',
+                'attendance.schedule:schedule_id,schedule_name',
+                'submittedBy:user_id,username',
+            ])
             ->where('request_status', 'Pending')
             ->whereHas('personnel', fn (Builder $query) => $this->scopePersonnel($query, $user, $search))
             ->oldest('created_at');
@@ -320,9 +325,18 @@ final class ActionCenterController extends Controller
             'correction_requests' => [
                 ...$base,
                 'request_id' => $item->attendance_correction_request_id,
+                'attendance_id' => $item->attendance_id,
                 'action_type' => 'review_correction',
                 'date' => $item->attendance_date->toDateString(),
                 'status' => $item->request_status,
+                'missing_field' => $item->missing_field,
+                'missing_label' => $item->missing_field === 'morning_time_out'
+                    ? 'Morning time-out'
+                    : 'Afternoon time-out',
+                'proposed_time' => Carbon::parse($item->proposed_time)->format('H:i'),
+                'reason' => $item->reason,
+                'submitted_by' => $item->submittedBy?->username,
+                'attendance' => $this->formatAttendanceContext($item),
                 'detail' => ($item->missing_field === 'morning_time_out' ? 'Morning' : 'Afternoon')
                     .' time-out correction: '.$item->reason,
                 'action_label' => 'Review correction',
@@ -372,6 +386,26 @@ final class ActionCenterController extends Controller
                 'action_url' => $item->department_id ? '/schedules' : '/personnel',
             ],
         };
+    }
+
+    private function formatAttendanceContext(AttendanceCorrectionRequest $request): ?array
+    {
+        $attendance = $request->attendance;
+
+        if (! $attendance) {
+            return null;
+        }
+
+        return [
+            'status' => $attendance->attendance_status,
+            'record_source' => $attendance->record_source,
+            'is_verified' => $attendance->is_verified,
+            'schedule_name' => $attendance->schedule?->schedule_name,
+            'morning_time_in' => $attendance->morning_time_in?->format('H:i'),
+            'morning_time_out' => $attendance->morning_time_out?->format('H:i'),
+            'afternoon_time_in' => $attendance->afternoon_time_in?->format('H:i'),
+            'afternoon_time_out' => $attendance->afternoon_time_out?->format('H:i'),
+        ];
     }
 
     private function missingTimeOutLabel(AttendanceRecord $record): string
