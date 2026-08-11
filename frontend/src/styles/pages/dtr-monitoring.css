@@ -139,6 +139,102 @@
   cursor: not-allowed;
 }
 
+.dtr-period-guide {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 13px;
+  align-items: start;
+  border: 1px solid rgba(66, 99, 235, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(66, 99, 235, 0.1), rgba(20, 184, 166, 0.08)),
+    var(--bg-card);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+}
+
+.dtr-period-guide>span {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  color: #3657ff;
+  background: rgba(66, 99, 235, 0.12);
+}
+
+.dtr-period-guide strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.dtr-period-guide p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.dtr-period-guide small {
+  display: block;
+  margin-top: 5px;
+  color: #4263eb;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.dtr-setup-warning {
+  margin-bottom: 18px;
+  padding: 15px 16px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 13px;
+  align-items: center;
+  border: 1px solid rgba(245, 158, 11, 0.26);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.13), rgba(251, 191, 36, 0.07)),
+    var(--bg-card);
+}
+
+.dtr-setup-warning>span {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.dtr-setup-warning strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.dtr-setup-warning p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.dtr-setup-warning button {
+  height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  font-size: 0.78rem;
+  font-weight: 850;
+  box-shadow: 0 10px 22px rgba(234, 88, 12, 0.18);
+}
+
 .dtr-summary-grid {
   margin-bottom: 18px;
   display: grid;
@@ -1533,6 +1629,15 @@
 
   .dtr-filters select {
     width: 100%;
+  }
+
+  .dtr-setup-warning {
+    grid-template-columns: auto 1fr;
+  }
+
+  .dtr-setup-warning button {
+    grid-column: 1 / -1;
+    justify-self: stretch;
   }
 
   .dtr-detail-list article {

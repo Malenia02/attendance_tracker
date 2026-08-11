@@ -171,14 +171,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 : [];
             $safeMessages = [
                 400 => 'The request is invalid.',
+                401 => 'Your login session is no longer valid. Please sign in again.',
+                403 => 'You do not have permission to perform this action.',
                 405 => 'The HTTP method is not allowed for this endpoint.',
                 409 => 'The request conflicts with the current resource state.',
                 419 => 'Your secure session token has expired. Refresh the page and try again.',
                 429 => 'Too many requests. Please wait and try again.',
+                500 => 'The server hit an unexpected problem. Please try again or give the request ID to the administrator.',
             ];
             $message = $safeMessages[$status]
                 ?? ($status >= 500
-                    ? 'The request could not be completed.'
+                    ? 'The server hit an unexpected problem. Please try again or give the request ID to the administrator.'
                     : 'The request was rejected.');
             $code = match ($status) {
                 400 => 'BAD_REQUEST',

@@ -202,12 +202,13 @@ export default function ActionCenter() {
         },
       ).then(readResponse);
 
-      setCorrectionModal(null);
       setNotice(payload.message);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 5500);
+      return payload;
     } catch (requestError) {
       setError(requestError.message);
+      throw requestError;
     } finally {
       setCorrectionBusy(false);
     }

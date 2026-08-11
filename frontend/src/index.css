@@ -10,6 +10,7 @@
 @import "./styles/layout/app-layout.css";
 @import "./styles/layout/footer.css";
 @import "./styles/components/notification-bell.css";
+@import "./styles/components/toasts.css";
 
 /* Feature pages */
 @import "./styles/pages/dashboard.css";

@@ -1,6 +1,13 @@
 import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, ShieldCheck, X, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
+import FormStatusBanner from "../common/FormStatusBanner";
+
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function formatRequestedTime(value) {
   if (!value) return "—";
@@ -30,15 +37,41 @@ export default function AttendanceCorrectionRequestModal({
   const [proposedTime, setProposedTime] = useState("");
   const [reason, setReason] = useState("");
   const [reviewRemarks, setReviewRemarks] = useState("");
+  const [status, setStatus] = useState(null);
   const isReview = mode === "review";
 
-  function submitEmployeeRequest(event) {
+  async function submitEmployeeRequest(event) {
     event.preventDefault();
-    onSubmit({
-      missing_field: missingField,
-      proposed_time: proposedTime,
-      reason: reason.trim(),
-    });
+    setStatus(null);
+
+    try {
+      const payload = await onSubmit({
+        missing_field: missingField,
+        proposed_time: proposedTime,
+        reason: reason.trim(),
+      });
+      setStatus({ type: "success", message: payload?.message || "Correction request submitted." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
+      onClose();
+    } catch (error) {
+      setStatus({ type: "error", message: error.message || "The correction request could not be submitted." });
+    }
+  }
+
+  async function submitReview(action) {
+    setStatus(null);
+
+    try {
+      const payload = await onSubmit({
+        action,
+        review_remarks: reviewRemarks.trim(),
+      });
+      setStatus({ type: "success", message: payload?.message || "Correction request reviewed." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
+      onClose();
+    } catch (error) {
+      setStatus({ type: "error", message: error.message || "The correction request could not be reviewed." });
+    }
   }
 
   return (
@@ -78,6 +111,8 @@ export default function AttendanceCorrectionRequestModal({
         </header>
 
         <div className="app-modal-body">
+          <FormStatusBanner status={status} />
+
           {isReview ? (
             <>
             <div className="attendance-request-review-grid">
@@ -131,7 +166,7 @@ export default function AttendanceCorrectionRequestModal({
               Reviewer remarks
               <textarea
                 value={reviewRemarks}
-                onChange={(event) => setReviewRemarks(event.target.value)}
+                onChange={(event) => { setReviewRemarks(event.target.value); setStatus(null); }}
                 maxLength={500}
                 placeholder="Required when rejecting; optional when approving..."
               />
@@ -149,10 +184,7 @@ export default function AttendanceCorrectionRequestModal({
                 type="button"
                 className="reject"
                 disabled={busy || reviewRemarks.trim().length < 10}
-                onClick={() => onSubmit({
-                  action: "Rejected",
-                  review_remarks: reviewRemarks.trim(),
-                })}
+                onClick={() => submitReview("Rejected")}
               >
                 <XCircle size={15} />Reject
               </button>
@@ -160,10 +192,7 @@ export default function AttendanceCorrectionRequestModal({
                 type="button"
                 className="approve"
                 disabled={busy}
-                onClick={() => onSubmit({
-                  action: "Approved",
-                  review_remarks: reviewRemarks.trim(),
-                })}
+                onClick={() => submitReview("Approved")}
               >
                 <CheckCircle2 size={15} />{busy ? "Processing…" : "Approve"}
               </button>
@@ -183,7 +212,7 @@ export default function AttendanceCorrectionRequestModal({
               Missing entry
               <select
                 value={missingField}
-                onChange={(event) => setMissingField(event.target.value)}
+                onChange={(event) => { setMissingField(event.target.value); setStatus(null); }}
                 required
               >
                 {missingEntries.map((entry) => (
@@ -197,7 +226,7 @@ export default function AttendanceCorrectionRequestModal({
               <input
                 type="time"
                 value={proposedTime}
-                onChange={(event) => setProposedTime(event.target.value)}
+                onChange={(event) => { setProposedTime(event.target.value); setStatus(null); }}
                 required
               />
             </label>
@@ -206,7 +235,7 @@ export default function AttendanceCorrectionRequestModal({
               Why did you forget to time out?
               <textarea
                 value={reason}
-                onChange={(event) => setReason(event.target.value)}
+                onChange={(event) => { setReason(event.target.value); setStatus(null); }}
                 minLength={10}
                 maxLength={500}
                 required

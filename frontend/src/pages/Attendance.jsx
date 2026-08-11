@@ -320,12 +320,12 @@ export default function Attendance() {
       }).then(readResponse);
 
       setNotice(payload.message);
-      setEditingRecord(null);
-      setCorrectionDismissed(true);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 4500);
+      return payload;
     } catch (error) {
       setPageError(error.message);
+      throw error;
     } finally {
       setCorrectionBusy(false);
     }
@@ -346,11 +346,12 @@ export default function Attendance() {
       }).then(readResponse);
 
       setNotice(payload.message);
-      setRequestModal(null);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 5000);
+      return payload;
     } catch (error) {
       setPageError(error.message);
+      throw error;
     } finally {
       setRequestBusy(false);
     }
@@ -372,11 +373,12 @@ export default function Attendance() {
       ).then(readResponse);
 
       setNotice(payload.message);
-      setRequestModal(null);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 5500);
+      return payload;
     } catch (error) {
       setPageError(error.message);
+      throw error;
     } finally {
       setRequestBusy(false);
     }

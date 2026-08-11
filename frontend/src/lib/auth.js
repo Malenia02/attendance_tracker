@@ -1,3 +1,5 @@
+import { notifyToast } from "./toastEvents";
+
 const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 const API_ORIGIN = API_BASE.endsWith("/api")
   ? API_BASE.slice(0, -4)
@@ -9,6 +11,39 @@ const SESSION_CHECK_TIMEOUT_MS = Number(
 );
 let sessionVerificationPromise = null;
 let lastSessionVerificationAt = 0;
+
+function dispatchToast({ type, message, requestId }) {
+  if (!message || typeof window === "undefined") return;
+
+  notifyToast({
+    type,
+    message,
+    meta: requestId ? `Request ID: ${requestId}` : "",
+  });
+}
+
+async function maybeNotifyMutation(response, method, path, options) {
+  if (
+    options.suppressToast
+    || ["GET", "HEAD", "OPTIONS"].includes(method)
+    || path.startsWith("/auth/")
+  ) {
+    return;
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) return;
+
+  const payload = await response.clone().json().catch(() => ({}));
+  const message = payload.message || payload.error?.message;
+  if (!message) return;
+
+  dispatchToast({
+    type: response.ok ? "success" : "error",
+    message,
+    requestId: response.ok ? "" : payload.request_id || response.headers.get("X-Request-ID") || "",
+  });
+}
 
 export function getStoredUser() {
   const value = sessionStorage.getItem(USER_KEY);
@@ -56,9 +91,10 @@ export async function initializeCsrf() {
 }
 
 export async function apiFetch(path, options = {}) {
-  const headers = new Headers(options.headers || {});
+  const { suppressToast = false, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers || {});
   headers.set("Accept", "application/json");
-  const method = (options.method || "GET").toUpperCase();
+  const method = (fetchOptions.method || "GET").toUpperCase();
   const csrf = xsrfToken();
 
   if (!["GET", "HEAD", "OPTIONS"].includes(method) && csrf) {
@@ -66,10 +102,12 @@ export async function apiFetch(path, options = {}) {
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers,
     credentials: "include",
   });
+
+  await maybeNotifyMutation(response, method, path, { suppressToast });
 
   if (response.status === 401 && path !== "/auth/login") {
     clearAuth();

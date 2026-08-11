@@ -33,7 +33,7 @@ final class StandardizeApiResponse
         if (! $successful && ! isset($payload['error'])) {
             $payload['error'] = [
                 'code' => $this->errorCode($response->getStatusCode()),
-                'message' => (string) ($payload['message'] ?? 'The request could not be completed.'),
+                'message' => (string) ($payload['message'] ?? $this->fallbackMessage($response->getStatusCode())),
             ];
 
             if (! empty($payload['errors']) && is_array($payload['errors'])) {
@@ -59,6 +59,24 @@ final class StandardizeApiResponse
             422 => 'VALIDATION_FAILED',
             429 => 'TOO_MANY_REQUESTS',
             default => $status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_FAILED',
+        };
+    }
+
+    private function fallbackMessage(int $status): string
+    {
+        return match ($status) {
+            400 => 'The request is invalid.',
+            401 => 'Your login session is no longer valid. Please sign in again.',
+            403 => 'You do not have permission to perform this action.',
+            404 => 'The requested resource was not found.',
+            405 => 'The HTTP method is not allowed for this endpoint.',
+            409 => 'The request conflicts with the current resource state.',
+            419 => 'Your secure session token has expired. Refresh the page and try again.',
+            422 => 'Some fields are invalid.',
+            429 => 'Too many requests. Please wait and try again.',
+            default => $status >= 500
+                ? 'The server hit an unexpected problem. Please try again or give the request ID to the administrator.'
+                : 'The request was rejected.',
         };
     }
 }

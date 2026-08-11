@@ -18,6 +18,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import ModalPortal from "../components/common/ModalPortal";
+import FormStatusBanner from "../components/common/FormStatusBanner";
 
 const emptyForm = {
   department_code: "",
@@ -28,6 +29,12 @@ const emptyForm = {
   allowed_radius_meters: "100",
   status: "Active",
 };
+
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
@@ -56,6 +63,7 @@ export default function Departments() {
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalStatus, setModalStatus] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -107,6 +115,7 @@ export default function Departments() {
     setFieldErrors({});
     setLocationAccuracy(null);
     setNetworkName("Main office internet");
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -124,6 +133,7 @@ export default function Departments() {
     setFieldErrors({});
     setLocationAccuracy(null);
     setNetworkName("Main office internet");
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -131,12 +141,14 @@ export default function Departments() {
     if (saving || locating || networkBusy) return;
     setModalOpen(false);
     setEditing(null);
+    setModalStatus(null);
   }
 
   function updateForm(event) {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
     setFieldErrors((current) => ({ ...current, [name]: undefined }));
+    setModalStatus(null);
   }
 
   function captureCoordinates() {
@@ -175,6 +187,7 @@ export default function Departments() {
     event.preventDefault();
     setSaving(true);
     setFieldErrors({});
+    setModalStatus(null);
 
     try {
       const response = await apiFetch(
@@ -195,11 +208,15 @@ export default function Departments() {
       );
       const payload = await readResponse(response);
       setNotice(payload.message);
+      setModalStatus({ type: "success", message: payload.message || "Saved successfully." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
       setModalOpen(false);
       setEditing(null);
+      setModalStatus(null);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 3500);
     } catch (error) {
+      setModalStatus({ type: "error", message: error.message });
       setFieldErrors(
         Object.keys(error.fields || {}).length ? error.fields : { general: [error.message] },
       );
@@ -238,6 +255,7 @@ export default function Departments() {
     if (!editing || !networkName.trim()) return;
     setNetworkBusy(true);
     setFieldErrors((current) => ({ ...current, office_network: undefined }));
+    setModalStatus(null);
 
     try {
       const payload = await apiFetch(`/departments/${editing.department_id}/office-networks`, {
@@ -258,7 +276,9 @@ export default function Departments() {
           : item
       )));
       setNotice(payload.message);
+      setModalStatus({ type: "success", message: payload.message || "Office network registered." });
     } catch (error) {
+      setModalStatus({ type: "error", message: error.message });
       setFieldErrors((current) => ({ ...current, office_network: [error.message] }));
     } finally {
       setNetworkBusy(false);
@@ -268,6 +288,7 @@ export default function Departments() {
   async function revokeOfficeNetwork(network) {
     if (!editing) return;
     setNetworkBusy(true);
+    setModalStatus(null);
 
     try {
       const payload = await apiFetch(
@@ -284,7 +305,9 @@ export default function Departments() {
           : item
       )));
       setNotice(payload.message);
+      setModalStatus({ type: "success", message: payload.message || "Office network removed." });
     } catch (error) {
+      setModalStatus({ type: "error", message: error.message });
       setFieldErrors((current) => ({ ...current, office_network: [error.message] }));
     } finally {
       setNetworkBusy(false);
@@ -378,6 +401,7 @@ export default function Departments() {
             </div>
 
             <form className="user-form admin-form-layout department-form" onSubmit={submitForm}>
+              <FormStatusBanner status={modalStatus} />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
               <div className="admin-form-section">

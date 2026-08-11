@@ -37,6 +37,24 @@ function currentDtrPeriod() {
   return new Date().getDate() <= 15 ? "first_half" : "second_half";
 }
 
+const periodGuides = {
+  first_half: {
+    title: "1st–15th cutoff",
+    description: "Shows only duty days and attendance records dated from the 1st to the 15th of the selected month.",
+    note: "Use this for the first GIP semi-monthly DTR submission.",
+  },
+  second_half: {
+    title: "16th–month-end cutoff",
+    description: "Shows only duty days and attendance records dated from the 16th through the last day of the selected month.",
+    note: "Use this for the second GIP semi-monthly DTR submission.",
+  },
+  full_month: {
+    title: "Full month view",
+    description: "Shows the whole month for regular monthly reporting or special review.",
+    note: "GIP personnel normally use the two cutoff periods unless HR allows a documented full-month override.",
+  },
+};
+
 function formatMinutes(value) {
   const minutes = Number(value) || 0;
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
@@ -117,6 +135,7 @@ export default function DtrMonitoring() {
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [exceptionBusy, setExceptionBusy] = useState(false);
+  const selectedPeriodGuide = periodGuides[period] || periodGuides.full_month;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -502,6 +521,30 @@ export default function DtrMonitoring() {
 
       {notice && <div className="users-notice success"><BadgeCheck size={18} />{notice}</div>}
       {error && <div className="users-notice error"><X size={18} />{error}</div>}
+
+      <div className="dtr-period-guide">
+        <span><CalendarRange size={18} /></span>
+        <div>
+          <strong>{selectedPeriodGuide.title}</strong>
+          <p>{selectedPeriodGuide.description}</p>
+          <small>{selectedPeriodGuide.note}</small>
+        </div>
+      </div>
+
+      {summary.schedule_setup_required > 0 && (
+        <div className="dtr-setup-warning">
+          <span><CalendarX2 size={18} /></span>
+          <div>
+            <strong>{summary.schedule_setup_required} personnel record{summary.schedule_setup_required === 1 ? "" : "s"} need schedule setup</strong>
+            <p>DTRs should not be submitted until the personnel has an assigned office and an effective work schedule for this cutoff.</p>
+          </div>
+          {meta.can_correct_attendance && (
+            <button type="button" onClick={() => navigate("/personnel-onboarding")}>
+              Review setup gaps
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="dtr-summary-grid">
         {cards.map(({ label, value, icon: Icon, tone }, index) => (

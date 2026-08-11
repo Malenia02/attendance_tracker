@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch, getStoredUser } from "../lib/auth";
+import FormStatusBanner from "../components/common/FormStatusBanner";
 
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -25,6 +26,12 @@ const emptyForm = {
   department_id: "",
   description: "",
 };
+
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function dateKey(date) {
   const year = date.getFullYear();
@@ -95,6 +102,7 @@ export default function HolidayCalendar() {
   const [editingHoliday, setEditingHoliday] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [modalStatus, setModalStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
@@ -173,6 +181,7 @@ export default function HolidayCalendar() {
     setEditingHoliday(null);
     setForm({ ...emptyForm, holiday_date: date });
     setFieldErrors({});
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -187,6 +196,7 @@ export default function HolidayCalendar() {
       description: "Optional working day approved by the Regional Director.",
     });
     setFieldErrors({});
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -201,6 +211,7 @@ export default function HolidayCalendar() {
       description: holiday.description || "",
     });
     setFieldErrors({});
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -209,18 +220,21 @@ export default function HolidayCalendar() {
     setModalOpen(false);
     setEditingHoliday(null);
     setFieldErrors({});
+    setModalStatus(null);
   }
 
   function updateForm(event) {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
     setFieldErrors((current) => ({ ...current, [name]: undefined }));
+    setModalStatus(null);
   }
 
   async function submitForm(event) {
     event.preventDefault();
     setSaving(true);
     setFieldErrors({});
+    setModalStatus(null);
 
     try {
       const response = await apiFetch(
@@ -238,15 +252,19 @@ export default function HolidayCalendar() {
       const payload = await readResponse(response);
 
       setNotice(payload.message);
+      setModalStatus({ type: "success", message: payload.message || "Calendar entry saved successfully." });
       setSelectedDate(form.holiday_date);
       setVisibleMonth(
         new Date(parseDate(form.holiday_date).getFullYear(), parseDate(form.holiday_date).getMonth(), 1),
       );
+      await wait(MODAL_SUCCESS_DELAY_MS);
       setModalOpen(false);
       setEditingHoliday(null);
+      setModalStatus(null);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 3500);
     } catch (error) {
+      setModalStatus({ type: "error", message: error.message });
       setFieldErrors(
         Object.keys(error.fields || {}).length
           ? error.fields
@@ -492,6 +510,7 @@ export default function HolidayCalendar() {
             </div>
 
             <form className="user-form holiday-form" onSubmit={submitForm}>
+              <FormStatusBanner status={modalStatus} />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
               <div className="form-field">

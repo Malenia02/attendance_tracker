@@ -1,5 +1,12 @@
 import { useState } from "react";
 import { AlertTriangle, ShieldCheck, X } from "lucide-react";
+import FormStatusBanner from "../common/FormStatusBanner";
+
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function timeInputValue(value) {
   if (!value) return "";
@@ -28,15 +35,25 @@ export default function AttendanceCorrectionModal({
     afternoon_time_out: timeInputValue(record.afternoon_time_out),
   });
   const [reason, setReason] = useState("");
+  const [status, setStatus] = useState(null);
   const missingTimeOutEntries = record.missing_time_out_entries || [];
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
-    onSave({
-      record_type: recordType,
-      ...times,
-      reason: reason.trim(),
-    });
+    setStatus(null);
+
+    try {
+      const payload = await onSave({
+        record_type: recordType,
+        ...times,
+        reason: reason.trim(),
+      });
+      setStatus({ type: "success", message: payload?.message || "Correction saved for review." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
+      onClose();
+    } catch (error) {
+      setStatus({ type: "error", message: error.message || "The correction could not be saved." });
+    }
   }
 
   return (
@@ -67,6 +84,8 @@ export default function AttendanceCorrectionModal({
         </header>
 
         <div className="app-modal-body">
+          <FormStatusBanner status={status} />
+
           {!!missingTimeOutEntries.length && (
             <div className="attendance-correction-exception">
               <AlertTriangle size={17} />
@@ -82,7 +101,7 @@ export default function AttendanceCorrectionModal({
 
           <label>
             Record type
-            <select value={recordType} onChange={(event) => setRecordType(event.target.value)}>
+            <select value={recordType} onChange={(event) => { setRecordType(event.target.value); setStatus(null); }}>
               <option>Time Entries</option>
               {absenceTypes.map((type) => <option key={type}>{type}</option>)}
             </select>
@@ -101,10 +120,13 @@ export default function AttendanceCorrectionModal({
                   <input
                     type="time"
                     value={times[field]}
-                    onChange={(event) => setTimes((current) => ({
-                      ...current,
-                      [field]: event.target.value,
-                    }))}
+                    onChange={(event) => {
+                      setTimes((current) => ({
+                        ...current,
+                        [field]: event.target.value,
+                      }));
+                      setStatus(null);
+                    }}
                   />
                 </label>
               ))}
@@ -115,7 +137,7 @@ export default function AttendanceCorrectionModal({
             Correction reason
             <textarea
               value={reason}
-              onChange={(event) => setReason(event.target.value)}
+              onChange={(event) => { setReason(event.target.value); setStatus(null); }}
               minLength={10}
               maxLength={255}
               required

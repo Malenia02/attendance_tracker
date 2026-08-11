@@ -18,6 +18,7 @@ import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
 import ModalPortal from "../components/common/ModalPortal";
+import FormStatusBanner from "../components/common/FormStatusBanner";
 
 const emptyForm = {
   personnel_id: "",
@@ -27,6 +28,12 @@ const emptyForm = {
   user_role: "Personnel",
   status: "Active",
 };
+
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function formatDate(value) {
   if (!value) return "Never";
@@ -94,6 +101,7 @@ export default function SystemUsers() {
   const [pageError, setPageError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalStatus, setModalStatus] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -184,6 +192,7 @@ export default function SystemUsers() {
     setPersonnelLookupSearch("");
     setForm(emptyForm);
     setFieldErrors({});
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -199,6 +208,7 @@ export default function SystemUsers() {
       status: user.status,
     });
     setFieldErrors({});
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -207,18 +217,21 @@ export default function SystemUsers() {
     setModalOpen(false);
     setEditingUser(null);
     setFieldErrors({});
+    setModalStatus(null);
   }
 
   function updateForm(event) {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
     setFieldErrors((current) => ({ ...current, [name]: undefined }));
+    setModalStatus(null);
   }
 
   async function submitForm(event) {
     event.preventDefault();
     setSaving(true);
     setFieldErrors({});
+    setModalStatus(null);
 
     const body = {
       ...form,
@@ -247,12 +260,16 @@ export default function SystemUsers() {
       const payload = await readResponse(response);
 
       setNotice(payload.message);
+      setModalStatus({ type: "success", message: payload.message || "Saved successfully." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
       setModalOpen(false);
       setEditingUser(null);
       setFieldErrors({});
+      setModalStatus(null);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 3500);
     } catch (error) {
+      setModalStatus({ type: "error", message: error.message });
       setFieldErrors(error.fields || {});
       if (!Object.keys(error.fields || {}).length) {
         setFieldErrors({ general: [error.message] });
@@ -438,6 +455,7 @@ export default function SystemUsers() {
             </div>
 
             <form onSubmit={submitForm} className="user-form admin-form-layout">
+              <FormStatusBanner status={modalStatus} />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
               <div className="admin-form-section">

@@ -20,6 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Pagination from "../components/common/Pagination";
+import FormStatusBanner from "../components/common/FormStatusBanner";
 import { apiFetch } from "../lib/auth";
 
 const emptyForm = {
@@ -29,6 +30,12 @@ const emptyForm = {
   date_to: "",
   reason: "",
 };
+
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
@@ -91,10 +98,12 @@ export default function LeaveRequests() {
   const [form, setForm] = useState(emptyForm);
   const [documentFile, setDocumentFile] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [createStatus, setCreateStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState(null);
   const [actionMode, setActionMode] = useState("");
   const [actionReason, setActionReason] = useState("");
+  const [actionStatus, setActionStatus] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
 
@@ -161,6 +170,7 @@ export default function LeaveRequests() {
     setForm(emptyForm);
     setDocumentFile(null);
     setFieldErrors({});
+    setCreateStatus(null);
     setCreateOpen(true);
   }
 
@@ -168,12 +178,14 @@ export default function LeaveRequests() {
     if (saving) return;
     setCreateOpen(false);
     setFieldErrors({});
+    setCreateStatus(null);
   }
 
   async function submitRequest(event) {
     event.preventDefault();
     setSaving(true);
     setFieldErrors({});
+    setCreateStatus(null);
     setError("");
     const body = new FormData();
     Object.entries(form).forEach(([key, value]) => body.append(key, value));
@@ -185,13 +197,17 @@ export default function LeaveRequests() {
         body,
       }).then(readResponse);
       setNotice(payload.message);
+      setCreateStatus({ type: "success", message: payload.message || "Request submitted successfully." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
       setCreateOpen(false);
       setForm(emptyForm);
       setDocumentFile(null);
+      setCreateStatus(null);
       setPage(1);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 4000);
     } catch (requestError) {
+      setCreateStatus({ type: "error", message: requestError.message });
       setFieldErrors(
         Object.keys(requestError.fields || {}).length
           ? requestError.fields
@@ -205,12 +221,14 @@ export default function LeaveRequests() {
   function beginAction(mode) {
     setActionMode(mode);
     setActionReason("");
+    setActionStatus(null);
   }
 
   async function submitAction(event) {
     event.preventDefault();
     if (!selected || !actionMode) return;
     setActionBusy(true);
+    setActionStatus(null);
     setError("");
 
     try {
@@ -230,14 +248,18 @@ export default function LeaveRequests() {
         },
       ).then(readResponse);
       setNotice(payload.message);
+      setActionStatus({ type: "success", message: payload.message || "Request updated successfully." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
       setSelected(payload.data);
       setActionMode("");
       setActionReason("");
+      setActionStatus(null);
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 4000);
     } catch (requestError) {
       const message = Object.values(requestError.fields || {}).flat()[0]
         || requestError.message;
+      setActionStatus({ type: "error", message });
       setError(message);
     } finally {
       setActionBusy(false);
@@ -402,6 +424,7 @@ export default function LeaveRequests() {
               <button type="button" onClick={closeCreate} aria-label="Close"><X size={20} /></button>
             </div>
             <form className="user-form" onSubmit={submitRequest}>
+              <FormStatusBanner status={createStatus} />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
               <div className="form-field form-field-full">
                 <label htmlFor="leave_type">Request type</label>
@@ -515,7 +538,10 @@ export default function LeaveRequests() {
 
       {selected && createPortal((
         <div className="modal-backdrop leave-modal-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !actionBusy) setSelected(null);
+          if (event.target === event.currentTarget && !actionBusy) {
+            setActionStatus(null);
+            setSelected(null);
+          }
         }}>
           <div className="user-modal form-modal leave-detail-modal" role="dialog" aria-modal="true" aria-labelledby="leave-detail-title">
             <div className="user-modal-header">
@@ -526,9 +552,10 @@ export default function LeaveRequests() {
                   <p>{selected.personnel?.full_name} · {selected.leave_type}</p>
                 </div>
               </div>
-              <button type="button" onClick={() => setSelected(null)} aria-label="Close"><X size={20} /></button>
+              <button type="button" onClick={() => { setActionStatus(null); setSelected(null); }} aria-label="Close"><X size={20} /></button>
             </div>
             <div className="leave-detail-content">
+              <FormStatusBanner status={actionStatus} />
               <div className="leave-detail-overview">
                 <div><span>Status</span><strong className={`leave-status ${statusClass(selected.status)}`}>{selected.status}</strong></div>
                 <div><span>Scheduled period</span><strong>{formatDate(selected.date_from)} – {formatDate(selected.date_to)}</strong></div>
@@ -592,12 +619,12 @@ export default function LeaveRequests() {
                     minLength={actionMode === "Approved" ? undefined : 10}
                     maxLength="1000"
                     value={actionReason}
-                    onChange={(event) => setActionReason(event.target.value)}
+                    onChange={(event) => { setActionReason(event.target.value); setActionStatus(null); }}
                     required={actionMode !== "Approved"}
                     autoFocus
                   />
                   <div>
-                    <button type="button" className="secondary" onClick={() => setActionMode("")}>Back</button>
+                    <button type="button" className="secondary" onClick={() => { setActionStatus(null); setActionMode(""); }}>Back</button>
                     <button type="submit" className={actionMode === "Approved" ? "approve" : "danger"} disabled={actionBusy}>
                       {actionBusy ? "Saving…" : `Confirm ${actionMode.toLowerCase()}`}
                     </button>

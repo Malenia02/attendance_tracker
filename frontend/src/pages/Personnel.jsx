@@ -21,6 +21,7 @@ import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
 import ModalPortal from "../components/common/ModalPortal";
+import FormStatusBanner from "../components/common/FormStatusBanner";
 
 function toDateInput(date) {
   const year = date.getFullYear();
@@ -61,6 +62,12 @@ const emptyForm = {
   status: "Inactive",
 };
 
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
 
@@ -94,6 +101,7 @@ export default function Personnel() {
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalStatus, setModalStatus] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -189,6 +197,7 @@ export default function Personnel() {
     setSignaturePreview("");
     setRemoveSignature(false);
     setFieldErrors({});
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -223,6 +232,7 @@ export default function Personnel() {
     setSignaturePreview(record.signature_url || "");
     setRemoveSignature(false);
     setFieldErrors({});
+    setModalStatus(null);
     setModalOpen(true);
   }
 
@@ -239,6 +249,7 @@ export default function Personnel() {
     setSignaturePreview("");
     setRemoveSignature(false);
     setFieldErrors({});
+    setModalStatus(null);
   }
 
   function updateForm(event) {
@@ -251,6 +262,7 @@ export default function Personnel() {
         : {}),
     }));
     setFieldErrors((current) => ({ ...current, [name]: undefined }));
+    setModalStatus(null);
   }
 
   function selectPhoto(event) {
@@ -262,6 +274,7 @@ export default function Personnel() {
     const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
 
     if (!allowedTypes.includes(file.type)) {
+      setModalStatus({ type: "error", message: "Choose a JPEG, PNG, or WebP image." });
       setFieldErrors((current) => ({
         ...current,
         photo: ["Choose a JPEG, PNG, or WebP image."],
@@ -270,6 +283,7 @@ export default function Personnel() {
     }
 
     if (file.size > 3 * 1024 * 1024) {
+      setModalStatus({ type: "error", message: "The photo must not be larger than 3 MB." });
       setFieldErrors((current) => ({
         ...current,
         photo: ["The photo must not be larger than 3 MB."],
@@ -283,6 +297,7 @@ export default function Personnel() {
     setPhotoPreview(photoObjectUrl.current);
     setRemovePhoto(false);
     setFieldErrors((current) => ({ ...current, photo: undefined }));
+    setModalStatus(null);
   }
 
   function clearPhoto() {
@@ -291,6 +306,7 @@ export default function Personnel() {
     setPhotoPreview("");
     setRemovePhoto(Boolean(editingRecord?.photo_url));
     setFieldErrors((current) => ({ ...current, photo: undefined }));
+    setModalStatus(null);
   }
 
   function selectSignature(event) {
@@ -302,6 +318,7 @@ export default function Personnel() {
     const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
 
     if (!allowedTypes.includes(file.type)) {
+      setModalStatus({ type: "error", message: "Choose a JPEG, PNG, or WebP signature image." });
       setFieldErrors((current) => ({
         ...current,
         signature: ["Choose a JPEG, PNG, or WebP signature image."],
@@ -310,6 +327,7 @@ export default function Personnel() {
     }
 
     if (file.size > 2 * 1024 * 1024) {
+      setModalStatus({ type: "error", message: "The signature image must not be larger than 2 MB." });
       setFieldErrors((current) => ({
         ...current,
         signature: ["The signature image must not be larger than 2 MB."],
@@ -323,6 +341,7 @@ export default function Personnel() {
     setSignaturePreview(signatureObjectUrl.current);
     setRemoveSignature(false);
     setFieldErrors((current) => ({ ...current, signature: undefined }));
+    setModalStatus(null);
   }
 
   function clearSignature() {
@@ -331,12 +350,14 @@ export default function Personnel() {
     setSignaturePreview("");
     setRemoveSignature(Boolean(editingRecord?.signature_url));
     setFieldErrors((current) => ({ ...current, signature: undefined }));
+    setModalStatus(null);
   }
 
   async function submitForm(event) {
     event.preventDefault();
     setSaving(true);
     setFieldErrors({});
+    setModalStatus(null);
 
     const body = new FormData();
     Object.entries(form).forEach(([key, value]) => body.append(key, value));
@@ -358,8 +379,11 @@ export default function Personnel() {
       const payload = await readResponse(response);
 
       setNotice(payload.message);
+      setModalStatus({ type: "success", message: payload.message || "Saved successfully." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
       setModalOpen(false);
       setEditingRecord(null);
+      setModalStatus(null);
       releasePhotoObjectUrl();
       releaseSignatureObjectUrl();
       setPhotoFile(null);
@@ -371,6 +395,7 @@ export default function Personnel() {
       setRefreshKey((key) => key + 1);
       window.setTimeout(() => setNotice(""), 3500);
     } catch (error) {
+      setModalStatus({ type: "error", message: error.message });
       setFieldErrors(
         Object.keys(error.fields || {}).length
           ? error.fields
@@ -584,6 +609,7 @@ export default function Personnel() {
             </div>
 
             <form className="user-form admin-form-layout personnel-form" onSubmit={submitForm}>
+              <FormStatusBanner status={modalStatus} />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
               <div className="admin-form-section">

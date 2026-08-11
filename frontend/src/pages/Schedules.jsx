@@ -19,6 +19,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import FormStatusBanner from "../components/common/FormStatusBanner";
 
 const days = [
   ["monday", "Mon"],
@@ -67,6 +68,12 @@ function createEmptyAssignment() {
     effective_from: localDateInputValue(),
     effective_to: "",
   };
+}
+
+const MODAL_SUCCESS_DELAY_MS = 850;
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 async function readResponse(response) {
@@ -127,12 +134,14 @@ export default function Schedules() {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [scheduleForm, setScheduleForm] = useState(emptySchedule);
   const [scheduleErrors, setScheduleErrors] = useState({});
+  const [scheduleStatus, setScheduleStatus] = useState(null);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [assignmentModal, setAssignmentModal] = useState(false);
   const [assignmentForm, setAssignmentForm] = useState(createEmptyAssignment);
   const [selectedPersonnel, setSelectedPersonnel] = useState([]);
   const [assignmentSearch, setAssignmentSearch] = useState("");
   const [assignmentErrors, setAssignmentErrors] = useState({});
+  const [assignmentStatus, setAssignmentStatus] = useState(null);
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
@@ -215,6 +224,7 @@ export default function Schedules() {
     setEditingSchedule(null);
     setScheduleForm(emptySchedule);
     setScheduleErrors({});
+    setScheduleStatus(null);
     setScheduleModal(true);
   }
 
@@ -239,6 +249,7 @@ export default function Schedules() {
       required_minutes_per_day: String(schedule.required_minutes_per_day),
     });
     setScheduleErrors({});
+    setScheduleStatus(null);
     setScheduleModal(true);
   }
 
@@ -246,12 +257,14 @@ export default function Schedules() {
     const { name, type, checked, value } = event.target;
     setScheduleForm((current) => ({ ...current, [name]: type === "checkbox" ? checked : value }));
     setScheduleErrors((current) => ({ ...current, [name]: undefined, working_days: undefined }));
+    setScheduleStatus(null);
   }
 
   async function saveSchedule(event) {
     event.preventDefault();
     setSavingSchedule(true);
     setScheduleErrors({});
+    setScheduleStatus(null);
 
     try {
       const payload = await apiFetch(
@@ -267,11 +280,15 @@ export default function Schedules() {
           }),
         },
       ).then(readResponse);
+      showNotice(payload.message);
+      setScheduleStatus({ type: "success", message: payload.message || "Schedule saved successfully." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
       setScheduleModal(false);
       setEditingSchedule(null);
-      showNotice(payload.message);
+      setScheduleStatus(null);
       setRefreshKey((key) => key + 1);
     } catch (error) {
+      setScheduleStatus({ type: "error", message: error.message });
       setScheduleErrors(
         Object.keys(error.fields || {}).length ? error.fields : { general: [error.message] },
       );
@@ -312,6 +329,7 @@ export default function Schedules() {
     setSelectedPersonnel(personnelIds.map(Number));
     setAssignmentSearch("");
     setAssignmentErrors({});
+    setAssignmentStatus(null);
     setAssignmentModal(true);
   }
 
@@ -320,6 +338,7 @@ export default function Schedules() {
       ? current.filter((id) => id !== personnelId)
       : [...current, personnelId]);
     setAssignmentErrors((current) => ({ ...current, personnel_ids: undefined }));
+    setAssignmentStatus(null);
   }
 
   function toggleVisiblePersonnel() {
@@ -329,12 +348,14 @@ export default function Schedules() {
     setSelectedPersonnel((current) => allSelected
       ? current.filter((id) => !visibleIds.includes(id))
       : [...new Set([...current, ...visibleIds])]);
+    setAssignmentStatus(null);
   }
 
   async function saveAssignments(event) {
     event.preventDefault();
     setSavingAssignment(true);
     setAssignmentErrors({});
+    setAssignmentStatus(null);
 
     try {
       const payload = await apiFetch("/schedules/assignments", {
@@ -347,10 +368,14 @@ export default function Schedules() {
           effective_to: assignmentForm.effective_to || null,
         }),
       }).then(readResponse);
-      setAssignmentModal(false);
       showNotice(payload.message);
+      setAssignmentStatus({ type: "success", message: payload.message || "Assignments saved successfully." });
+      await wait(MODAL_SUCCESS_DELAY_MS);
+      setAssignmentModal(false);
+      setAssignmentStatus(null);
       setRefreshKey((key) => key + 1);
     } catch (error) {
+      setAssignmentStatus({ type: "error", message: error.message });
       setAssignmentErrors(
         Object.keys(error.fields || {}).length ? error.fields : { general: [error.message] },
       );
@@ -527,7 +552,10 @@ export default function Schedules() {
 
       {scheduleModal && (
         <div className="modal-backdrop schedule-modal-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !savingSchedule) setScheduleModal(false);
+          if (event.target === event.currentTarget && !savingSchedule) {
+            setScheduleStatus(null);
+            setScheduleModal(false);
+          }
         }}>
           <div className="user-modal schedule-modal" role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title">
             <div className="user-modal-header">
@@ -535,10 +563,11 @@ export default function Schedules() {
                 <span className="modal-icon"><CalendarClock size={21} /></span>
                 <div><h2 id="schedule-modal-title">{editingSchedule ? "Edit work schedule" : "Create work schedule"}</h2><p>Configure official hours and safe attendance windows.</p></div>
               </div>
-              <button type="button" onClick={() => setScheduleModal(false)} disabled={savingSchedule} aria-label="Close"><X size={20} /></button>
+              <button type="button" onClick={() => { setScheduleStatus(null); setScheduleModal(false); }} disabled={savingSchedule} aria-label="Close"><X size={20} /></button>
             </div>
 
             <form className="schedule-form" onSubmit={saveSchedule}>
+              <FormStatusBanner status={scheduleStatus} />
               {scheduleErrors.general && <div className="form-error-banner">{scheduleErrors.general[0]}</div>}
 
               <div className="schedule-form-section">
@@ -609,7 +638,7 @@ export default function Schedules() {
               </div>
 
               <div className="user-modal-actions">
-                <button type="button" className="secondary-action" onClick={() => setScheduleModal(false)} disabled={savingSchedule}>Cancel</button>
+                <button type="button" className="secondary-action" onClick={() => { setScheduleStatus(null); setScheduleModal(false); }} disabled={savingSchedule}>Cancel</button>
                 <button type="submit" className="primary-action" disabled={savingSchedule}>{savingSchedule ? "Saving…" : editingSchedule ? "Save schedule" : "Create schedule"}</button>
               </div>
             </form>
@@ -619,7 +648,10 @@ export default function Schedules() {
 
       {assignmentModal && (
         <div className="modal-backdrop schedule-modal-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !savingAssignment) setAssignmentModal(false);
+          if (event.target === event.currentTarget && !savingAssignment) {
+            setAssignmentStatus(null);
+            setAssignmentModal(false);
+          }
         }}>
           <div className="user-modal assignment-modal" role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title">
             <div className="user-modal-header">
@@ -627,10 +659,11 @@ export default function Schedules() {
                 <span className="modal-icon"><UserPlus size={21} /></span>
                 <div><h2 id="assignment-modal-title">Assign personnel schedule</h2><p>The previous assignment will end before the new effective date.</p></div>
               </div>
-              <button type="button" onClick={() => setAssignmentModal(false)} disabled={savingAssignment} aria-label="Close"><X size={20} /></button>
+              <button type="button" onClick={() => { setAssignmentStatus(null); setAssignmentModal(false); }} disabled={savingAssignment} aria-label="Close"><X size={20} /></button>
             </div>
 
             <form className="assignment-form" onSubmit={saveAssignments}>
+              <FormStatusBanner status={assignmentStatus} />
               {assignmentErrors.general && <div className="form-error-banner">{assignmentErrors.general[0]}</div>}
               <div className="schedule-form-grid">
                 <div className="form-field form-field-wide">
@@ -678,7 +711,7 @@ export default function Schedules() {
               </div>
 
               <div className="user-modal-actions">
-                <button type="button" className="secondary-action" onClick={() => setAssignmentModal(false)} disabled={savingAssignment}>Cancel</button>
+                <button type="button" className="secondary-action" onClick={() => { setAssignmentStatus(null); setAssignmentModal(false); }} disabled={savingAssignment}>Cancel</button>
                 <button type="submit" className="primary-action" disabled={savingAssignment}>{savingAssignment ? "Assigning…" : `Assign ${selectedPersonnel.length || ""} personnel`}</button>
               </div>
             </form>

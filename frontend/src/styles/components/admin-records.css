@@ -713,6 +713,55 @@
   font-size: 12px;
 }
 
+.form-status-banner {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  animation: formStatusIn 160ms ease-out;
+}
+
+.form-status-banner svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.form-status-banner.success {
+  color: #087857;
+  border: 1px solid rgba(18, 183, 106, 0.28);
+  background:
+    linear-gradient(135deg, rgba(18, 183, 106, 0.14), transparent 72%),
+    #ecfdf3;
+  box-shadow: 0 12px 26px rgba(18, 183, 106, 0.12);
+}
+
+.form-status-banner.error {
+  color: #b42318;
+  border: 1px solid rgba(240, 68, 56, 0.28);
+  background:
+    linear-gradient(135deg, rgba(240, 68, 56, 0.14), transparent 72%),
+    #fff0ef;
+  box-shadow: 0 12px 26px rgba(240, 68, 56, 0.1);
+}
+
+@keyframes formStatusIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .password-requirements {
   padding: 14px 15px;
   border: 1px solid var(--border);
