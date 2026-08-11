@@ -40,8 +40,6 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         ->whereNumber('notificationId')
         ->middleware('throttle:30,1');
 
-
-
     // Daily attendance: list attendance, self time-in/out, verification, and correction workflows.
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/options', [AttendanceController::class, 'options']);
@@ -86,7 +84,6 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
 
     Route::post('/qr-attendance/personnel/{personnel}/regenerate', [QrAttendanceController::class, 'regenerate'])
         ->middleware(['role:Administrator,HR', 'throttle:20,1']);
-        
 
     // DTR workflow: monitor cutoff periods, generate documents, submit/certify/return, and reopen.
     Route::get('/dtr', [DtrController::class, 'index']);

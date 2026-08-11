@@ -33,6 +33,7 @@ use ZipArchive;
 class DtrController extends Controller
 {
     private const MANAGER_ROLES = ['Administrator', 'HR', 'Supervisor', 'Encoder'];
+
     private const SUBMITTED_STATUSES = ['Submitted', 'Submitted Late'];
 
     public function __construct(
