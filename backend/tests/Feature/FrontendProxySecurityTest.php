@@ -49,6 +49,28 @@ class FrontendProxySecurityTest extends TestCase
             ->assertJsonPath('error.code', 'UNAUTHENTICATED');
     }
 
+    public function test_secret_whitespace_and_explicit_proxy_path_are_supported(): void
+    {
+        config()->set('security.frontend_proxy_signing_secret', '  '.str_repeat('s', 64)."\n");
+
+        $timestamp = (string) now()->timestamp;
+        $ip = '8.8.8.8';
+        $signature = hash_hmac(
+            'sha256',
+            implode("\n", [$timestamp, 'GET', '/api/auth/me', $ip]),
+            str_repeat('s', 64)
+        );
+
+        $this->withHeaders([
+            'X-DILG-Client-IP' => $ip,
+            'X-DILG-Proxy-Path' => '/api/auth/me',
+            'X-DILG-Proxy-Timestamp' => $timestamp,
+            'X-DILG-Proxy-Signature' => $signature,
+        ])->getJson('/api/auth/me')
+            ->assertUnauthorized()
+            ->assertJsonPath('error.code', 'UNAUTHENTICATED');
+    }
+
     public function test_an_expired_proxy_signature_is_rejected(): void
     {
         $timestamp = (string) now()->subMinutes(5)->timestamp;

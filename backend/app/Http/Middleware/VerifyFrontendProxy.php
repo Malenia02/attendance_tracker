@@ -16,7 +16,7 @@ final class VerifyFrontendProxy
             return $next($request);
         }
 
-        $secret = (string) config('security.frontend_proxy_signing_secret');
+        $secret = trim((string) config('security.frontend_proxy_signing_secret'));
 
         if (strlen($secret) < 32) {
             return $this->reject(
@@ -27,6 +27,7 @@ final class VerifyFrontendProxy
         }
 
         $clientIp = (string) $request->header('X-DILG-Client-IP', '');
+        $signedPath = (string) $request->header('X-DILG-Proxy-Path', $request->getPathInfo());
         $timestamp = (string) $request->header('X-DILG-Proxy-Timestamp', '');
         $signature = (string) $request->header('X-DILG-Proxy-Signature', '');
         $ttl = max(30, min(300, (int) config(
@@ -35,6 +36,8 @@ final class VerifyFrontendProxy
         )));
 
         if (! filter_var($clientIp, FILTER_VALIDATE_IP)
+            || ! str_starts_with($signedPath, '/api/')
+            || str_contains($signedPath, '..')
             || ! ctype_digit($timestamp)
             || abs(now()->timestamp - (int) $timestamp) > $ttl
             || ! preg_match('/\A[a-f0-9]{64}\z/', $signature)) {
@@ -44,7 +47,7 @@ final class VerifyFrontendProxy
         $payload = implode("\n", [
             $timestamp,
             strtoupper($request->method()),
-            $request->getPathInfo(),
+            $signedPath,
             $clientIp,
         ]);
         $expected = hash_hmac('sha256', $payload, $secret);

@@ -33,7 +33,7 @@ export const config = {
 };
 
 export default async function handler(request, response) {
-  const secret = process.env.FRONTEND_PROXY_SIGNING_SECRET || "";
+  const secret = (process.env.FRONTEND_PROXY_SIGNING_SECRET || "").trim();
   const forwarded = String(request.headers["x-vercel-forwarded-for"] || "")
     .split(",")[0]
     .trim();
@@ -82,6 +82,7 @@ export default async function handler(request, response) {
   }
 
   headers.set("X-DILG-Client-IP", forwarded);
+  headers.set("X-DILG-Proxy-Path", upstreamPath);
   headers.set("X-DILG-Proxy-Timestamp", timestamp);
   headers.set("X-DILG-Proxy-Signature", signature);
 
