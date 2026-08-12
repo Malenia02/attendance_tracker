@@ -20,6 +20,9 @@ import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
 import FormStatusBanner from "../components/common/FormStatusBanner";
+import FormDraftNotice from "../components/common/FormDraftNotice";
+import useSessionFormDraft from "../hooks/useSessionFormDraft";
+import { formDraftKey } from "../lib/formDrafts";
 
 const days = [
   ["monday", "Mon"],
@@ -133,6 +136,8 @@ export default function Schedules() {
   const [scheduleModal, setScheduleModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [scheduleForm, setScheduleForm] = useState(emptySchedule);
+  const [scheduleDraftKey, setScheduleDraftKey] = useState("");
+  const [scheduleDraftInitialForm, setScheduleDraftInitialForm] = useState(emptySchedule);
   const [scheduleErrors, setScheduleErrors] = useState({});
   const [scheduleStatus, setScheduleStatus] = useState(null);
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -144,6 +149,17 @@ export default function Schedules() {
   const [assignmentStatus, setAssignmentStatus] = useState(null);
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const {
+    draftRestored: scheduleDraftRestored,
+    discardDraft: discardScheduleDraft,
+    clearDraft: clearScheduleDraft,
+  } = useSessionFormDraft({
+    isOpen: scheduleModal,
+    draftKey: scheduleDraftKey,
+    initialForm: scheduleDraftInitialForm,
+    form: scheduleForm,
+    setForm: setScheduleForm,
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -222,6 +238,8 @@ export default function Schedules() {
 
   function openCreateSchedule() {
     setEditingSchedule(null);
+    setScheduleDraftInitialForm(emptySchedule);
+    setScheduleDraftKey(formDraftKey("work-schedule", "new"));
     setScheduleForm(emptySchedule);
     setScheduleErrors({});
     setScheduleStatus(null);
@@ -230,7 +248,7 @@ export default function Schedules() {
 
   function openEditSchedule(schedule) {
     setEditingSchedule(schedule);
-    setScheduleForm({
+    const initialForm = {
       ...schedule,
       schedule_name: schedule.schedule_name,
       morning_start: shortTime(schedule.morning_start),
@@ -247,7 +265,10 @@ export default function Schedules() {
       afternoon_time_out_end: shortTime(schedule.afternoon_time_out_end),
       grace_period_minutes: String(schedule.grace_period_minutes),
       required_minutes_per_day: String(schedule.required_minutes_per_day),
-    });
+    };
+    setScheduleDraftInitialForm(initialForm);
+    setScheduleDraftKey(formDraftKey("work-schedule", schedule.schedule_id));
+    setScheduleForm(initialForm);
     setScheduleErrors({});
     setScheduleStatus(null);
     setScheduleModal(true);
@@ -280,6 +301,7 @@ export default function Schedules() {
           }),
         },
       ).then(readResponse);
+      clearScheduleDraft();
       showNotice(payload.message);
       setScheduleStatus({ type: "success", message: payload.message || "Schedule saved successfully." });
       await wait(MODAL_SUCCESS_DELAY_MS);
@@ -568,6 +590,10 @@ export default function Schedules() {
 
             <form className="schedule-form" onSubmit={saveSchedule}>
               <FormStatusBanner status={scheduleStatus} />
+              <FormDraftNotice
+                restored={scheduleDraftRestored}
+                onDiscard={discardScheduleDraft}
+              />
               {scheduleErrors.general && <div className="form-error-banner">{scheduleErrors.general[0]}</div>}
 
               <div className="schedule-form-section">

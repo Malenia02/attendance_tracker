@@ -1,4 +1,5 @@
 import { notifyToast } from "./toastEvents";
+import { clearAllFormDrafts } from "./formDrafts";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 const API_ORIGIN = API_BASE.endsWith("/api")
@@ -72,6 +73,7 @@ export function updateStoredUser(user) {
 export function clearAuth() {
   localStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(USER_KEY);
+  clearAllFormDrafts();
   lastSessionVerificationAt = 0;
 }
 

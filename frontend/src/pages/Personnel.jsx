@@ -22,6 +22,9 @@ import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
 import ModalPortal from "../components/common/ModalPortal";
 import FormStatusBanner from "../components/common/FormStatusBanner";
+import FormDraftNotice from "../components/common/FormDraftNotice";
+import useSessionFormDraft from "../hooks/useSessionFormDraft";
+import { formDraftKey } from "../lib/formDrafts";
 
 function toDateInput(date) {
   const year = date.getFullYear();
@@ -104,6 +107,8 @@ export default function Personnel() {
   const [modalStatus, setModalStatus] = useState(null);
   const [editingRecord, setEditingRecord] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [draftKey, setDraftKey] = useState("");
+  const [draftInitialForm, setDraftInitialForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -115,6 +120,13 @@ export default function Personnel() {
   const [removeSignature, setRemoveSignature] = useState(false);
   const photoObjectUrl = useRef("");
   const signatureObjectUrl = useRef("");
+  const { draftRestored, discardDraft, clearDraft } = useSessionFormDraft({
+    isOpen: modalOpen,
+    draftKey,
+    initialForm: draftInitialForm,
+    form,
+    setForm,
+  });
 
   function releasePhotoObjectUrl() {
     if (photoObjectUrl.current) {
@@ -189,7 +201,10 @@ export default function Personnel() {
     releasePhotoObjectUrl();
     releaseSignatureObjectUrl();
     setEditingRecord(null);
-    setForm({ ...emptyForm, ...defaultCardValidity() });
+    const initialForm = { ...emptyForm, ...defaultCardValidity() };
+    setDraftInitialForm(initialForm);
+    setDraftKey(formDraftKey("personnel", "new"));
+    setForm(initialForm);
     setPhotoFile(null);
     setPhotoPreview("");
     setRemovePhoto(false);
@@ -205,7 +220,7 @@ export default function Personnel() {
     releasePhotoObjectUrl();
     releaseSignatureObjectUrl();
     setEditingRecord(record);
-    setForm({
+    const initialForm = {
       employee_number: record.employee_number || "",
       auto_generate_employee_number: "0",
       first_name: record.first_name || "",
@@ -224,7 +239,10 @@ export default function Personnel() {
       contact_number: record.contact_number || "",
       address: record.address || "",
       status: record.status,
-    });
+    };
+    setDraftInitialForm(initialForm);
+    setDraftKey(formDraftKey("personnel", record.personnel_id));
+    setForm(initialForm);
     setPhotoFile(null);
     setPhotoPreview(record.photo_url || "");
     setRemovePhoto(false);
@@ -378,6 +396,7 @@ export default function Personnel() {
       );
       const payload = await readResponse(response);
 
+      clearDraft();
       setNotice(payload.message);
       setModalStatus({ type: "success", message: payload.message || "Saved successfully." });
       await wait(MODAL_SUCCESS_DELAY_MS);
@@ -610,6 +629,20 @@ export default function Personnel() {
 
             <form className="user-form admin-form-layout personnel-form" onSubmit={submitForm}>
               <FormStatusBanner status={modalStatus} />
+              <FormDraftNotice
+                restored={draftRestored}
+                onDiscard={() => {
+                  discardDraft();
+                  releasePhotoObjectUrl();
+                  releaseSignatureObjectUrl();
+                  setPhotoFile(null);
+                  setSignatureFile(null);
+                  setRemovePhoto(false);
+                  setRemoveSignature(false);
+                  setPhotoPreview(editingRecord?.photo_url || "");
+                  setSignaturePreview(editingRecord?.signature_url || "");
+                }}
+              />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
               <div className="admin-form-section">

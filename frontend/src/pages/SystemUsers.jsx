@@ -19,6 +19,9 @@ import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
 import ModalPortal from "../components/common/ModalPortal";
 import FormStatusBanner from "../components/common/FormStatusBanner";
+import FormDraftNotice from "../components/common/FormDraftNotice";
+import useSessionFormDraft from "../hooks/useSessionFormDraft";
+import { formDraftKey } from "../lib/formDrafts";
 
 const emptyForm = {
   personnel_id: "",
@@ -104,10 +107,20 @@ export default function SystemUsers() {
   const [modalStatus, setModalStatus] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [draftKey, setDraftKey] = useState("");
+  const [draftInitialForm, setDraftInitialForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [notice, setNotice] = useState("");
+  const { draftRestored, discardDraft, clearDraft } = useSessionFormDraft({
+    isOpen: modalOpen,
+    draftKey,
+    initialForm: draftInitialForm,
+    form,
+    setForm,
+    excludedFields: ["password", "password_confirmation"],
+  });
   const passwordChecks = useMemo(
     () => evaluatePassword(form.password, form.password_confirmation),
     [form.password, form.password_confirmation],
@@ -190,6 +203,8 @@ export default function SystemUsers() {
   function openCreateModal() {
     setEditingUser(null);
     setPersonnelLookupSearch("");
+    setDraftInitialForm(emptyForm);
+    setDraftKey(formDraftKey("system-user", "new"));
     setForm(emptyForm);
     setFieldErrors({});
     setModalStatus(null);
@@ -199,14 +214,17 @@ export default function SystemUsers() {
   function openEditModal(user) {
     setEditingUser(user);
     setPersonnelLookupSearch("");
-    setForm({
+    const initialForm = {
       personnel_id: user.personnel_id ? String(user.personnel_id) : "",
       username: user.username,
       password: "",
       password_confirmation: "",
       user_role: user.user_role,
       status: user.status,
-    });
+    };
+    setDraftInitialForm(initialForm);
+    setDraftKey(formDraftKey("system-user", user.user_id));
+    setForm(initialForm);
     setFieldErrors({});
     setModalStatus(null);
     setModalOpen(true);
@@ -259,6 +277,7 @@ export default function SystemUsers() {
       );
       const payload = await readResponse(response);
 
+      clearDraft();
       setNotice(payload.message);
       setModalStatus({ type: "success", message: payload.message || "Saved successfully." });
       await wait(MODAL_SUCCESS_DELAY_MS);
@@ -456,6 +475,7 @@ export default function SystemUsers() {
 
             <form onSubmit={submitForm} className="user-form admin-form-layout">
               <FormStatusBanner status={modalStatus} />
+              <FormDraftNotice restored={draftRestored} onDiscard={discardDraft} />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
               <div className="admin-form-section">

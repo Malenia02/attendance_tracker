@@ -19,6 +19,9 @@ import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import ModalPortal from "../components/common/ModalPortal";
 import FormStatusBanner from "../components/common/FormStatusBanner";
+import FormDraftNotice from "../components/common/FormDraftNotice";
+import useSessionFormDraft from "../hooks/useSessionFormDraft";
+import { formDraftKey } from "../lib/formDrafts";
 
 const emptyForm = {
   department_code: "",
@@ -66,6 +69,8 @@ export default function Departments() {
   const [modalStatus, setModalStatus] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [draftKey, setDraftKey] = useState("");
+  const [draftInitialForm, setDraftInitialForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -74,6 +79,13 @@ export default function Departments() {
   const [canManageNetworks, setCanManageNetworks] = useState(false);
   const [networkName, setNetworkName] = useState("Main office internet");
   const [networkBusy, setNetworkBusy] = useState(false);
+  const { draftRestored, discardDraft, clearDraft } = useSessionFormDraft({
+    isOpen: modalOpen,
+    draftKey,
+    initialForm: draftInitialForm,
+    form,
+    setForm,
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -111,6 +123,8 @@ export default function Departments() {
 
   function openCreate() {
     setEditing(null);
+    setDraftInitialForm(emptyForm);
+    setDraftKey(formDraftKey("department", "new"));
     setForm(emptyForm);
     setFieldErrors({});
     setLocationAccuracy(null);
@@ -121,7 +135,7 @@ export default function Departments() {
 
   function openEdit(department) {
     setEditing(department);
-    setForm({
+    const initialForm = {
       department_code: department.department_code,
       department_name: department.department_name,
       office_location: department.office_location,
@@ -129,7 +143,10 @@ export default function Departments() {
       longitude: String(department.longitude ?? ""),
       allowed_radius_meters: String(department.allowed_radius_meters ?? 100),
       status: department.status,
-    });
+    };
+    setDraftInitialForm(initialForm);
+    setDraftKey(formDraftKey("department", department.department_id));
+    setForm(initialForm);
     setFieldErrors({});
     setLocationAccuracy(null);
     setNetworkName("Main office internet");
@@ -207,6 +224,7 @@ export default function Departments() {
         },
       );
       const payload = await readResponse(response);
+      clearDraft();
       setNotice(payload.message);
       setModalStatus({ type: "success", message: payload.message || "Saved successfully." });
       await wait(MODAL_SUCCESS_DELAY_MS);
@@ -402,6 +420,7 @@ export default function Departments() {
 
             <form className="user-form admin-form-layout department-form" onSubmit={submitForm}>
               <FormStatusBanner status={modalStatus} />
+              <FormDraftNotice restored={draftRestored} onDiscard={discardDraft} />
               {fieldErrors.general && <div className="form-error-banner">{fieldErrors.general[0]}</div>}
 
               <div className="admin-form-section">
