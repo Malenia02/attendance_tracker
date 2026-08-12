@@ -46,7 +46,10 @@ final class VerifyFrontendProxy
 
         $payload = implode("\n", [
             $timestamp,
-            strtoupper($request->method()),
+            // The proxy signs the HTTP method received on the wire. Laravel may
+            // interpret a multipart POST containing `_method=PUT/PATCH` as the
+            // overridden method, so method() cannot be used for verification.
+            strtoupper($request->getRealMethod()),
             $signedPath,
             $clientIp,
         ]);

@@ -71,6 +71,27 @@ class FrontendProxySecurityTest extends TestCase
             ->assertJsonPath('error.code', 'UNAUTHENTICATED');
     }
 
+    public function test_a_multipart_method_override_uses_the_original_signed_http_method(): void
+    {
+        $timestamp = (string) now()->timestamp;
+        $ip = '8.8.8.8';
+        $path = '/api/personnel/1';
+        $signature = hash_hmac(
+            'sha256',
+            implode("\n", [$timestamp, 'POST', $path, $ip]),
+            str_repeat('s', 64)
+        );
+
+        $this->withHeaders([
+            'X-DILG-Client-IP' => $ip,
+            'X-DILG-Proxy-Path' => $path,
+            'X-DILG-Proxy-Timestamp' => $timestamp,
+            'X-DILG-Proxy-Signature' => $signature,
+        ])->postJson($path, ['_method' => 'PUT'])
+            ->assertUnauthorized()
+            ->assertJsonPath('error.code', 'UNAUTHENTICATED');
+    }
+
     public function test_an_expired_proxy_signature_is_rejected(): void
     {
         $timestamp = (string) now()->subMinutes(5)->timestamp;
