@@ -20,7 +20,15 @@ class SecurityAuthenticationTest extends TestCase
 
         Schema::create('personnel', function (Blueprint $table): void {
             $table->id('personnel_id');
+            $table->string('employee_number')->nullable();
+            $table->string('first_name')->nullable();
+            $table->string('middle_name')->nullable();
+            $table->string('last_name')->nullable();
+            $table->string('suffix')->nullable();
             $table->string('email')->nullable()->unique();
+            $table->string('photo')->nullable();
+            $table->date('employment_end_date')->nullable();
+            $table->timestamps();
         });
 
         Schema::create('system_users', function (Blueprint $table): void {
@@ -176,6 +184,31 @@ class SecurityAuthenticationTest extends TestCase
         $this->assertSame($unknown->json('message'), $inactive->json('message'));
         $this->assertArrayNotHasKey('attempts_remaining', $inactive->json());
         $this->assertArrayNotHasKey('locked_until', $inactive->json());
+    }
+
+    public function test_expired_linked_employment_rejects_login_and_existing_sessions(): void
+    {
+        $personnelId = DB::table('personnel')->insertGetId([
+            'employee_number' => 'EXPIRED-001',
+            'first_name' => 'Expired',
+            'last_name' => 'Personnel',
+            'employment_end_date' => today()->subDay()->toDateString(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = $this->createUser('expired-employment', 'Active');
+        $user->forceFill(['personnel_id' => $personnelId])->save();
+
+        $this->postJson('/api/auth/login', [
+            'username' => $user->username,
+            'password' => 'Strong-Test-Password!2026',
+        ])->assertUnauthorized()
+            ->assertJsonPath('message', 'Unable to sign in with those credentials.');
+
+        $this->actingAs($user->fresh())
+            ->getJson('/api/auth/me')
+            ->assertUnauthorized()
+            ->assertJsonPath('message', 'Your session is no longer active. Please sign in again.');
     }
 
     public function test_repeated_login_failures_mark_the_account_as_temporarily_locked(): void

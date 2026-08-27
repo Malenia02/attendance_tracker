@@ -141,6 +141,7 @@ final class RoleDashboardService
                     'employee_number' => $personnel->employee_number,
                     'department' => $personnel->department?->department_code ?? 'Unassigned',
                 ],
+                'employment' => $this->personalEmployment($personnel),
                 'metrics' => [
                     'work_minutes' => (int) ($totals->work_minutes ?? 0),
                     'days_present' => (int) ($totals->days_present ?? 0),
@@ -179,6 +180,7 @@ final class RoleDashboardService
                     'queues' => $this->emptySupervisorQueues(),
                     'attendance_statuses' => [],
                     'pending_leave' => [],
+                    'lifecycle' => $this->emptyLifecycleOverview(),
                 ],
             ];
         }
@@ -244,6 +246,7 @@ final class RoleDashboardService
                 ],
                 'attendance_statuses' => $statuses,
                 'pending_leave' => $pendingLeave,
+                'lifecycle' => $this->lifecycleOverview($departmentId),
             ],
         ];
     }
@@ -256,6 +259,7 @@ final class RoleDashboardService
             'data' => [
                 'queues' => $this->globalWorkflowQueues(),
                 'queue_preview' => $this->globalQueuePreview(),
+                'lifecycle' => $this->lifecycleOverview(),
             ],
         ];
     }
@@ -325,6 +329,7 @@ final class RoleDashboardService
                     'security_events_24h' => $securityEvents,
                 ],
                 'queue_preview' => $this->globalQueuePreview(),
+                'lifecycle' => $this->lifecycleOverview(),
             ],
         ];
     }
@@ -418,6 +423,103 @@ final class RoleDashboardService
             ));
     }
 
+    private function personalEmployment(Personnel $personnel): array
+    {
+        $endDate = $personnel->employment_end_date;
+        $daysRemaining = $endDate ? (int) today()->diffInDays($endDate, false) : null;
+        $reminderDays = max(1, min((int) config('attendance.employment_reminder_days', 30), 365));
+
+        return [
+            'status' => $personnel->status,
+            'start_date' => $personnel->employment_start_date?->toDateString(),
+            'end_date' => $endDate?->toDateString(),
+            'days_remaining' => $daysRemaining,
+            'ending_soon' => $daysRemaining !== null
+                && $daysRemaining >= 0
+                && $daysRemaining <= $reminderDays,
+            'ended' => $daysRemaining !== null && $daysRemaining < 0,
+        ];
+    }
+
+    private function lifecycleOverview(?int $departmentId = null): array
+    {
+        $today = today();
+        $reminderDays = max(1, min((int) config('attendance.employment_reminder_days', 30), 365));
+        $scope = fn (Builder $query): Builder => $query
+            ->when($departmentId, fn (Builder $personnel) => $personnel->where('department_id', $departmentId));
+        $active = Personnel::query()
+            ->where('status', 'Active')
+            ->whereNotNull('employment_end_date')
+            ->tap($scope);
+        $counts = (clone $active)
+            ->selectRaw(
+                'SUM(CASE WHEN employment_end_date BETWEEN ? AND ? THEN 1 ELSE 0 END) as expiring_7_days',
+                [$today->toDateString(), $today->copy()->addDays(7)->toDateString()]
+            )
+            ->selectRaw(
+                'SUM(CASE WHEN employment_end_date BETWEEN ? AND ? THEN 1 ELSE 0 END) as expiring_window',
+                [$today->toDateString(), $today->copy()->addDays($reminderDays)->toDateString()]
+            )
+            ->selectRaw(
+                'SUM(CASE WHEN employment_end_date < ? THEN 1 ELSE 0 END) as awaiting_offboarding',
+                [$today->toDateString()]
+            )
+            ->first();
+        $recentCompleted = Personnel::query()
+            ->where('status', 'Completed')
+            ->where('updated_at', '>=', now()->subDays(30))
+            ->tap($scope)
+            ->count();
+        $upcoming = (clone $active)
+            ->with('department:department_id,department_code')
+            ->whereBetween('employment_end_date', [
+                $today->toDateString(),
+                $today->copy()->addDays($reminderDays)->toDateString(),
+            ])
+            ->orderBy('employment_end_date')
+            ->orderBy('personnel_id')
+            ->limit(6)
+            ->get([
+                'personnel_id',
+                'department_id',
+                'employee_number',
+                'first_name',
+                'middle_name',
+                'last_name',
+                'suffix',
+                'employment_end_date',
+            ])
+            ->map(fn (Personnel $personnel): array => [
+                'personnel_id' => $personnel->personnel_id,
+                'full_name' => $personnel->full_name,
+                'employee_number' => $personnel->employee_number,
+                'department' => $personnel->department?->department_code ?? 'Unassigned',
+                'end_date' => $personnel->employment_end_date->toDateString(),
+                'days_remaining' => (int) $today->diffInDays($personnel->employment_end_date, false),
+            ]);
+
+        return [
+            'reminder_window_days' => $reminderDays,
+            'expiring_7_days' => (int) ($counts->expiring_7_days ?? 0),
+            'expiring_30_days' => (int) ($counts->expiring_window ?? 0),
+            'awaiting_offboarding' => (int) ($counts->awaiting_offboarding ?? 0),
+            'completed_30_days' => $recentCompleted,
+            'upcoming' => $upcoming,
+        ];
+    }
+
+    private function emptyLifecycleOverview(): array
+    {
+        return [
+            'reminder_window_days' => max(1, min((int) config('attendance.employment_reminder_days', 30), 365)),
+            'expiring_7_days' => 0,
+            'expiring_30_days' => 0,
+            'awaiting_offboarding' => 0,
+            'completed_30_days' => 0,
+            'upcoming' => [],
+        ];
+    }
+
     private function formatTodayRecord(?AttendanceRecord $record): array
     {
         if (! $record) {
@@ -486,6 +588,14 @@ final class RoleDashboardService
     {
         return [
             'profile' => ['linked' => false],
+            'employment' => [
+                'status' => 'Unavailable',
+                'start_date' => null,
+                'end_date' => null,
+                'days_remaining' => null,
+                'ending_soon' => false,
+                'ended' => false,
+            ],
             'metrics' => [
                 'work_minutes' => 0,
                 'days_present' => 0,

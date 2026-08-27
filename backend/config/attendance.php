@@ -24,6 +24,10 @@ return [
     // instances while still reflecting attendance changes promptly.
     'dashboard_cache_seconds' => (int) env('DASHBOARD_CACHE_SECONDS', 30),
 
+    // Employment reminders appear during this window. The lifecycle command
+    // marks a record Completed on the day after employment_end_date.
+    'employment_reminder_days' => (int) env('EMPLOYMENT_REMINDER_DAYS', 30),
+
     // The free Render web service has limited CPU/RAM and no dedicated queue
     // worker. Keep synchronous document batches deliberately small.
     'dtr_sync_batch_limit' => (int) env('DTR_SYNC_BATCH_LIMIT', 20),

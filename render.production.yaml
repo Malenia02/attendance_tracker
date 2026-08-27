@@ -84,6 +84,8 @@ services:
         value: sync
       - key: DASHBOARD_CACHE_SECONDS
         value: "15"
+      - key: EMPLOYMENT_REMINDER_DAYS
+        value: "30"
       - key: DTR_SYNC_BATCH_LIMIT
         value: "50"
       - key: FILESYSTEM_DISK

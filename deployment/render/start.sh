@@ -125,6 +125,7 @@ fi
 
 php artisan production:check
 run_with_retry "Application cache clearing" php artisan optimize:clear
+php artisan personnel:lifecycle
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
@@ -137,5 +138,10 @@ chown -R www-data:www-data \
     bootstrap/cache \
     storage/framework/cache \
     storage/framework/views
+
+# The web container also owns the lightweight Laravel scheduler on the free
+# test deployment. Every lifecycle task is idempotent and protected with
+# withoutOverlapping, so rolling deploy overlap cannot duplicate transitions.
+php artisan schedule:work --no-interaction &
 
 exec apache2-foreground

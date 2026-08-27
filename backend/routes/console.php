@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 Schedule::command('notifications:prune')
     ->dailyAt('02:30')
     ->withoutOverlapping();
+
+Schedule::command('personnel:lifecycle')
+    ->dailyAt('00:15')
+    ->withoutOverlapping();

@@ -48,6 +48,8 @@ class DashboardRoleSecurityTest extends TestCase
             $table->string('middle_name')->nullable();
             $table->string('last_name');
             $table->string('suffix')->nullable();
+            $table->date('employment_start_date')->nullable();
+            $table->date('employment_end_date')->nullable();
             $table->string('status')->default('Active');
             $table->timestamps();
         });
@@ -163,6 +165,10 @@ class DashboardRoleSecurityTest extends TestCase
         $this->leave($otherPersonnel, 'Sick Leave');
         $this->dtr($ownPersonnel, 'Returned');
         $this->dtr($otherPersonnel, 'Certified');
+        DB::table('personnel')->where('personnel_id', $ownPersonnel)->update([
+            'employment_start_date' => today()->subMonth()->toDateString(),
+            'employment_end_date' => today()->addDays(10)->toDateString(),
+        ]);
         $user = $this->user('personal-dashboard', 'Personnel', $ownPersonnel);
 
         $response = $this->actingAs($user)->getJson(
@@ -177,6 +183,8 @@ class DashboardRoleSecurityTest extends TestCase
             ->assertJsonPath('metrics.late_minutes', 15)
             ->assertJsonPath('leave.pending', 1)
             ->assertJsonPath('dtr.status', 'Returned')
+            ->assertJsonPath('employment.days_remaining', 10)
+            ->assertJsonPath('employment.ending_soon', true)
             ->assertJsonMissing(['employee_number' => 'OTHER-001'])
             ->assertJsonMissing(['security_events_24h' => 0]);
     }
@@ -194,6 +202,12 @@ class DashboardRoleSecurityTest extends TestCase
         $this->leave($memberB, 'Sick Leave');
         $this->dtr($memberA, 'Submitted');
         $this->dtr($memberB, 'Submitted');
+        DB::table('personnel')->where('personnel_id', $memberA)->update([
+            'employment_end_date' => today()->addDays(5)->toDateString(),
+        ]);
+        DB::table('personnel')->where('personnel_id', $memberB)->update([
+            'employment_end_date' => today()->addDays(3)->toDateString(),
+        ]);
         $user = $this->user('supervisor-dashboard', 'Supervisor', $supervisorPersonnel);
 
         $response = $this->actingAs($user)->getJson(
@@ -208,6 +222,8 @@ class DashboardRoleSecurityTest extends TestCase
             ->assertJsonPath('queues.attendance_verification', 1)
             ->assertJsonPath('queues.leave_requests', 1)
             ->assertJsonPath('queues.submitted_dtrs', 1)
+            ->assertJsonPath('lifecycle.expiring_7_days', 1)
+            ->assertJsonPath('lifecycle.upcoming.0.employee_number', 'MEMBER-A')
             ->assertJsonMissing(['employee_number' => 'MEMBER-B']);
     }
 

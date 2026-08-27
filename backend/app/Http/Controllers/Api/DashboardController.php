@@ -18,7 +18,7 @@ final class DashboardController extends Controller
         $cacheSeconds = max(0, (int) config('attendance.dashboard_cache_seconds', 30));
         $cacheKey = implode(':', [
             'dashboard',
-            'v3',
+            'v4',
             today()->toDateString(),
             'user',
             $user->user_id,

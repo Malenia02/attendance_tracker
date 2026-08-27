@@ -73,12 +73,14 @@ class AuthController extends Controller
         if (
             $user->status !== 'Active'
             || ($user->locked_until && $user->locked_until->isFuture())
+            || ($user->personnel?->employment_end_date
+                && $user->personnel->employment_end_date->lt(today()))
         ) {
             $this->logAuthentication(
                 $request,
                 $user,
                 'REJECTED_LOGIN',
-                'A sign-in attempt was rejected because the account is not active.'
+                'A sign-in attempt was rejected because the account or linked employment is not active.'
             );
 
             return $this->invalidCredentials();

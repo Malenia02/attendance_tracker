@@ -1388,6 +1388,64 @@ button.role-metric:hover {
   grid-column: 1 / -1;
 }
 
+.personal-employment-card.has-warning,
+.lifecycle-panel.has-warning {
+  border-color: rgba(225, 145, 31, 0.42);
+  box-shadow: 0 12px 30px rgba(190, 115, 20, 0.1);
+}
+
+.personal-employment-status {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.personal-employment-status > div {
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-card-soft);
+}
+
+.personal-employment-status small,
+.personal-employment-status strong {
+  display: block;
+}
+
+.personal-employment-status small {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.personal-employment-status strong {
+  color: var(--text-main);
+  font-size: 11px;
+}
+
+.personal-employment-status .employment-state {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #16865d;
+}
+
+.personal-employment-status > p {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  padding: 10px 11px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  border-radius: 9px;
+  color: #a65e08;
+  background: rgba(238, 145, 30, 0.12);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
 .personal-history-list {
   margin-top: 15px;
   display: grid;
@@ -1496,6 +1554,10 @@ button.role-metric:hover {
 }
 
 .supervisor-leave-panel {
+  grid-column: 1 / -1;
+}
+
+.supervisor-grid > .lifecycle-panel {
   grid-column: 1 / -1;
 }
 
@@ -1701,6 +1763,117 @@ button.role-metric:hover {
   font-size: 10px;
 }
 
+.lifecycle-panel {
+  overflow: hidden;
+}
+
+.lifecycle-summary-grid {
+  margin-top: 17px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lifecycle-summary-grid > span {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card-soft);
+}
+
+.lifecycle-summary-grid strong,
+.lifecycle-summary-grid small {
+  display: block;
+}
+
+.lifecycle-summary-grid strong {
+  color: var(--text-main);
+  font-size: 20px;
+}
+
+.lifecycle-summary-grid small {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lifecycle-list {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lifecycle-list > button {
+  min-width: 0;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-main);
+  background: var(--bg-card-soft);
+  text-align: left;
+}
+
+.lifecycle-list > button > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: #b66a11;
+  background: rgba(238, 145, 30, 0.12);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.lifecycle-list strong,
+.lifecycle-list small {
+  display: block;
+}
+
+.lifecycle-list > button > div {
+  min-width: 0;
+}
+
+.lifecycle-list > button > div strong,
+.lifecycle-list > button > div small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lifecycle-list > button > div strong {
+  font-size: 10px;
+}
+
+.lifecycle-list small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 8px;
+}
+
+.lifecycle-list time {
+  color: #b66a11;
+  text-align: right;
+}
+
+.lifecycle-list time strong {
+  font-size: 11px;
+}
+
+.role-empty-state.compact {
+  min-height: 80px;
+  grid-column: 1 / -1;
+}
+
 .role-preview-panel {
   margin-top: 0;
 }
@@ -1862,8 +2035,13 @@ button.role-metric:hover {
 
   .personal-history-list,
   .role-preview-list,
-  .supervisor-leave-list {
+  .supervisor-leave-list,
+  .lifecycle-list {
     grid-template-columns: 1fr;
+  }
+
+  .lifecycle-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1886,6 +2064,16 @@ button.role-metric:hover {
 
   .role-panel {
     padding: 16px;
+  }
+
+  .lifecycle-summary-grid,
+  .personal-employment-status {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-employment-status .employment-state,
+  .personal-employment-status > p {
+    grid-column: auto;
   }
 
   .role-panel > header {

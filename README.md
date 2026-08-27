@@ -12,6 +12,8 @@ days unless an authorized office-specific working day is created.
 ## Main features
 
 - Modern role-aware dashboard
+- Employment lifecycle dashboard with scoped expiry warnings and automated,
+  audited personnel offboarding
 - Secured, role-aware Notification Center with unread tracking, workflow links,
   pagination, and automatic retention
 - Personnel directory with private photo/signature uploads and optional automatic employee numbers
@@ -274,6 +276,12 @@ context. Manual scanning remains available during local development.
 - Returned records must be corrected and submitted again before certification.
 - Certification creates a signed snapshot. Generated certified DTRs are checked
   against that snapshot to detect later changes.
+- Employment remains active through its configured end date. At 12:15 AM on
+  the following day, the lifecycle task marks the personnel record Completed,
+  disables the linked account, revokes sessions and tokens, caps the current
+  schedule, removes future schedule assignments, preserves historical records,
+  and writes immutable activation and activity logs. Administrator, HR, and the
+  assigned department Supervisor receive scoped advance reminders.
 
 ## QR attendance
 
@@ -418,6 +426,7 @@ node:
 
 ```env
 DASHBOARD_CACHE_SECONDS=30
+EMPLOYMENT_REMINDER_DAYS=30
 DTR_SYNC_BATCH_LIMIT=20
 DTR_SUBMISSION_GRACE_DAYS=2
 DTR_REMINDER_DAYS_BEFORE=3
@@ -432,6 +441,12 @@ documents, a paid always-on web instance, a dedicated queue worker,
 Redis-backed cache/queues, managed database backups, and monitoring. The free
 services remain appropriate for functional testing, not a live government
 records workload.
+
+The Docker deployment starts Laravel's scheduler inside the web container for
+the current single-instance test setup. On a multi-instance production plan,
+move `php artisan schedule:work` to one dedicated scheduler service. Lifecycle
+operations remain idempotent and use `withoutOverlapping` as a second line of
+protection.
 
 The root `render.yaml` remains the free test configuration while the system is
 being evaluated; `render.free.yaml` is an explicit copy of that test setup.

@@ -136,6 +136,39 @@ function QueuePreview({ items }) {
   );
 }
 
+function LifecyclePanel({ lifecycle, title = "Employment lifecycle" }) {
+  const navigate = useNavigate();
+  const hasUrgentItems = Number(lifecycle?.expiring_7_days || 0) > 0
+    || Number(lifecycle?.awaiting_offboarding || 0) > 0;
+
+  return (
+    <article className={`role-panel lifecycle-panel ${hasUrgentItems ? "has-warning" : ""}`}>
+      <header>
+        <div><span>Workforce continuity</span><h2>{title}</h2></div>
+        <button type="button" onClick={() => navigate("/personnel")}>Open directory <ArrowRight size={14} /></button>
+      </header>
+      <div className="lifecycle-summary-grid">
+        <span><strong>{lifecycle?.expiring_7_days || 0}</strong><small>Ending in 7 days</small></span>
+        <span><strong>{lifecycle?.expiring_30_days || 0}</strong><small>Ending in {lifecycle?.reminder_window_days || 30} days</small></span>
+        <span><strong>{lifecycle?.awaiting_offboarding || 0}</strong><small>Awaiting automation</small></span>
+        <span><strong>{lifecycle?.completed_30_days || 0}</strong><small>Completed · 30 days</small></span>
+      </div>
+      <div className="lifecycle-list">
+        {(lifecycle?.upcoming || []).map((personnel) => (
+          <button type="button" key={personnel.personnel_id} onClick={() => navigate("/personnel")}>
+            <span>{personnel.full_name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>
+            <div><strong>{personnel.full_name}</strong><small>{personnel.employee_number} · {personnel.department}</small></div>
+            <time><strong>{personnel.days_remaining === 0 ? "Today" : `${personnel.days_remaining}d`}</strong><small>{formatDate(personnel.end_date, { month: "short", day: "numeric" })}</small></time>
+          </button>
+        ))}
+        {!lifecycle?.upcoming?.length && (
+          <div className="role-empty-state compact"><BadgeCheck size={24} /><strong>No upcoming employment endings</strong><small>The current reminder window is clear.</small></div>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function PersonalDashboard({ data }) {
   const navigate = useNavigate();
 
@@ -150,6 +183,7 @@ function PersonalDashboard({ data }) {
 
   const today = data.today_attendance;
   const schedule = data.schedule;
+  const employment = data.employment;
 
   return (
     <>
@@ -191,6 +225,16 @@ function PersonalDashboard({ data }) {
             <button type="button" onClick={() => navigate("/leave-requests")}><strong>{data.leave.pending}</strong><small>Pending leave</small></button>
             <button type="button" onClick={() => navigate("/leave-requests")}><strong>{data.leave.approved}</strong><small>Approved leave</small></button>
             <button type="button" onClick={() => navigate("/dtr")}><strong>{data.dtr.status}</strong><small>{data.period.month_label} DTR</small></button>
+          </div>
+        </article>
+
+        <article className={`role-panel personal-employment-card ${employment?.ending_soon ? "has-warning" : ""}`}>
+          <header><div><span>Employment record</span><h2>Lifecycle status</h2></div><UserRoundCog size={20} /></header>
+          <div className="personal-employment-status">
+            <span className="employment-state"><BadgeCheck size={17} /><strong>{employment?.status || "Unavailable"}</strong></span>
+            <div><small>Started</small><strong>{formatDate(employment?.start_date)}</strong></div>
+            <div><small>Ends</small><strong>{employment?.end_date ? formatDate(employment.end_date) : "No end date"}</strong></div>
+            {employment?.ending_soon && <p><AlertTriangle size={15} /> Employment ends {employment.days_remaining === 0 ? "today" : `in ${employment.days_remaining} days`}. Contact HR if the period should be extended.</p>}
           </div>
         </article>
 
@@ -252,6 +296,7 @@ function SupervisorDashboard({ data }) {
             {!data.pending_leave.length && <div className="role-empty-state"><BadgeCheck size={25} /><strong>No pending leave</strong><small>Your department queue is clear.</small></div>}
           </div>
         </article>
+        <LifecyclePanel lifecycle={data.lifecycle} title="Department lifecycle" />
       </div>
     </>
   );
@@ -263,6 +308,7 @@ function HrDashboard({ data }) {
     <>
       <div className="role-summary-strip"><span><ListChecks size={20} /></span><div><small>Open workflow items</small><strong>{total}</strong><p>Across verification, corrections, leave, and DTR review.</p></div></div>
       <QueueGrid queues={data.queues} />
+      <LifecyclePanel lifecycle={data.lifecycle} />
       <QueuePreview items={data.queue_preview} />
     </>
   );
@@ -283,6 +329,8 @@ function AdministratorDashboard({ data }) {
         <MetricCard label="Unassigned" value={data.operations.unassigned_personnel} helper="No department" icon={Building2} tone="orange" path="/personnel" />
         <MetricCard label="No schedule" value={data.operations.without_schedule} helper="Active personnel" icon={CalendarClock} tone="violet" path="/schedules" />
       </div>
+
+      <LifecyclePanel lifecycle={data.lifecycle} />
 
       <div className="admin-dashboard-grid">
         <article className="role-panel admin-security-panel">
