@@ -10,7 +10,7 @@ export default function Footer() {
         <span className="app-footer-seal"><DilgSeal alt="" /></span>
         <div>
           <span className="app-footer-eyebrow"><Sparkles size={11} /> Attendance intelligence</span>
-          <strong>GIP Attendance Tracker</strong>
+          <strong>GIP AttendanceHub</strong>
           <small>Secure workforce attendance platform</small>
         </div>
       </div>

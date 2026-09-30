@@ -65,7 +65,7 @@ export default function Login() {
             <DilgSeal />
           </div>
           <p className="login-agency">Department of the Interior and Local Government</p>
-          <h1>GIP Attendance<br />Tracker</h1>
+          <h1>GIP AttendanceHub</h1>
           <p className="login-intro">
             A secure and reliable workspace for monitoring Government Internship
             Program attendance, schedules, and daily time records.
