@@ -61,6 +61,8 @@ class DtrController extends Controller
         $cutoff = $todayCutoff->lessThan($periodEnd) ? $todayCutoff : $periodEnd;
         $user = $request->user();
         $canManageOthers = PersonnelAccess::canManageOthers($user);
+        $canGenerateOthers = in_array($user->user_role, ['Administrator', 'HR'], true);
+        $canGenerateOwn = $user->personnel_id !== null;
 
         $holidays = Holiday::query()
             ->whereBetween('holiday_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
@@ -72,7 +74,7 @@ class DtrController extends Controller
             ->whereNotNull('department_id')
             ->when(
                 in_array($period, [DtrPeriod::FIRST_HALF, DtrPeriod::SECOND_HALF], true),
-                fn ($query) => $query->where('personnel_type', 'GIP')
+                fn ($query) => $query->whereIn('personnel_type', ['GIP', 'Job Order'])
             )
             ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
             ->when($validated['personnel_ids'] ?? null, fn ($query, array $ids) => $query
@@ -196,7 +198,9 @@ class DtrController extends Controller
             'can_certify' => in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true),
             'can_verify_attendance' => in_array($user->user_role, ['Administrator', 'HR', 'Supervisor'], true),
             'can_correct_attendance' => in_array($user->user_role, ['Administrator', 'HR'], true),
-            'can_generate' => $user->user_role === 'Administrator',
+            'can_generate' => $canGenerateOthers || $canGenerateOwn,
+            'can_generate_others' => $canGenerateOthers,
+            'current_personnel_id' => $user->personnel_id,
             'can_request_reopen' => in_array($user->user_role, ['Administrator', 'HR'], true),
             'can_approve_reopen' => $user->user_role === 'Administrator',
             'can_full_month_override' => in_array($user->user_role, ['Administrator', 'HR'], true),
@@ -281,7 +285,7 @@ class DtrController extends Controller
         $isGip = $this->cutoffs->isGip($personnel->personnel_type);
         $isFullMonthOverride = $isGip && $validated['period'] === DtrPeriod::FULL_MONTH;
 
-        if (! $isGip && $validated['period'] !== DtrPeriod::FULL_MONTH) {
+        if (! $this->cutoffs->isSemiMonthly($personnel->personnel_type) && $validated['period'] !== DtrPeriod::FULL_MONTH) {
             return response()->json([
                 'message' => 'This personnel type uses monthly DTR reporting. Select Full month.',
             ], 422);
@@ -500,9 +504,12 @@ class DtrController extends Controller
 
     public function generate(Request $request, DtrDocumentGenerator $generator): BinaryFileResponse|JsonResponse
     {
-        if ($request->user()->user_role !== 'Administrator') {
+        $user = $request->user();
+        $canGenerateOthers = in_array($user->user_role, ['Administrator', 'HR'], true);
+
+        if (! $canGenerateOthers && ! $user->personnel_id) {
             return response()->json([
-                'message' => 'Only an administrator may generate official DTR documents.',
+                'message' => 'Your account must be linked to a personnel record before you can download your certified DTR.',
             ], 403);
         }
 
@@ -514,6 +521,20 @@ class DtrController extends Controller
             'personnel_ids.*' => ['integer', 'distinct', 'exists:personnel,personnel_id'],
         ]);
         $validated['period'] = DtrPeriod::normalize($validated['period'] ?? null);
+        $requestedIds = collect($validated['personnel_ids'] ?? [])->map(fn ($id) => (int) $id);
+
+        if (! $canGenerateOthers) {
+            $ownPersonnelId = (int) $user->personnel_id;
+            if ($requestedIds->isNotEmpty() && $requestedIds->contains(fn (int $id) => $id !== $ownPersonnelId)) {
+                return response()->json([
+                    'message' => 'You may only download the certified DTR linked to your own personnel account.',
+                ], 403);
+            }
+
+            $validated['personnel_ids'] = [$ownPersonnelId];
+            $requestedIds = collect([$ownPersonnelId]);
+        }
+
         $monitorRequest = Request::create('/api/dtr', 'GET', [
             'month' => $validated['month'],
             'period' => $validated['period'],
@@ -524,7 +545,6 @@ class DtrController extends Controller
         $monitorRequest->setUserResolver(fn () => $request->user());
         $monitorData = $this->index($monitorRequest)->getData(true);
         $reports = collect($monitorData['data']);
-        $requestedIds = collect($validated['personnel_ids'] ?? [])->map(fn ($id) => (int) $id);
 
         if ($requestedIds->isNotEmpty()) {
             $reports = $reports
@@ -644,6 +664,13 @@ class DtrController extends Controller
         }
 
         if (count($documents) === 1) {
+            try {
+                $this->auditDtrDownloads($request, $reports, $certifications);
+            } catch (Throwable $exception) {
+                File::delete($documents[0]['path']);
+                throw $exception;
+            }
+
             return response()
                 ->download($documents[0]['path'], $documents[0]['name'])
                 ->deleteFileAfterSend(true);
@@ -669,9 +696,51 @@ class DtrController extends Controller
         $archive->close();
         File::delete(collect($documents)->pluck('path')->all());
 
+        try {
+            $this->auditDtrDownloads($request, $reports, $certifications);
+        } catch (Throwable $exception) {
+            File::delete($zipPath);
+            throw $exception;
+        }
+
         return response()
             ->download($zipPath, "Certified-DTR-{$periodSuffix}.zip")
             ->deleteFileAfterSend(true);
+    }
+
+    private function auditDtrDownloads(Request $request, Collection $reports, Collection $certifications): void
+    {
+        $user = $request->user();
+        $ipAddress = ClientIp::for($request);
+        $userAgent = Str::limit((string) $request->userAgent(), 500, '');
+        $requestId = RequestId::for($request);
+
+        DB::transaction(function () use (
+            $certifications,
+            $ipAddress,
+            $reports,
+            $requestId,
+            $user,
+            $userAgent
+        ): void {
+            foreach ($reports as $report) {
+                $certification = $certifications->get($report['personnel_id']);
+                ActivityLog::create([
+                    'user_id' => $user->user_id,
+                    'activity_type' => 'DTR_DOWNLOADED',
+                    'description' => Str::limit(
+                        "{$user->username} downloaded the certified {$report['period_label']} DTR for {$report['full_name']}.",
+                        500,
+                        ''
+                    ),
+                    'entity_type' => 'dtr_certifications',
+                    'entity_id' => $certification?->dtr_certification_id,
+                    'ip_address' => $ipAddress,
+                    'user_agent' => $userAgent,
+                    'request_id' => $requestId,
+                ]);
+            }
+        });
     }
 
     private function dtrFileName(array $report, string $month, string $period): string
@@ -848,7 +917,7 @@ class DtrController extends Controller
             'employee_number' => $person->employee_number,
             'full_name' => $person->full_name,
             'personnel_type' => $person->personnel_type,
-            'reporting_policy' => $this->cutoffs->isGip($person->personnel_type)
+            'reporting_policy' => $this->cutoffs->isSemiMonthly($person->personnel_type)
                 ? 'semi_monthly'
                 : 'monthly',
             'cutoff' => $cutoffTimeline,

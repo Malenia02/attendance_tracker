@@ -18,6 +18,10 @@ use Illuminate\Database\Eloquent\Builder;
 
 final class RoleDashboardService
 {
+    public function __construct(
+        private readonly DtrCutoffService $cutoffs
+    ) {}
+
     public function for(User $user): array
     {
         $user->loadMissing('personnel.department');
@@ -105,7 +109,7 @@ final class RoleDashboardService
                 'date_to' => $leave->date_to->toDateString(),
                 'status' => $leave->approval_status,
             ]);
-        $currentDtrPeriod = now()->day <= 15 ? DtrPeriod::FIRST_HALF : DtrPeriod::SECOND_HALF;
+        $currentDtrPeriod = $this->cutoffs->currentContext($personnel)['period'];
         $dtr = DtrCertification::query()
             ->where('personnel_id', $personnel->personnel_id)
             ->where('dtr_year', $monthStart->year)

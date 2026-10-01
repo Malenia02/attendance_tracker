@@ -130,6 +130,9 @@ class ActionCenterSecurityTest extends TestCase
     {
         $departmentId = $this->department('DILG-ZSP', 'Zamboanga del Sur');
         $personnelId = $this->personnel('EMP-001', $departmentId, now()->addDays(10)->toDateString());
+        DB::table('personnel')->where('personnel_id', $personnelId)->update([
+            'personnel_type' => 'Job Order',
+        ]);
         $unassignedId = $this->personnel('EMP-002');
         $scheduleId = DB::table('work_schedules')->insertGetId([
             'schedule_name' => 'Compressed Week',

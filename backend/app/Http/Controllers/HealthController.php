@@ -17,6 +17,7 @@ class HealthController extends Controller
             $ready = is_writable(storage_path('framework'))
                 && is_writable(storage_path('logs'))
                 && is_file(resource_path('templates/DTR-format-1.docx'))
+                && is_file(resource_path('templates/DTR-JO.docx'))
                 && (! app()->environment('production')
                     || config('app.frontend_deployment') === 'external'
                     || is_file(public_path('app/index.html')));

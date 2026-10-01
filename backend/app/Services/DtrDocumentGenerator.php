@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Support\DtrPeriod;
 use DOMDocument;
+use DOMElement;
 use DOMNode;
 use DOMXPath;
 use RuntimeException;
@@ -15,7 +17,8 @@ class DtrDocumentGenerator
 
     public function generate(array $reports, string $destination): void
     {
-        $template = resource_path('templates/DTR-format-1.docx');
+        $isJobOrder = strtoupper(trim($reports[0]['personnel_type'] ?? '')) === 'JOB ORDER';
+        $template = resource_path($isJobOrder ? 'templates/DTR-JO.docx' : 'templates/DTR-format-1.docx');
 
         if (! is_file($template)) {
             throw new RuntimeException('The DTR Word template is unavailable.');
@@ -51,25 +54,29 @@ class DtrDocumentGenerator
 
             $xpath = new DOMXPath($document);
             $xpath->registerNamespace('w', self::WORD_NAMESPACE);
-            $formBoxes = [];
-
-            foreach ($xpath->query('//w:txbxContent') as $box) {
-                if (str_contains($box->textContent, 'DAILY TIME RECORD')) {
-                    $formBoxes[] = $box;
-                }
-            }
-
-            if (count($formBoxes) < 1) {
-                throw new RuntimeException('No DTR forms were found in the Word template.');
-            }
-
-            if (count($reports) === 1) {
-                foreach ($formBoxes as $formBox) {
-                    $this->fillForm($document, $xpath, $formBox, $reports[0]);
-                }
+            if ($isJobOrder) {
+                $this->fillJobOrderForms($document, $xpath, $reports);
             } else {
-                foreach (array_slice($reports, 0, count($formBoxes)) as $index => $report) {
-                    $this->fillForm($document, $xpath, $formBoxes[$index], $report);
+                $formBoxes = [];
+
+                foreach ($xpath->query('//w:txbxContent') as $box) {
+                    if (str_contains($box->textContent, 'DAILY TIME RECORD')) {
+                        $formBoxes[] = $box;
+                    }
+                }
+
+                if (count($formBoxes) < 1) {
+                    throw new RuntimeException('No DTR forms were found in the Word template.');
+                }
+
+                if (count($reports) === 1) {
+                    foreach ($formBoxes as $formBox) {
+                        $this->fillForm($document, $xpath, $formBox, $reports[0]);
+                    }
+                } else {
+                    foreach (array_slice($reports, 0, count($formBoxes)) as $index => $report) {
+                        $this->fillForm($document, $xpath, $formBoxes[$index], $report);
+                    }
                 }
             }
 
@@ -95,6 +102,10 @@ class DtrDocumentGenerator
         $version = (int) ($report['certification']['version_number'] ?? 1);
 
         foreach ($xpath->query('.//w:t', $box) as $textNode) {
+            if (! $textNode instanceof DOMElement) {
+                continue;
+            }
+
             if ($version > 1 && trim($textNode->textContent) === 'DAILY TIME RECORD') {
                 $textNode->nodeValue = "DAILY TIME RECORD - AMENDED V{$version}";
             }
@@ -159,7 +170,73 @@ class DtrDocumentGenerator
             throw new RuntimeException('A daily attendance table is missing from the DTR template.');
         }
 
-        $days = collect($report['daily_records'])->keyBy('day_number');
+        $this->fillDailyTable($document, $xpath, $dailyTable, $report);
+    }
+
+    private function fillJobOrderForms(DOMDocument $document, DOMXPath $xpath, array $reports): void
+    {
+        $formIndex = -1;
+        $expectName = false;
+        $report = null;
+
+        foreach ($xpath->query('/w:document/w:body/*') as $node) {
+            $text = trim($node->textContent);
+            if ($node->localName === 'p' && $text === 'DAILY TIME RECORD') {
+                $formIndex++;
+                $report = count($reports) === 1 ? $reports[0] : ($reports[$formIndex] ?? null);
+                $expectName = true;
+                $version = (int) ($report['certification']['version_number'] ?? 1);
+                if ($version > 1) {
+                    $this->setCellText($document, $xpath, $node, "DAILY TIME RECORD - AMENDED V{$version}", 18);
+                }
+
+                continue;
+            }
+
+            if (! $report) {
+                continue;
+            }
+
+            if ($node->localName === 'tbl') {
+                $this->fillDailyTable($document, $xpath, $node, $report, true);
+            } elseif ($node->localName === 'p') {
+                if ($expectName) {
+                    $this->setCellText($document, $xpath, $node, mb_strtoupper($report['full_name']), 20);
+                    $expectName = false;
+                } elseif (str_starts_with($text, 'For the Month of')) {
+                    $this->setCellText($document, $xpath, $node, 'For the Month of '.$report['month_label'], 20);
+                } elseif (str_starts_with($text, 'Official hours of arrival')) {
+                    $this->setCellText($document, $xpath, $node, 'Regular days: '.($report['official_hours'] ?? ''), 18);
+                } elseif (str_starts_with($text, 'and departure (Saturdays)')) {
+                    $this->setCellText($document, $xpath, $node, 'Saturdays: '.($report['saturday_hours'] ?? ''), 18);
+                }
+            }
+        }
+
+        if ($formIndex < 0) {
+            throw new RuntimeException('No DTR forms were found in the JO Word template.');
+        }
+    }
+
+    private function fillDailyTable(
+        DOMDocument $document,
+        DOMXPath $xpath,
+        DOMNode $dailyTable,
+        array $report,
+        bool $isJobOrder = false
+    ): void {
+        $period = DtrPeriod::normalize($report['period'] ?? null);
+        $firstDay = $period === DtrPeriod::SECOND_HALF ? 16 : 1;
+        $lastDay = $period === DtrPeriod::FIRST_HALF ? 15 : 31;
+        if (! empty($report['period_start'])) {
+            $firstDay = max($firstDay, (int) substr($report['period_start'], 8, 2));
+        }
+        if (! empty($report['period_end'])) {
+            $lastDay = min($lastDay, (int) substr($report['period_end'], 8, 2));
+        }
+        $days = collect($report['daily_records'])
+            ->filter(fn (array $record) => $record['day_number'] >= $firstDay && $record['day_number'] <= $lastDay)
+            ->keyBy('day_number');
         $rows = $xpath->query('./w:tr', $dailyTable);
         $totalDeficiencyMinutes = 0;
 
@@ -170,8 +247,14 @@ class DtrDocumentGenerator
                 continue;
             }
 
-            $this->setExactRowHeight($document, $xpath, $row, 180);
+            if (! $isJobOrder) {
+                $this->setExactRowHeight($document, $xpath, $row, 180);
+            }
             $cells = $xpath->query('./w:tc', $row);
+            // Keep every numbered row, but clear all attendance cells before filling the selected cutoff.
+            for ($column = 1; $column < $cells->length; $column++) {
+                $this->setCellText($document, $xpath, $cells->item($column), '');
+            }
             $record = $days->get($day);
 
             if (! $record) {
@@ -183,12 +266,11 @@ class DtrDocumentGenerator
             $label = $this->statusLabel($record['status']);
 
             if ($label && ! $record['morning_time_in'] && ! $record['afternoon_time_in']) {
-                $this->setCellText($document, $xpath, $cells->item(1), $label, 12, true);
+                $this->setCellText($document, $xpath, $cells->item(1), $label, $isJobOrder ? 16 : 12, true);
             } else {
-                $this->setCellText($document, $xpath, $cells->item(1), $this->formatTime($record['morning_time_in']));
-                $this->setCellText($document, $xpath, $cells->item(2), $this->formatTime($record['morning_time_out']));
-                $this->setCellText($document, $xpath, $cells->item(3), $this->formatTime($record['afternoon_time_in']));
-                $this->setCellText($document, $xpath, $cells->item(4), $this->formatTime($record['afternoon_time_out']));
+                foreach (['morning_time_in', 'morning_time_out', 'afternoon_time_in', 'afternoon_time_out'] as $column => $field) {
+                    $this->setCellText($document, $xpath, $cells->item($column + 1), $this->formatTime($record[$field]), $isJobOrder ? 16 : null);
+                }
             }
 
             if ($deficiencyMinutes > 0) {
@@ -207,17 +289,19 @@ class DtrDocumentGenerator
         if ($totalRow) {
             $totalCells = $xpath->query('./w:tc', $totalRow);
 
-            if ($totalCells->length >= 4) {
+            $hoursColumn = $isJobOrder ? 5 : 2;
+            $minutesColumn = $isJobOrder ? 6 : 3;
+            if ($totalCells->length > $minutesColumn) {
                 $this->setCellText(
                     $document,
                     $xpath,
-                    $totalCells->item(2),
+                    $totalCells->item($hoursColumn),
                     (string) intdiv($totalDeficiencyMinutes, 60)
                 );
                 $this->setCellText(
                     $document,
                     $xpath,
-                    $totalCells->item(3),
+                    $totalCells->item($minutesColumn),
                     str_pad((string) ($totalDeficiencyMinutes % 60), 2, '0', STR_PAD_LEFT)
                 );
             }
@@ -232,17 +316,23 @@ class DtrDocumentGenerator
         ?int $fontSize = null,
         bool $noWrap = false
     ): void {
-        if (! $cell || $value === null || $value === '') {
+        if (! $cell || $value === null) {
             return;
         }
 
         $textNodes = $xpath->query('.//w:t', $cell);
 
         if ($textNodes->length > 0) {
-            $textNodes->item(0)->nodeValue = $value;
+            $firstTextNode = $textNodes->item(0);
+            if ($firstTextNode instanceof DOMElement) {
+                $firstTextNode->nodeValue = $value;
+            }
 
             for ($index = 1; $index < $textNodes->length; $index++) {
-                $textNodes->item($index)->nodeValue = '';
+                $extraTextNode = $textNodes->item($index);
+                if ($extraTextNode instanceof DOMElement) {
+                    $extraTextNode->nodeValue = '';
+                }
             }
 
             $this->formatCellText($document, $xpath, $cell, $fontSize, $noWrap);
@@ -250,7 +340,11 @@ class DtrDocumentGenerator
             return;
         }
 
-        $paragraph = $xpath->query('./w:p[1]', $cell)->item(0);
+        if ($value === '') {
+            return;
+        }
+
+        $paragraph = $cell->localName === 'p' ? $cell : $xpath->query('./w:p[1]', $cell)->item(0);
 
         if (! $paragraph) {
             $paragraph = $document->createElementNS(self::WORD_NAMESPACE, 'w:p');

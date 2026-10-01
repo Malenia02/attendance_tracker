@@ -11,7 +11,9 @@ use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
+use ZipArchive;
 
 class DtrScheduleEligibilityTest extends TestCase
 {
@@ -311,9 +313,16 @@ class DtrScheduleEligibilityTest extends TestCase
         $this->assertDatabaseCount('dtr_certifications', 0);
     }
 
-    public function test_dtr_register_supports_both_cutoffs_and_optional_full_month(): void
+    public static function cutoffPersonnelTypes(): array
+    {
+        return [['GIP'], ['Job Order']];
+    }
+
+    #[DataProvider('cutoffPersonnelTypes')]
+    public function test_dtr_register_supports_both_cutoffs_and_optional_full_month(string $personnelType): void
     {
         [$administrator, $personnel] = $this->records();
+        $personnel->update(['personnel_type' => $personnelType]);
         $schedule = WorkSchedule::create($this->schedulePayload());
 
         PersonnelSchedule::create([
@@ -354,10 +363,12 @@ class DtrScheduleEligibilityTest extends TestCase
         $this->assertCount(31, $fullMonth);
     }
 
-    public function test_half_month_workflow_is_stored_separately_and_blocks_overlapping_full_month(): void
+    #[DataProvider('cutoffPersonnelTypes')]
+    public function test_half_month_workflow_is_stored_separately_and_blocks_overlapping_full_month(string $personnelType): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-15 19:00:00', 'Asia/Manila'));
         [$administrator, $personnel] = $this->records();
+        $personnel->update(['personnel_type' => $personnelType]);
         $schedule = WorkSchedule::create($this->schedulePayload());
 
         PersonnelSchedule::create([
@@ -466,7 +477,7 @@ class DtrScheduleEligibilityTest extends TestCase
         ]);
     }
 
-    public function test_non_gip_personnel_cannot_use_a_half_month_period(): void
+    public function test_regular_personnel_cannot_use_a_half_month_period(): void
     {
         [$administrator, $personnel] = $this->records();
         $personnel->update(['personnel_type' => 'Regular']);
@@ -484,10 +495,12 @@ class DtrScheduleEligibilityTest extends TestCase
             );
     }
 
-    public function test_cutoff_dtr_can_still_be_submitted_late_and_certified(): void
+    #[DataProvider('cutoffPersonnelTypes')]
+    public function test_cutoff_dtr_can_still_be_submitted_late_certified_and_exported(string $personnelType): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-05 09:00:00', 'Asia/Manila'));
         [$administrator, $personnel] = $this->records();
+        $personnel->update(['personnel_type' => $personnelType]);
         $schedule = WorkSchedule::create($this->schedulePayload());
 
         PersonnelSchedule::create([
@@ -541,6 +554,107 @@ class DtrScheduleEligibilityTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('certification.status', 'Certified');
+
+        $download = $this->actingAs($administrator)
+            ->postJson('/api/dtr/generate', [
+                'month' => '2026-07',
+                'period' => 'second_half',
+                'personnel_ids' => [$personnel->personnel_id],
+            ])
+            ->assertOk();
+        $path = $download->baseResponse->getFile()->getPathname();
+        try {
+            $archive = new ZipArchive;
+            $this->assertTrue($archive->open($path) === true);
+            $xml = $archive->getFromName('word/document.xml');
+            $archive->close();
+            $this->assertStringContainsString('AEMON TARGARYEN', $xml);
+            $this->assertStringContainsString('7:00', $xml);
+            $this->assertStringContainsString($personnelType === 'Job Order' ? 'Civil Service Form No. 1' : 'Civil Service Form No. 48', $xml);
+        } finally {
+            unlink($path);
+        }
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $administrator->user_id,
+            'activity_type' => 'DTR_DOWNLOADED',
+            'entity_type' => 'dtr_certifications',
+        ]);
+
+        $personnelUser = User::create([
+            'personnel_id' => $personnel->personnel_id,
+            'username' => 'dtr-self-service',
+            'password_hash' => 'test',
+            'user_role' => 'Personnel',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($personnelUser)
+            ->getJson('/api/dtr?month=2026-07&period=second_half')
+            ->assertOk()
+            ->assertJsonPath('can_generate', true)
+            ->assertJsonPath('can_generate_others', false)
+            ->assertJsonPath('current_personnel_id', $personnel->personnel_id)
+            ->assertJsonPath('meta.pagination.total', 1);
+
+        $selfDownload = $this->actingAs($personnelUser)
+            ->postJson('/api/dtr/generate', [
+                'month' => '2026-07',
+                'period' => 'second_half',
+                'personnel_ids' => [$personnel->personnel_id],
+            ])
+            ->assertOk();
+        $selfDownloadPath = $selfDownload->baseResponse->getFile()->getPathname();
+        unlink($selfDownloadPath);
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $personnelUser->user_id,
+            'activity_type' => 'DTR_DOWNLOADED',
+            'entity_type' => 'dtr_certifications',
+        ]);
+
+        $otherPersonnel = Personnel::create([
+            'department_id' => $personnel->department_id,
+            'employee_number' => 'OTHER-2026-0001',
+            'first_name' => 'Other',
+            'last_name' => 'Personnel',
+            'personnel_type' => $personnelType,
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($personnelUser)
+            ->postJson('/api/dtr/generate', [
+                'month' => '2026-07',
+                'period' => 'second_half',
+                'personnel_ids' => [$otherPersonnel->personnel_id],
+            ])
+            ->assertForbidden()
+            ->assertJsonPath(
+                'message',
+                'You may only download the certified DTR linked to your own personnel account.'
+            );
+
+        $hr = User::create([
+            'username' => 'dtr-hr',
+            'password_hash' => 'test',
+            'user_role' => 'HR',
+            'status' => 'Active',
+        ]);
+        $hrDownload = $this->actingAs($hr)
+            ->postJson('/api/dtr/generate', [
+                'month' => '2026-07',
+                'period' => 'second_half',
+                'personnel_ids' => [$personnel->personnel_id],
+            ])
+            ->assertOk();
+        $hrDownloadPath = $hrDownload->baseResponse->getFile()->getPathname();
+        unlink($hrDownloadPath);
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $hr->user_id,
+            'activity_type' => 'DTR_DOWNLOADED',
+            'entity_type' => 'dtr_certifications',
+        ]);
     }
 
     private function records(): array

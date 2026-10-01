@@ -154,7 +154,11 @@ class ProductionCheck extends Command
         }
 
         if (! is_file(resource_path('templates/DTR-format-1.docx'))) {
-            $errors[] = 'The official DTR Word template is missing.';
+            $errors[] = 'The official GIP DTR Word template is missing.';
+        }
+
+        if (! is_file(resource_path('templates/DTR-JO.docx'))) {
+            $errors[] = 'The official Job Order DTR Word template is missing.';
         }
 
         $mysqlSchema = database_path('schema/mysql-schema.sql');

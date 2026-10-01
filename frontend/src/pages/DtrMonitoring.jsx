@@ -41,17 +41,17 @@ const periodGuides = {
   first_half: {
     title: "1st–15th cutoff",
     description: "Shows only duty days and attendance records dated from the 1st to the 15th of the selected month.",
-    note: "Use this for the first GIP semi-monthly DTR submission.",
+    note: "For GIP and JO personnel. The Word form keeps days 1–31, with days 16–31 blank and excluded from totals.",
   },
   second_half: {
     title: "16th–month-end cutoff",
     description: "Shows only duty days and attendance records dated from the 16th through the last day of the selected month.",
-    note: "Use this for the second GIP semi-monthly DTR submission.",
+    note: "For GIP and JO personnel. The Word form keeps days 1–31, with days 1–15 blank and excluded from totals.",
   },
   full_month: {
     title: "Full month view",
     description: "Shows the whole month for regular monthly reporting or special review.",
-    note: "GIP personnel normally use the two cutoff periods unless HR allows a documented full-month override.",
+    note: "JO personnel may select either half-month or full-month reporting. GIP full-month reporting requires a documented Administrator or HR override.",
   },
 };
 
@@ -113,6 +113,8 @@ export default function DtrMonitoring() {
     can_verify_attendance: false,
     can_correct_attendance: false,
     can_generate: false,
+    can_generate_others: false,
+    current_personnel_id: null,
     can_manage_others: false,
     can_request_reopen: false,
     can_approve_reopen: false,
@@ -161,6 +163,8 @@ export default function DtrMonitoring() {
           can_verify_attendance: payload.can_verify_attendance,
           can_correct_attendance: payload.can_correct_attendance,
           can_generate: payload.can_generate,
+          can_generate_others: payload.can_generate_others,
+          current_personnel_id: payload.current_personnel_id,
           can_manage_others: payload.can_manage_others,
           can_request_reopen: payload.can_request_reopen,
           can_approve_reopen: payload.can_approve_reopen,
@@ -209,9 +213,10 @@ export default function DtrMonitoring() {
     });
   }, [rows, search, statusFilter, readinessFilter]);
 
-  const certifiedRows = useMemo(
-    () => filteredRows.filter((row) => row.certification.status === "Certified"),
-    [filteredRows],
+  const downloadableRows = useMemo(
+    () => filteredRows.filter((row) => row.certification.status === "Certified"
+      && (meta.can_generate_others || row.personnel_id === meta.current_personnel_id)),
+    [filteredRows, meta.can_generate_others, meta.current_personnel_id],
   );
 
   async function updateStatus(row, status, remarks = null, fullMonthOverrideReason = null) {
@@ -383,7 +388,7 @@ export default function DtrMonitoring() {
   async function generateDtr() {
     const personnelIds = selectedIds.length
       ? selectedIds
-      : certifiedRows.map((row) => row.personnel_id);
+      : downloadableRows.map((row) => row.personnel_id);
 
     if (!personnelIds.length) return;
     setGenerating(true);
@@ -398,7 +403,7 @@ export default function DtrMonitoring() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.message || "The DTR document could not be generated.");
+        throw new Error(payload.message || "The certified DTR could not be downloaded.");
       }
 
       const blob = await response.blob();
@@ -411,7 +416,7 @@ export default function DtrMonitoring() {
       link.download = filename;
       link.click();
       URL.revokeObjectURL(url);
-      setNotice(`Generated ${personnelIds.length} personnel DTR${personnelIds.length === 1 ? "" : "s"}.`);
+      setNotice(`Downloaded ${personnelIds.length} certified DTR${personnelIds.length === 1 ? "" : "s"}.`);
       window.setTimeout(() => setNotice(""), 4000);
     } catch (requestError) {
       setError(requestError.message);
@@ -427,7 +432,7 @@ export default function DtrMonitoring() {
   }
 
   function toggleAllVisible() {
-    const visibleIds = certifiedRows.map((row) => row.personnel_id);
+    const visibleIds = downloadableRows.map((row) => row.personnel_id);
     if (!visibleIds.length) return;
     const allVisibleSelected = visibleIds.every((id) => selectedIds.includes(id));
 
@@ -454,7 +459,7 @@ export default function DtrMonitoring() {
         <div>
           <span><CalendarRange size={14} /> Cutoff attendance control</span>
           <h1>DTR Monitoring</h1>
-          <p>Prepare the 1st–15th or 16th–month-end GIP cutoff, with full-month reporting available when needed.</p>
+          <p>Prepare GIP and JO DTRs for the 1st–15th, 16th–month end, or full month. Word exports leave dates outside the selected period blank.</p>
         </div>
         {meta.cutoff && (
           <small className={`dtr-cutoff-hero ${meta.cutoff.state}`}>
@@ -502,16 +507,16 @@ export default function DtrMonitoring() {
               type="button"
               className="generate"
               onClick={generateDtr}
-              disabled={generating || (!selectedIds.length && !certifiedRows.length)}
-              title="Only certified DTR records can be generated"
+              disabled={generating || (!selectedIds.length && !downloadableRows.length)}
+              title="Only certified DTR records can be downloaded"
             >
               <FileCheck2 size={17} />
               {generating
-                ? "Generating…"
+                ? "Preparing download…"
                 : selectedIds.length
-                  ? `Generate Certified DTR (${selectedIds.length})`
-                  : certifiedRows.length
-                    ? `Generate Certified DTR (${certifiedRows.length})`
+                  ? `Download Certified DTR (${selectedIds.length})`
+                  : downloadableRows.length
+                    ? `Download Certified DTR (${downloadableRows.length})`
                     : "No Certified DTR"}
             </button>
           )}
@@ -593,9 +598,9 @@ export default function DtrMonitoring() {
                     <input
                       type="checkbox"
                       aria-label="Select all visible certified personnel"
-                      checked={certifiedRows.length > 0
-                        && certifiedRows.every((row) => selectedIds.includes(row.personnel_id))}
-                      disabled={!certifiedRows.length}
+                      checked={downloadableRows.length > 0
+                        && downloadableRows.every((row) => selectedIds.includes(row.personnel_id))}
+                      disabled={!downloadableRows.length}
                       onChange={toggleAllVisible}
                     />
                   </th>
@@ -622,10 +627,13 @@ export default function DtrMonitoring() {
                         type="checkbox"
                         aria-label={`Select ${row.full_name}`}
                         checked={selectedIds.includes(row.personnel_id)}
-                        disabled={row.certification.status !== "Certified"}
-                        title={row.certification.status === "Certified"
-                          ? `Select ${row.full_name} for DTR generation`
-                          : "This DTR must be certified before it can be generated"}
+                        disabled={row.certification.status !== "Certified"
+                          || (!meta.can_generate_others && row.personnel_id !== meta.current_personnel_id)}
+                        title={row.certification.status !== "Certified"
+                          ? "This DTR must be certified before it can be downloaded"
+                          : meta.can_generate_others || row.personnel_id === meta.current_personnel_id
+                            ? `Select ${row.full_name} for DTR download`
+                            : "You may only download your own certified DTR"}
                         onChange={() => toggleSelected(row.personnel_id)}
                       />
                     </td>

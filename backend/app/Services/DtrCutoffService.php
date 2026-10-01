@@ -18,7 +18,7 @@ final class DtrCutoffService
         $date = ($date ?? today())->copy()->startOfDay();
         $month = $date->copy()->startOfMonth();
         $type = $personnel instanceof Personnel ? $personnel->personnel_type : $personnel;
-        $period = $this->isGip($type)
+        $period = $this->isSemiMonthly($type)
             ? ($date->day <= 15 ? DtrPeriod::FIRST_HALF : DtrPeriod::SECOND_HALF)
             : DtrPeriod::FULL_MONTH;
 
@@ -31,7 +31,7 @@ final class DtrCutoffService
         $month = $date->copy()->startOfMonth();
         $type = $personnel instanceof Personnel ? $personnel->personnel_type : $personnel;
 
-        if ($this->isGip($type)) {
+        if ($this->isSemiMonthly($type)) {
             if ($date->day >= $month->daysInMonth) {
                 return $this->context($month, DtrPeriod::SECOND_HALF);
             }
@@ -118,15 +118,15 @@ final class DtrCutoffService
 
     public function outstandingQuery(User $user, ?string $search = null): Builder
     {
-        $gip = $this->latestDueContext('GIP');
+        $semiMonthly = $this->latestDueContext('GIP');
         $monthly = $this->latestDueContext('Regular');
 
         /** @var Builder<Personnel> $query */
         $query = Personnel::query()
             ->with([
                 'department:department_id,department_code,department_name',
-                'dtrCertifications' => fn (HasMany $query) => $query->where(function (Builder $query) use ($gip, $monthly): void {
-                    $this->whereCertificationContext($query, $gip);
+                'dtrCertifications' => fn (HasMany $query) => $query->where(function (Builder $query) use ($semiMonthly, $monthly): void {
+                    $this->whereCertificationContext($query, $semiMonthly);
                     $query->orWhere(fn (Builder $query) => $this->whereCertificationContext($query, $monthly));
                 }),
             ])
@@ -141,8 +141,8 @@ final class DtrCutoffService
                 ->orWhere('middle_name', 'like', "%{$search}%")
                 ->orWhere('last_name', 'like', "%{$search}%");
         }))
-            ->where(function (Builder $query) use ($gip, $monthly): void {
-                $query->where(fn (Builder $query) => $this->whereOutstandingBranch($query, true, $gip))
+            ->where(function (Builder $query) use ($semiMonthly, $monthly): void {
+                $query->where(fn (Builder $query) => $this->whereOutstandingBranch($query, true, $semiMonthly))
                     ->orWhere(fn (Builder $query) => $this->whereOutstandingBranch($query, false, $monthly));
             })
             ->orderBy('last_name')
@@ -184,14 +184,23 @@ final class DtrCutoffService
         return strtoupper(trim((string) $personnelType)) === 'GIP';
     }
 
-    private function whereOutstandingBranch(Builder $query, bool $gip, array $context): void
+    public function isSemiMonthly(?string $personnelType): bool
     {
-        if ($gip) {
-            $query->where('personnel_type', 'GIP');
+        return in_array(
+            strtoupper(trim((string) $personnelType)),
+            ['GIP', 'JOB ORDER'],
+            true
+        );
+    }
+
+    private function whereOutstandingBranch(Builder $query, bool $semiMonthly, array $context): void
+    {
+        if ($semiMonthly) {
+            $query->whereIn('personnel_type', ['GIP', 'Job Order']);
         } else {
             $query->where(fn (Builder $query) => $query
                 ->whereNull('personnel_type')
-                ->orWhere('personnel_type', '!=', 'GIP'));
+                ->orWhereNotIn('personnel_type', ['GIP', 'Job Order']));
         }
 
         $query

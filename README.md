@@ -266,8 +266,8 @@ context. Manual scanning remains available during local development.
   to one year for new credentials. Card validity must remain inside the
   employment period, and QR attendance rejects scans outside either period.
 - DTR records move through Draft, Submitted, Returned, and Certified states.
-- GIP personnel use semi-monthly DTR periods (1stâ€“15th and 16thâ€“month end).
-  Other personnel types use a full-month period. A full-month GIP DTR is an
+- GIP and Job Order personnel use semi-monthly DTR periods (1st–15th and
+  16th–month end). Other personnel types use a full-month period. A full-month GIP DTR is an
   exception that requires Administrator or HR authorization, a written reason,
   and an immutable activity-log entry.
 - A DTR cannot be submitted before its cutoff. It becomes overdue after the
@@ -276,6 +276,12 @@ context. Manual scanning remains available during local development.
 - Returned records must be corrected and submitted again before certification.
 - Certification creates a signed snapshot. Generated certified DTRs are checked
   against that snapshot to detect later changes.
+- Administrator and HR accounts may batch-download certified DTRs within their
+  authorized scope. Supervisor, Encoder, and Personnel accounts may download
+  only the certified DTR linked to their own personnel account. Every download
+  is recorded in the immutable activity log.
+- The Job Order template keeps the Provincial Director as the fixed certifying
+  official and preserves the signature line for the required original signature.
 - Employment remains active through its configured end date. At 12:15 AM on
   the following day, the lifecycle task marks the personnel record Completed,
   disables the linked account, revokes sessions and tokens, caps the current
@@ -530,13 +536,22 @@ addresses.
 
 ### DTR generation fails
 
-Confirm that this file exists:
+Confirm that both Word templates exist:
 
 ```text
 backend/resources/templates/DTR-format-1.docx
+backend/resources/templates/DTR-JO.docx
 ```
 
 Only records allowed by the current DTR workflow can be generated.
+Job Order personnel use the supplied JO template; GIP personnel retain the existing
+template. Both support 1–15 and 16–month-end selections. Every form keeps its
+numbered rows 1–31, with entries and totals limited to the selected reporting
+period. Dates outside that period (and dates beyond the end of a short month)
+are left blank. JO full-month reporting remains available; GIP full-month
+reporting still requires the existing Administrator/HR override. Certification
+and the restriction against overlapping full-month and half-month workflows
+continue to apply.
 
 ## Data protection
 
