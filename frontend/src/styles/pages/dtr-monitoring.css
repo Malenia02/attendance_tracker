@@ -19,6 +19,7 @@
   margin-bottom: 18px;
   padding: 28px 30px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 28px;
@@ -34,6 +35,10 @@
 .dtr-hero>div {
   position: relative;
   z-index: 2;
+}
+
+.dtr-hero>div:first-child {
+  flex: 1 1 420px;
 }
 
 .dtr-hero>div:first-child>span {
@@ -75,8 +80,11 @@
 }
 
 .dtr-hero-actions {
+  flex: 1 1 650px;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -109,12 +117,18 @@
 }
 
 .dtr-hero-actions button {
+  min-width: max-content;
+  min-height: 46px;
+  height: auto;
   padding: 0 15px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   font-size: 10px;
   font-weight: 750;
+  line-height: 1.25;
+  white-space: nowrap;
   transition: transform 0.2s ease, background 0.2s ease;
 }
 
@@ -1584,6 +1598,31 @@
   cursor: not-allowed;
 }
 
+@media (max-width: 1200px) {
+  .dtr-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dtr-hero-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dtr-hero-actions label,
+  .dtr-hero-actions input,
+  .dtr-hero-actions select,
+  .dtr-hero-actions button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dtr-hero-actions button {
+    padding-block: 8px;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 1100px) {
   .dtr-panel-header {
     align-items: flex-start;
@@ -1655,6 +1694,8 @@
   }
 
   .dtr-hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
     flex-direction: column;
   }
 
