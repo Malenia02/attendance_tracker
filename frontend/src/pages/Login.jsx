@@ -65,10 +65,9 @@ export default function Login() {
             <DilgSeal />
           </div>
           <p className="login-agency">Department of the Interior and Local Government</p>
-          <h1>GIP AttendanceHub</h1>
+          <h1>DILG AttendanceHub</h1>
           <p className="login-intro">
-            A secure and reliable workspace for monitoring Government Internship
-            Program attendance, schedules, and daily time records.
+            A secure and reliable workspace for monitoring attendance, schedules, and daily time records.
           </p>
 
           <div className="login-feature-list">
@@ -79,7 +78,7 @@ export default function Login() {
         </div>
 
         <div className="login-brand-footer">
-          <span>GIP Attendance Management System</span>
+          <span>DILG Attendance Management System</span>
           <span>Official Use Only</span>
         </div>
       </section>
@@ -87,7 +86,7 @@ export default function Login() {
       <section className="login-form-panel">
         <div className="login-mobile-brand">
           <span><DilgSeal /></span>
-          <strong>DILG GIP</strong>
+          <strong>DILG </strong>
         </div>
 
         <div className="login-card">
