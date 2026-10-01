@@ -22,7 +22,7 @@ export default function Header({ onToggleSidebar, sidebarToggled }) {
         <span className="header-brand-mark">
           <DilgSeal />
         </span>
-        <span>DILG AttendanceHub</span>
+        <span>AttendanceHub</span>
       </div>
 
       <div className="topbar-left">
