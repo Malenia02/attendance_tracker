@@ -43,3 +43,7 @@
 /* Unified application form fields. Keep after modal/page styles so every
    administrative workflow uses the same Schedule-page control treatment. */
 @import "./styles/components/form-controls.css";
+
+/* Screen readability safeguards. Imported last so legacy page-specific text
+   sizes cannot reduce operational copy below an accessible minimum. */
+@import "./styles/core/accessibility.css";

@@ -1,0 +1,122 @@
+/* Readability defaults for personnel of all ages.
+   These rules apply only on screen so official printed cards and DTR layouts
+   retain their exact physical dimensions and typography. */
+
+:root[data-theme="light"] {
+  --text-muted: #617394;
+  --text-soft: #465c7f;
+  --text-faint: #687a99;
+}
+
+:root[data-theme="dark"] {
+  --text-muted: #b1bed4;
+  --text-soft: #c5cee0;
+  --text-faint: #9eacc5;
+}
+
+@media screen {
+  body {
+    font-size: 16px;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Form copy must remain readable even in older page-specific modal styles. */
+  .app-shell :is(label, legend, small, time),
+  .app-modal :is(label, legend, small, time),
+  .app-modal-body :is(label, legend, small, time),
+  .login-page :is(label, legend, small, time) {
+    font-size: max(13px, 0.8125em) !important;
+    line-height: 1.45;
+  }
+
+  .app-shell :is(input, select, textarea, button),
+  .app-modal :is(input, select, textarea, button),
+  .app-modal-body :is(input, select, textarea, button),
+  .login-page :is(input, select, textarea, button) {
+    font-size: max(14px, 0.875em) !important;
+    line-height: 1.4;
+  }
+
+  .app-shell :is(input, textarea)::placeholder,
+  .app-modal :is(input, textarea)::placeholder,
+  .app-modal-body :is(input, textarea)::placeholder,
+  .login-page :is(input, textarea)::placeholder {
+    color: var(--text-muted) !important;
+    opacity: 1 !important;
+  }
+
+  /* Dense record tables previously used text as small as 8px. */
+  .app-shell table :is(th, td),
+  .app-modal table :is(th, td) {
+    font-size: max(13px, 0.8125em) !important;
+    line-height: 1.45;
+  }
+
+  .app-shell table td {
+    font-size: max(14px, 0.875em) !important;
+  }
+
+  .app-shell table :is(th, td) :is(span, small, strong, a, button),
+  .app-modal table :is(th, td) :is(span, small, strong, a, button) {
+    font-size: max(13px, 0.8125em) !important;
+  }
+
+  /* Raise recurring microcopy patterns without changing decorative icons. */
+  .app-shell :is(span, small, strong, p, a)[class*="-meta"],
+  .app-shell :is(span, small, strong, p, a)[class*="-label"],
+  .app-shell :is(span, small, strong, p, a)[class*="-status"],
+  .app-shell :is(span, small, strong, p, a)[class*="-hint"],
+  .app-shell :is(span, small, strong, p, a)[class*="-subtitle"],
+  .app-shell :is(span, small, strong, p, a)[class*="-eyebrow"],
+  .app-shell :is(span, small, strong, p, a)[class*="-caption"] {
+    font-size: max(13px, 0.8125em) !important;
+    line-height: 1.45;
+  }
+
+  /* Navigation and page context should be immediately legible. */
+  .sidebar-section-title,
+  .sidebar-user-info span,
+  .topbar-user span,
+  .admin-records-eyebrow,
+  .admin-records-subtitle,
+  .admin-records-result-count,
+  .activity-eyebrow,
+  .activity-hero p,
+  .activity-summary-grid small,
+  .activity-log-meta,
+  .activity-source,
+  .activity-pagination,
+  .field-hint,
+  .field-error,
+  .login-agency,
+  .login-brand-footer,
+  .login-eyebrow,
+  .login-error,
+  .login-help,
+  .login-footer {
+    font-size: 13px !important;
+    line-height: 1.45;
+  }
+
+  .sidebar-section-title {
+    letter-spacing: 0.08em;
+  }
+
+  /* Provide a strong, consistent keyboard focus indicator. */
+  :is(a, button, input, select, textarea):focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--primary) 78%, white) !important;
+    outline-offset: 2px;
+  }
+}
+
+@media screen and (max-width: 860px) {
+  /* Prevent mobile browsers from zooming form fields while typing. */
+  .app-shell :is(input, select, textarea),
+  .app-modal :is(input, select, textarea),
+  .app-modal-body :is(input, select, textarea),
+  .login-page :is(input, select, textarea) {
+    font-size: 16px !important;
+  }
+}
