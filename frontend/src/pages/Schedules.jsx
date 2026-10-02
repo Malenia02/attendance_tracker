@@ -144,6 +144,11 @@ export default function Schedules() {
   const [assignmentModal, setAssignmentModal] = useState(false);
   const [assignmentForm, setAssignmentForm] = useState(createEmptyAssignment);
   const [selectedPersonnel, setSelectedPersonnel] = useState([]);
+  const [assignmentPersonnel, setAssignmentPersonnel] = useState([]);
+  const [assignmentPersonnelPage, setAssignmentPersonnelPage] = useState(1);
+  const [assignmentPersonnelPagination, setAssignmentPersonnelPagination] = useState(null);
+  const [assignmentPersonnelFilter, setAssignmentPersonnelFilter] = useState("unassigned");
+  const [assignmentPersonnelLoading, setAssignmentPersonnelLoading] = useState(false);
   const [assignmentSearch, setAssignmentSearch] = useState("");
   const [assignmentErrors, setAssignmentErrors] = useState({});
   const [assignmentStatus, setAssignmentStatus] = useState(null);
@@ -197,6 +202,45 @@ export default function Schedules() {
     };
   }, [personnelSearch, assignmentFilter, personnelPage, refreshKey]);
 
+  useEffect(() => {
+    if (!assignmentModal) return undefined;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        personnel_page: String(assignmentPersonnelPage),
+        personnel_per_page: "10",
+      });
+      if (assignmentSearch.trim()) params.set("personnel_search", assignmentSearch.trim());
+      if (assignmentPersonnelFilter) params.set("assignment", assignmentPersonnelFilter);
+
+      setAssignmentPersonnelLoading(true);
+      apiFetch(`/schedules?${params}`, { signal: controller.signal })
+        .then(readResponse)
+        .then((payload) => {
+          setAssignmentPersonnel(payload.personnel);
+          setAssignmentPersonnelPagination(payload.meta?.personnel_pagination || null);
+          setSummary(payload.summary);
+          if (!payload.personnel.length && assignmentPersonnelPage > 1) {
+            setAssignmentPersonnelPage((current) => Math.max(1, current - 1));
+          }
+        })
+        .catch((error) => {
+          if (error.name !== "AbortError") {
+            setAssignmentStatus({ type: "error", message: error.message });
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setAssignmentPersonnelLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [assignmentModal, assignmentPersonnelFilter, assignmentPersonnelPage, assignmentSearch, refreshKey]);
+
   const filteredSchedules = useMemo(() => {
     const query = scheduleSearch.trim().toLowerCase();
     return schedules.filter((schedule) => !query || schedule.schedule_name.toLowerCase().includes(query));
@@ -215,14 +259,6 @@ export default function Schedules() {
       return matchesQuery && matchesFilter;
     });
   }, [assignmentFilter, personnel, personnelSearch]);
-
-  const selectablePersonnel = useMemo(() => {
-    const query = assignmentSearch.trim().toLowerCase();
-    return personnel.filter((person) => !query
-      || person.full_name.toLowerCase().includes(query)
-      || person.employee_number.toLowerCase().includes(query)
-      || person.department?.code.toLowerCase().includes(query));
-  }, [assignmentSearch, personnel]);
 
   const cards = [
     { label: "Schedule templates", value: summary.total, icon: CalendarClock, tone: "blue" },
@@ -343,12 +379,16 @@ export default function Schedules() {
     }
   }
 
-  function openAssignment(scheduleId = "", personnelIds = []) {
+  function openAssignment(scheduleId = "", personnelIds = [], initialFilter = "unassigned") {
     setAssignmentForm({
       ...createEmptyAssignment(),
       schedule_id: scheduleId ? String(scheduleId) : "",
     });
     setSelectedPersonnel(personnelIds.map(Number));
+    setAssignmentPersonnel([]);
+    setAssignmentPersonnelPage(1);
+    setAssignmentPersonnelPagination(null);
+    setAssignmentPersonnelFilter(initialFilter);
     setAssignmentSearch("");
     setAssignmentErrors({});
     setAssignmentStatus(null);
@@ -364,7 +404,7 @@ export default function Schedules() {
   }
 
   function toggleVisiblePersonnel() {
-    const visibleIds = selectablePersonnel.map((person) => person.personnel_id);
+    const visibleIds = assignmentPersonnel.map((person) => person.personnel_id);
     const allSelected = visibleIds.length && visibleIds.every((id) => selectedPersonnel.includes(id));
 
     setSelectedPersonnel((current) => allSelected
@@ -513,9 +553,9 @@ export default function Schedules() {
           <div>
             <label><Search size={15} /><input value={personnelSearch} onChange={(event) => { setPersonnelSearch(event.target.value); setPersonnelPage(1); }} placeholder="Search personnel..." /></label>
             <select value={assignmentFilter} onChange={(event) => { setAssignmentFilter(event.target.value); setPersonnelPage(1); }}>
-              <option value="">All personnel</option>
-              <option value="assigned">Assigned</option>
-              <option value="unassigned">Unassigned</option>
+              <option value="">All personnel ({summary.assigned_personnel + summary.unassigned_personnel})</option>
+              <option value="unassigned">Needs assignment ({summary.unassigned_personnel})</option>
+              <option value="assigned">Assigned ({summary.assigned_personnel})</option>
             </select>
           </div>
         </div>
@@ -549,7 +589,7 @@ export default function Schedules() {
                   </td>
                   <td>
                     <div className="schedule-row-actions">
-                      <button type="button" onClick={() => openAssignment(person.current_assignment?.schedule_id || "", [person.personnel_id])}>
+                      <button type="button" onClick={() => openAssignment(person.current_assignment?.schedule_id || "", [person.personnel_id], person.current_assignment ? "assigned" : "unassigned")} aria-label={`${person.current_assignment ? "Change" : "Assign"} schedule for ${person.full_name}`}>
                         {person.current_assignment ? <Edit3 size={14} /> : <UserPlus size={14} />}
                       </button>
                       {person.current_assignment && (
@@ -713,17 +753,41 @@ export default function Schedules() {
               </div>
 
               <div className="assignment-picker-heading">
-                <div><strong>Select personnel</strong><small>{selectedPersonnel.length} selected</small></div>
-                <label><Search size={15} /><input value={assignmentSearch} onChange={(event) => setAssignmentSearch(event.target.value)} placeholder="Search name, ID, office..." /></label>
+                <div><strong>Select personnel</strong><small>{selectedPersonnel.length} selected across all pages</small></div>
+                <label><Search size={15} /><input value={assignmentSearch} onChange={(event) => { setAssignmentSearch(event.target.value); setAssignmentPersonnelPage(1); }} placeholder="Search name or employee number..." /></label>
               </div>
-              <button type="button" className="assignment-select-all" onClick={toggleVisiblePersonnel}>
-                <Check size={14} />Select or clear all visible personnel
-              </button>
+
+              <div className="assignment-roster-tabs" role="group" aria-label="Personnel assignment status">
+                <button type="button" className={assignmentPersonnelFilter === "unassigned" ? "active" : ""} aria-pressed={assignmentPersonnelFilter === "unassigned"} onClick={() => { setAssignmentPersonnelFilter("unassigned"); setAssignmentPersonnelPage(1); }}>
+                  Needs assignment <span>{summary.unassigned_personnel}</span>
+                </button>
+                <button type="button" className={assignmentPersonnelFilter === "assigned" ? "active" : ""} aria-pressed={assignmentPersonnelFilter === "assigned"} onClick={() => { setAssignmentPersonnelFilter("assigned"); setAssignmentPersonnelPage(1); }}>
+                  Already assigned <span>{summary.assigned_personnel}</span>
+                </button>
+                <button type="button" className={assignmentPersonnelFilter === "" ? "active" : ""} aria-pressed={assignmentPersonnelFilter === ""} onClick={() => { setAssignmentPersonnelFilter(""); setAssignmentPersonnelPage(1); }}>
+                  All <span>{summary.assigned_personnel + summary.unassigned_personnel}</span>
+                </button>
+              </div>
+
+              <div className="assignment-picker-actions">
+                <small>
+                  {assignmentPersonnelFilter === "unassigned"
+                    ? "Personnel without a current active schedule"
+                    : assignmentPersonnelFilter === "assigned"
+                      ? "Personnel with a current active schedule"
+                      : "All active and onboarding personnel"}
+                </small>
+                <button type="button" className="assignment-select-all" onClick={toggleVisiblePersonnel} disabled={assignmentPersonnelLoading || !assignmentPersonnel.length}>
+                  <Check size={14} />Select or clear this page
+                </button>
+              </div>
               <FieldError errors={assignmentErrors} name="personnel_ids" />
               <FieldError errors={assignmentErrors} name="personnel_ids.0" />
 
               <div className="assignment-personnel-list">
-                {selectablePersonnel.map((person) => {
+                {assignmentPersonnelLoading ? (
+                  <div className="assignment-roster-empty">Loading personnel...</div>
+                ) : assignmentPersonnel.length ? assignmentPersonnel.map((person) => {
                   const checked = selectedPersonnel.includes(person.personnel_id);
                   return (
                     <label className={checked ? "selected" : ""} key={person.personnel_id}>
@@ -733,12 +797,27 @@ export default function Schedules() {
                       <em>{person.current_assignment?.schedule_name || "Unassigned"}</em>
                     </label>
                   );
-                })}
+                }) : (
+                  <div className="assignment-roster-empty">
+                    {assignmentSearch.trim()
+                      ? "No personnel match your search in this view."
+                      : assignmentPersonnelFilter === "unassigned"
+                        ? "Everyone currently has a work schedule."
+                        : "No personnel are available in this view."}
+                  </div>
+                )}
               </div>
+
+              <Pagination
+                pagination={assignmentPersonnelPagination}
+                onPageChange={setAssignmentPersonnelPage}
+                disabled={assignmentPersonnelLoading}
+                itemLabel="personnel"
+              />
 
               <div className="user-modal-actions">
                 <button type="button" className="secondary-action" onClick={() => { setAssignmentStatus(null); setAssignmentModal(false); }} disabled={savingAssignment}>Cancel</button>
-                <button type="submit" className="primary-action" disabled={savingAssignment}>{savingAssignment ? "Assigning…" : `Assign ${selectedPersonnel.length || ""} personnel`}</button>
+                <button type="submit" className="primary-action" disabled={savingAssignment || !selectedPersonnel.length}>{savingAssignment ? "Assigning…" : selectedPersonnel.length ? `Assign ${selectedPersonnel.length} personnel` : "Select personnel"}</button>
               </div>
             </form>
           </div>

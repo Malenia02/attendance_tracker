@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   Eye,
   FileClock,
@@ -17,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { apiFetch } from "../lib/auth";
+import Pagination from "../components/common/Pagination";
 
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
@@ -67,6 +66,8 @@ export default function ActivityLogs() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
+  const [sortOption, setSortOption] = useState("created_at:desc");
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -75,12 +76,16 @@ export default function ActivityLogs() {
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      const params = new URLSearchParams({ page: String(page), per_page: "20" });
+      setLoading(true);
+      const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
       if (search.trim()) params.set("search", search.trim());
       if (source) params.set("source", source);
       if (userId) params.set("user_id", userId);
       if (dateFrom) params.set("date_from", dateFrom);
       if (dateTo) params.set("date_to", dateTo);
+      const [sort, direction] = sortOption.split(":");
+      params.set("sort", sort);
+      params.set("direction", direction);
 
       try {
         const payload = await apiFetch(`/activity-logs?${params}`, { signal: controller.signal })
@@ -95,13 +100,13 @@ export default function ActivityLogs() {
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
-    }, 250);
+    }, 350);
 
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [search, source, userId, dateFrom, dateTo, page, refreshKey]);
+  }, [search, source, userId, dateFrom, dateTo, sortOption, page, perPage, refreshKey]);
 
   const cards = useMemo(() => [
     { label: "All events", value: summary.total, icon: Activity, tone: "blue" },
@@ -117,6 +122,7 @@ export default function ActivityLogs() {
     setUserId("");
     setDateFrom("");
     setDateTo("");
+    setSortOption("created_at:desc");
     setPage(1);
   }
 
@@ -169,13 +175,19 @@ export default function ActivityLogs() {
           </select>
           <label className="activity-date"><CalendarDays size={14} /><input type="date" value={dateFrom} onChange={(event) => updateFilter(setDateFrom, event.target.value)} aria-label="Start date" /></label>
           <label className="activity-date"><CalendarDays size={14} /><input type="date" min={dateFrom} value={dateTo} onChange={(event) => updateFilter(setDateTo, event.target.value)} aria-label="End date" /></label>
+          <select value={sortOption} onChange={(event) => updateFilter(setSortOption, event.target.value)} aria-label="Sort activity logs">
+            <option value="created_at:desc">Newest first</option>
+            <option value="created_at:asc">Oldest first</option>
+            <option value="source:asc">Source A-Z</option>
+            <option value="action:asc">Action A-Z</option>
+          </select>
         </div>
 
         <div className="users-table-wrap">
           <table className="users-table activity-table">
             <thead><tr><th>Date & time</th><th>Operator</th><th>Action</th><th>Description</th><th>Source</th><th>IP address</th><th><span className="sr-only">Details</span></th></tr></thead>
             <tbody>
-              {loading ? (
+              {loading && !logs.length ? (
                 <tr><td colSpan="7" className="users-empty">Loading audit activity…</td></tr>
               ) : logs.length ? logs.map((log) => (
                 <tr key={log.log_key}>
@@ -192,14 +204,18 @@ export default function ActivityLogs() {
           </table>
         </div>
 
-        <div className="activity-pagination">
-          <span>{meta.total ? `Showing ${meta.from}–${meta.to} of ${meta.total}` : "No results"}</span>
-          <div>
-            <button type="button" onClick={() => setPage((value) => value - 1)} disabled={meta.current_page <= 1}><ChevronLeft size={16} />Previous</button>
-            <strong>Page {meta.current_page} of {meta.last_page}</strong>
-            <button type="button" onClick={() => setPage((value) => value + 1)} disabled={meta.current_page >= meta.last_page}>Next<ChevronRight size={16} /></button>
-          </div>
-        </div>
+        <Pagination
+          pagination={meta}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => {
+            setPerPage(value);
+            setPage(1);
+          }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="activity records"
+        />
       </div>
 
       {selectedLog && (

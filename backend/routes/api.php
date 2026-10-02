@@ -68,6 +68,8 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     // QR attendance: kiosk/card listing, signed scan challenges, scan submission, and card regeneration.
     Route::get('/qr-attendance', [QrAttendanceController::class, 'index'])
         ->middleware('role:Administrator,HR,Supervisor,Encoder,Personnel');
+    Route::get('/qr-attendance/logs', [QrAttendanceController::class, 'logs'])
+        ->middleware('role:Administrator,HR,Supervisor,Encoder,Personnel');
     Route::get('/qr-attendance/cards', [QrAttendanceController::class, 'cards'])
         ->middleware('role:Administrator,HR');
 

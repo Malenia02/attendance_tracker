@@ -95,6 +95,7 @@ export default function DtrMonitoring() {
   );
   const [rows, setRows] = useState([]);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState({
     personnel: 0,
@@ -128,6 +129,7 @@ export default function DtrMonitoring() {
       : "",
   );
   const [readinessFilter, setReadinessFilter] = useState("");
+  const [sortOption, setSortOption] = useState("name:asc");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
@@ -142,14 +144,18 @@ export default function DtrMonitoring() {
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      setLoading(true);
       const params = new URLSearchParams({
         month,
         period,
         page: String(page),
-        per_page: "25",
+        per_page: String(perPage),
       });
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter) params.set("status", statusFilter);
+      const [sort, direction] = sortOption.split(":");
+      params.set("sort", sort);
+      params.set("direction", direction);
 
       apiFetch(`/dtr?${params}`, { signal: controller.signal })
         .then(readResponse)
@@ -189,29 +195,19 @@ export default function DtrMonitoring() {
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
         });
-    }, 250);
+    }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [month, period, search, statusFilter, page, refreshKey]);
+  }, [month, period, search, statusFilter, sortOption, page, perPage, refreshKey]);
 
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-
-    return rows.filter((row) => {
-      const matchesSearch = !query
-        || row.full_name.toLowerCase().includes(query)
-        || row.employee_number.toLowerCase().includes(query)
-        || row.department?.code.toLowerCase().includes(query);
-      const matchesStatus = !statusFilter || row.certification.status === statusFilter;
+  const filteredRows = useMemo(() => rows.filter((row) => {
       const matchesReadiness = !readinessFilter
         || (readinessFilter === "ready" ? row.is_ready : !row.is_ready);
-
-      return matchesSearch && matchesStatus && matchesReadiness;
-    });
-  }, [rows, search, statusFilter, readinessFilter]);
+      return matchesReadiness;
+    }), [rows, readinessFilter]);
 
   const downloadableRows = useMemo(
     () => filteredRows.filter((row) => row.certification.status === "Certified"
@@ -575,7 +571,7 @@ export default function DtrMonitoring() {
                 placeholder="Search personnel..."
               />
             </label>
-            <select value={readinessFilter} onChange={(event) => setReadinessFilter(event.target.value)}>
+            <select value={readinessFilter} onChange={(event) => { setReadinessFilter(event.target.value); setPage(1); }}>
               <option value="">All readiness</option>
               <option value="ready">Ready</option>
               <option value="attention">Needs attention</option>
@@ -585,6 +581,12 @@ export default function DtrMonitoring() {
               {["Draft", "Submitted", "Submitted Late", "Certified", "Returned", "Reopened"].map((status) => (
                 <option key={status}>{status}</option>
               ))}
+            </select>
+            <select value={sortOption} onChange={(event) => { setSortOption(event.target.value); setPage(1); }} aria-label="Sort DTR records">
+              <option value="name:asc">Name A-Z</option>
+              <option value="name:desc">Name Z-A</option>
+              <option value="employee_number:asc">Employee number A-Z</option>
+              <option value="employee_number:desc">Employee number Z-A</option>
             </select>
           </div>
         </div>
@@ -615,7 +617,7 @@ export default function DtrMonitoring() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !rows.length ? (
                 <tr><td colSpan={meta.can_generate ? 8 : 7} className="users-empty">Calculating monthly DTR records…</td></tr>
               ) : !filteredRows.length ? (
                 <tr><td colSpan={meta.can_generate ? 8 : 7} className="users-empty">No DTR records match these filters.</td></tr>
@@ -700,7 +702,10 @@ export default function DtrMonitoring() {
         <Pagination
           pagination={pagination}
           onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
           disabled={loading}
+          loading={loading}
           itemLabel="DTR records"
         />
       </div>

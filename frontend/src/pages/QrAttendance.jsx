@@ -271,7 +271,6 @@ export default function QrAttendance() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [data, setData] = useState({
     summary: { active_personnel: 0, accepted_today: 0, rejected_today: 0, duplicates_today: 0 },
-    recent_scans: [],
     personnel: [],
     can_scan: false,
     can_scan_others: false,
@@ -292,6 +291,15 @@ export default function QrAttendance() {
   const [cardSearch, setCardSearch] = useState("");
   const [cardPage, setCardPage] = useState(1);
   const [cardPagination, setCardPagination] = useState(null);
+  const [scanLogs, setScanLogs] = useState([]);
+  const [scanPage, setScanPage] = useState(1);
+  const [scanPerPage, setScanPerPage] = useState(15);
+  const [scanPagination, setScanPagination] = useState(null);
+  const [scanSearch, setScanSearch] = useState("");
+  const [scanStatus, setScanStatus] = useState("");
+  const [scanSort, setScanSort] = useState("scanned_at:desc");
+  const [scanLoading, setScanLoading] = useState(true);
+  const [scanRefreshKey, setScanRefreshKey] = useState(0);
   const [selectedCardIds, setSelectedCardIds] = useState([]);
   const [regeneratingId, setRegeneratingId] = useState(null);
   const scannerRef = useRef(null);
@@ -301,6 +309,7 @@ export default function QrAttendance() {
     try {
       const payload = await apiFetch("/qr-attendance").then(readResponse);
       setData(payload);
+      setScanRefreshKey((value) => value + 1);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -338,6 +347,43 @@ export default function QrAttendance() {
       controller.abort();
     };
   }, [data.can_manage_codes, data.can_scan, tab, cardSearch, cardPage]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        page: String(scanPage),
+        per_page: String(scanPerPage),
+      });
+      if (scanSearch.trim()) params.set("search", scanSearch.trim());
+      if (scanStatus) params.set("status", scanStatus);
+      const [sort, direction] = scanSort.split(":");
+      params.set("sort", sort);
+      params.set("direction", direction);
+
+      setScanLoading(true);
+      apiFetch(`/qr-attendance/logs?${params}`, { signal: controller.signal })
+        .then(readResponse)
+        .then((payload) => {
+          setScanLogs(payload.data);
+          setScanPagination(payload.meta?.pagination || null);
+          if (!payload.data.length && scanPage > 1) {
+            setScanPage((current) => Math.max(1, current - 1));
+          }
+        })
+        .catch((requestError) => {
+          if (requestError.name !== "AbortError") setError(requestError.message);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setScanLoading(false);
+        });
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [scanPage, scanPerPage, scanSearch, scanStatus, scanSort, scanRefreshKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -857,15 +903,61 @@ export default function QrAttendance() {
             <h2>Recent QR scans</h2>
             <small>These are historical results. After correcting a schedule, scan the card again to create a new result.</small>
           </div>
-          <button type="button" onClick={loadData}><RefreshCw size={15} />Refresh</button>
+          <div className="qr-history-actions">
+            <label>
+              <Search size={14} />
+              <input
+                value={scanSearch}
+                onChange={(event) => {
+                  setScanSearch(event.target.value);
+                  setScanPage(1);
+                }}
+                placeholder="Search QR activity"
+              />
+            </label>
+            <select
+              value={scanStatus}
+              onChange={(event) => {
+                setScanStatus(event.target.value);
+                setScanPage(1);
+              }}
+              aria-label="Filter QR scans by result"
+            >
+              <option value="">All results</option>
+              <option value="Accepted">Accepted</option>
+              <option value="Duplicate">Duplicate</option>
+              <option value="Rejected">Rejected</option>
+              <option value="Outside Location">Outside location</option>
+              <option value="Wrong Schedule">Wrong schedule</option>
+              <option value="Setup Incomplete">Setup incomplete</option>
+              <option value="Expired Credential">Expired credential</option>
+              <option value="Inactive Personnel">Inactive personnel</option>
+              <option value="Outside Contract">Outside contract</option>
+              <option value="Invalid">Invalid</option>
+            </select>
+            <select
+              value={scanSort}
+              onChange={(event) => {
+                setScanSort(event.target.value);
+                setScanPage(1);
+              }}
+              aria-label="Sort QR scans"
+            >
+              <option value="scanned_at:desc">Newest first</option>
+              <option value="scanned_at:asc">Oldest first</option>
+              <option value="status:asc">Result A-Z</option>
+              <option value="action:asc">Action A-Z</option>
+            </select>
+            <button type="button" onClick={loadData}><RefreshCw size={15} />Refresh</button>
+          </div>
         </div>
         <div className="users-table-wrap">
           <table className="users-table qr-history-table">
             <thead><tr><th>Personnel</th><th>Action</th><th>Result</th><th>Time</th><th>Operator</th><th>Message</th></tr></thead>
             <tbody>
-              {loading ? (
+              {scanLoading && !scanLogs.length ? (
                 <tr><td colSpan="6" className="users-empty">Loading QR activity…</td></tr>
-              ) : data.recent_scans.length ? data.recent_scans.map((scan) => (
+              ) : scanLogs.length ? scanLogs.map((scan) => (
                 <tr key={scan.qr_scan_id}>
                   <td><strong>{scan.full_name || "Unknown QR"}</strong><small>{scan.employee_number || "No personnel match"}</small></td>
                   <td>{scan.scan_action}</td>
@@ -878,6 +970,18 @@ export default function QrAttendance() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={scanPagination}
+          onPageChange={setScanPage}
+          perPage={scanPerPage}
+          onPerPageChange={(value) => {
+            setScanPerPage(value);
+            setScanPage(1);
+          }}
+          disabled={scanLoading}
+          loading={scanLoading}
+          itemLabel="QR scans"
+        />
       </div>
       {confirmationDialog}
     </section>

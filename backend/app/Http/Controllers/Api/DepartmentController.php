@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Department;
+use App\Models\Personnel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,9 +16,33 @@ class DepartmentController extends Controller
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
+            'sort' => ['nullable', Rule::in(['name', 'code', 'status', 'personnel_count'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
         $baseQuery = Department::query();
-        $departments = Department::query()
+        $sortColumns = [
+            'name' => 'department_name',
+            'code' => 'department_code',
+            'status' => 'status',
+            'personnel_count' => 'personnel_count',
+        ];
+        $sortColumn = $sortColumns[$validated['sort'] ?? 'name'];
+        $sortDirection = $validated['direction'] ?? 'asc';
+        $paginator = Department::query()
+            ->select([
+                'department_id',
+                'department_code',
+                'department_name',
+                'office_location',
+                'latitude',
+                'longitude',
+                'allowed_radius_meters',
+                'status',
+                'created_at',
+                'updated_at',
+            ])
             ->with(['officeNetworks' => fn ($query) => $query
                 ->where('status', 'Active')
                 ->orderByDesc('verified_at')])
@@ -34,12 +59,27 @@ class DepartmentController extends Controller
                 $validated['status'] ?? null,
                 fn ($query, string $status) => $query->where('status', $status)
             )
-            ->orderBy('department_name')
-            ->get();
+            ->orderBy($sortColumn, $sortDirection)
+            ->orderBy('department_id', $sortDirection)
+            ->paginate(
+                $validated['per_page'] ?? 15,
+                ['*'],
+                'page',
+                $validated['page'] ?? 1
+            );
+        $departments = collect($paginator->items());
 
         return response()->json([
             'data' => $departments->map(fn (Department $department) => $this->formatDepartment($department)),
             'can_manage_office_networks' => $request->user()->user_role === 'Administrator',
+            'meta' => ['pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ]],
             'summary' => [
                 'total' => (clone $baseQuery)->count(),
                 'active' => (clone $baseQuery)->where('status', 'Active')->count(),
@@ -47,7 +87,7 @@ class DepartmentController extends Controller
                     ->whereNotNull('latitude')
                     ->whereNotNull('longitude')
                     ->count(),
-                'personnel' => Department::query()->withCount('personnel')->get()->sum('personnel_count'),
+                'personnel' => Personnel::query()->whereNotNull('department_id')->count(),
             ],
         ]);
     }

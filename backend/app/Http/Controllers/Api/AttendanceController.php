@@ -56,7 +56,9 @@ class AttendanceController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(self::STATUS_FILTERS)],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
+            'sort' => ['nullable', Rule::in(['name', 'employee_number'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
         $date = Carbon::parse($validated['date'] ?? now()->toDateString())->toDateString();
         $user = $request->user();
@@ -66,15 +68,15 @@ class AttendanceController extends Controller
             ->get();
         $holiday = $holidays->first();
         $isToday = $date === now()->toDateString();
-        $perPage = $validated['per_page'] ?? 25;
+        $perPage = $validated['per_page'] ?? 15;
         $page = $validated['page'] ?? 1;
         $search = $validated['search'] ?? null;
         $status = $validated['status'] ?? null;
 
         $personnelQuery = Personnel::query()
             ->where('status', 'Active')
-            ->when($isToday, fn($query) => $onboarding->applyOperationalScope($query, $date))
-            ->tap(fn($query) => PersonnelAccess::scope($query, $user))
+            ->when($isToday, fn ($query) => $onboarding->applyOperationalScope($query, $date))
+            ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
             ->when($search, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
                     $query
@@ -88,7 +90,7 @@ class AttendanceController extends Controller
                 if ($status === 'Not Started') {
                     $query->whereDoesntHave(
                         'attendanceRecords',
-                        fn($attendance) => $attendance->whereDate('attendance_date', $date)
+                        fn ($attendance) => $attendance->whereDate('attendance_date', $date)
                     );
 
                     return;
@@ -101,8 +103,8 @@ class AttendanceController extends Controller
                         ->filter()
                         ->values();
                     $hasGlobalHoliday = $holidays->contains(
-                        fn(Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday'
-                            && !$event->department_id
+                        fn (Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday'
+                            && ! $event->department_id
                     );
 
                     $query->where(function ($query) use ($hasGlobalHoliday, $departmentIds): void {
@@ -138,20 +140,36 @@ class AttendanceController extends Controller
             ->distinct()
             ->count('personnel_id');
 
+        $sortColumn = ($validated['sort'] ?? 'name') === 'employee_number'
+            ? 'employee_number'
+            : 'last_name';
+        $sortDirection = $validated['direction'] ?? 'asc';
         $paginator = (clone $personnelQuery)
+            ->select([
+                'personnel_id',
+                'department_id',
+                'employee_number',
+                'first_name',
+                'middle_name',
+                'last_name',
+                'suffix',
+                'personnel_type',
+                'position_title',
+            ])
             ->with([
                 'department:department_id,department_code,department_name',
-                'attendanceRecords' => fn($query) => $query
+                'attendanceRecords' => fn ($query) => $query
                     ->whereDate('attendance_date', $date)
                     ->with('schedule'),
             ])
             ->when(
                 $user->personnel_id,
-                fn($query, int $personnelId) => $query
+                fn ($query, int $personnelId) => $query
                     ->orderByRaw('personnel_id = ? DESC', [$personnelId])
             )
-            ->orderBy('last_name')
-            ->orderBy('first_name')
+            ->orderBy($sortColumn, $sortDirection)
+            ->when($sortColumn === 'last_name', fn ($query) => $query->orderBy('first_name', $sortDirection))
+            ->orderBy('personnel_id', $sortDirection)
             ->paginate($perPage, ['*'], 'page', $page);
         $pagePersonnel = collect($paginator->items());
         $pagePersonnelIds = $pagePersonnel->pluck('personnel_id');
@@ -173,12 +191,12 @@ class AttendanceController extends Controller
                 $schedule = $record?->schedule
                     ?? $scheduleAssignments->get($person->personnel_id)?->schedule;
                 $referenceTime = $isToday ? now() : Carbon::parse($date)->endOfDay();
-                $appliesToPersonnel = fn(Holiday $event): bool => !$event->department_id || $event->department_id === $person->department_id;
+                $appliesToPersonnel = fn (Holiday $event): bool => ! $event->department_id || $event->department_id === $person->department_id;
                 $personHoliday = $holidays->first(
-                    fn(Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday' && $appliesToPersonnel($event)
+                    fn (Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday' && $appliesToPersonnel($event)
                 );
                 $isSpecialWorkingDay = $holidays->contains(
-                    fn(Holiday $event): bool => $event->holiday_type === 'Special Working Holiday' && $appliesToPersonnel($event)
+                    fn (Holiday $event): bool => $event->holiday_type === 'Special Working Holiday' && $appliesToPersonnel($event)
                 );
 
                 if ($record) {
@@ -198,14 +216,14 @@ class AttendanceController extends Controller
 
         $recentLogs = TimeLog::query()
             ->with('personnel:personnel_id,first_name,middle_name,last_name,suffix,employee_number')
-            ->whereHas('personnel', fn($query) => $query
+            ->whereHas('personnel', fn ($query) => $query
                 ->where('status', 'Active')
-                ->tap(fn($query) => PersonnelAccess::scope($query, $user)))
+                ->tap(fn ($query) => PersonnelAccess::scope($query, $user)))
             ->whereDate('log_datetime', $date)
             ->orderByDesc('log_datetime')
             ->limit(12)
             ->get()
-            ->map(fn(TimeLog $log) => [
+            ->map(fn (TimeLog $log) => [
                 'time_log_id' => $log->time_log_id,
                 'personnel_id' => $log->personnel_id,
                 'full_name' => $log->personnel?->full_name,
@@ -232,13 +250,13 @@ class AttendanceController extends Controller
                     'last_page' => $paginator->lastPage(),
                     'from' => $paginator->firstItem(),
                     'to' => $paginator->lastItem(),
-                ]
+                ],
             ],
             'recent_logs' => $recentLogs,
             'summary' => [
                 'total' => $total,
                 'timed_in' => (clone $attendanceSummaryQuery)
-                    ->where(fn($query) => $query
+                    ->where(fn ($query) => $query
                         ->whereNotNull('morning_time_in')
                         ->orWhereNotNull('afternoon_time_in'))
                     ->distinct()
@@ -258,10 +276,10 @@ class AttendanceController extends Controller
                 'missing_time_out' => (clone $attendanceSummaryQuery)
                     ->where(function ($query): void {
                         $query
-                            ->where(fn($query) => $query
+                            ->where(fn ($query) => $query
                                 ->whereNotNull('morning_time_in')
                                 ->whereNull('morning_time_out'))
-                            ->orWhere(fn($query) => $query
+                            ->orWhere(fn ($query) => $query
                                 ->whereNotNull('afternoon_time_in')
                                 ->whereNull('afternoon_time_out'));
                     })
@@ -288,8 +306,8 @@ class AttendanceController extends Controller
             'can_manage_others' => $canManageOthers,
             'personnel' => Personnel::query()
                 ->where('status', 'Active')
-                ->tap(fn($query) => $onboarding->applyOperationalScope($query))
-                ->tap(fn($query) => PersonnelAccess::scope($query, $user))
+                ->tap(fn ($query) => $onboarding->applyOperationalScope($query))
+                ->tap(fn ($query) => PersonnelAccess::scope($query, $user))
                 ->when(
                     ($validated['personnel_search'] ?? null) || isset($validated['personnel_id']),
                     function ($query) use ($validated): void {
@@ -312,14 +330,14 @@ class AttendanceController extends Controller
                 )
                 ->when(
                     $user->personnel_id,
-                    fn($query, int $personnelId) => $query
+                    fn ($query, int $personnelId) => $query
                         ->orderByRaw('personnel_id = ? DESC', [$personnelId])
                 )
                 ->orderBy('last_name')
                 ->orderBy('first_name')
                 ->limit($validated['limit'] ?? 50)
                 ->get(['personnel_id', 'employee_number', 'first_name', 'middle_name', 'last_name', 'suffix'])
-                ->map(fn(Personnel $person) => [
+                ->map(fn (Personnel $person) => [
                     'personnel_id' => $person->personnel_id,
                     'employee_number' => $person->employee_number,
                     'full_name' => $person->full_name,
@@ -352,12 +370,12 @@ class AttendanceController extends Controller
             ->whereIn('personnel_id', $visiblePersonnelIds)
             ->when(
                 $validated['status'] ?? null,
-                fn($query, string $status) => $query->where('request_status', $status)
+                fn ($query, string $status) => $query->where('request_status', $status)
             )
             ->orderByRaw("CASE WHEN request_status = 'Pending' THEN 0 ELSE 1 END")
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn(AttendanceCorrectionRequest $correctionRequest) => $this->formatCorrectionRequest($correctionRequest));
+            ->map(fn (AttendanceCorrectionRequest $correctionRequest) => $this->formatCorrectionRequest($correctionRequest));
 
         return response()->json([
             'data' => $requests,
@@ -379,8 +397,8 @@ class AttendanceController extends Controller
         ]);
 
         if (
-            !$correctionRequest->personnel
-            || !PersonnelAccess::canAccess($request->user(), $correctionRequest->personnel)
+            ! $correctionRequest->personnel
+            || ! PersonnelAccess::canAccess($request->user(), $correctionRequest->personnel)
         ) {
             return response()->json([
                 'message' => 'This request is outside your authorized office scope.',
@@ -402,7 +420,7 @@ class AttendanceController extends Controller
         ]);
         $user = $request->user();
 
-        if (!$user->personnel_id) {
+        if (! $user->personnel_id) {
             return response()->json([
                 'message' => 'Your account is not linked to a personnel record.',
             ], 422);
@@ -415,7 +433,7 @@ class AttendanceController extends Controller
             ->whereDate('attendance_date', $date)
             ->first();
 
-        if (!$attendance) {
+        if (! $attendance) {
             return response()->json([
                 'message' => 'No attendance record exists for this date.',
             ], 422);
@@ -428,7 +446,7 @@ class AttendanceController extends Controller
             $this->missingTimeOutEntries($attendance, $attendance->schedule, $referenceTime)
         )->pluck('field');
 
-        if (!$missingFields->contains($validated['missing_field'])) {
+        if (! $missingFields->contains($validated['missing_field'])) {
             return response()->json([
                 'message' => 'That time-out is not currently flagged as missing.',
             ], 422);
@@ -450,7 +468,7 @@ class AttendanceController extends Controller
                 ->whereKey($attendance->attendance_id)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $pendingKey = $lockedAttendance->attendance_id . ':' . $validated['missing_field'];
+            $pendingKey = $lockedAttendance->attendance_id.':'.$validated['missing_field'];
             $existing = AttendanceCorrectionRequest::query()
                 ->where('pending_key', $pendingKey)
                 ->lockForUpdate()
@@ -493,7 +511,7 @@ class AttendanceController extends Controller
         Request $request,
         AttendanceCorrectionRequest $correctionRequest
     ): JsonResponse {
-        if (!in_array($request->user()->user_role, ['Administrator', 'HR'], true)) {
+        if (! in_array($request->user()->user_role, ['Administrator', 'HR'], true)) {
             return response()->json([
                 'message' => 'Only an administrator or HR user may review correction requests.',
             ], 403);
@@ -513,8 +531,8 @@ class AttendanceController extends Controller
         $correctionRequest->loadMissing(['personnel', 'attendance.schedule']);
 
         if (
-            !$correctionRequest->personnel
-            || !PersonnelAccess::canAccess($request->user(), $correctionRequest->personnel)
+            ! $correctionRequest->personnel
+            || ! PersonnelAccess::canAccess($request->user(), $correctionRequest->personnel)
         ) {
             return response()->json([
                 'message' => 'This request is outside your authorized office scope.',
@@ -534,7 +552,7 @@ class AttendanceController extends Controller
             );
             $certification = $certifications->firstWhere('certification_status', 'Reopened');
             $lockedCertification = $certifications->first(
-                fn(DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
+                fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
             );
             $certificationStatus = $lockedCertification?->certification_status;
 
@@ -547,7 +565,7 @@ class AttendanceController extends Controller
             }
 
             if (
-                !$this->isAuthorizedReopenedDate(
+                ! $this->isAuthorizedReopenedDate(
                     $certification,
                     $correctionRequest->attendance_date->toDateString()
                 )
@@ -583,7 +601,7 @@ class AttendanceController extends Controller
                     : $attendance->attendance_date->copy()->endOfDay()
                 ))->pluck('field');
 
-                if (!$missingFields->contains($lockedRequest->missing_field)) {
+                if (! $missingFields->contains($lockedRequest->missing_field)) {
                     return ['error' => 'The missing time-out has already been resolved or is no longer eligible.'];
                 }
 
@@ -615,13 +633,13 @@ class AttendanceController extends Controller
                 ];
                 $oldValues = $attendance->only($trackedFields);
                 $attendance->{$lockedRequest->missing_field} = Carbon::parse(
-                    $attendance->attendance_date->toDateString() . ' ' . $lockedRequest->proposed_time,
+                    $attendance->attendance_date->toDateString().' '.$lockedRequest->proposed_time,
                     config('app.timezone')
                 );
                 $attendance->record_source = 'Manual';
                 $attendance->remarks = Str::limit(
-                    'Correction request #' . $lockedRequest->attendance_correction_request_id
-                    . ': ' . $lockedRequest->reason,
+                    'Correction request #'.$lockedRequest->attendance_correction_request_id
+                    .': '.$lockedRequest->reason,
                     255,
                     ''
                 );
@@ -643,8 +661,8 @@ class AttendanceController extends Controller
                     'new_values' => $attendance->only($trackedFields),
                     'reason' => Str::limit(
                         'Approved employee correction request #'
-                        . $lockedRequest->attendance_correction_request_id
-                        . '. ' . $lockedRequest->reason,
+                        .$lockedRequest->attendance_correction_request_id
+                        .'. '.$lockedRequest->reason,
                         255,
                         ''
                     ),
@@ -687,13 +705,13 @@ class AttendanceController extends Controller
         $user = $request->user();
         $trustedQrScan = $request->attributes->get('trusted_qr_scan') === true;
 
-        if (!$trustedQrScan && !$user->personnel_id) {
+        if (! $trustedQrScan && ! $user->personnel_id) {
             return response()->json([
                 'message' => 'Your account is not linked to a personnel record. Link this system user to your personnel profile, or use the authorized QR Attendance kiosk.',
             ], 422);
         }
 
-        if (!$trustedQrScan && (int) $user->personnel_id !== (int) $validated['personnel_id']) {
+        if (! $trustedQrScan && (int) $user->personnel_id !== (int) $validated['personnel_id']) {
             return response()->json([
                 'message' => in_array($user->user_role, ['Administrator', 'HR'], true)
                     ? 'Attendance denied. Direct time in and time out are limited to your own linked personnel account. Use the authorized QR kiosk to scan another personnel member\'s physical card.'
@@ -714,7 +732,7 @@ class AttendanceController extends Controller
         $schedule = $this->effectiveSchedule($personnel->personnel_id, $date);
         $calendarEvents = Holiday::query()
             ->whereDate('holiday_date', $date)
-            ->where(fn($query) => $query
+            ->where(fn ($query) => $query
                 ->whereNull('department_id')
                 ->orWhere('department_id', $personnel->department_id))
             ->get();
@@ -722,7 +740,7 @@ class AttendanceController extends Controller
 
         if ($nonWorkingHoliday) {
             return response()->json([
-                'message' => 'Attendance is closed for ' . $nonWorkingHoliday->holiday_name . '.',
+                'message' => 'Attendance is closed for '.$nonWorkingHoliday->holiday_name.'.',
             ], 422);
         }
 
@@ -731,7 +749,7 @@ class AttendanceController extends Controller
             'Special Working Holiday'
         );
 
-        if (!$schedule) {
+        if (! $schedule) {
             return response()->json([
                 'message' => $this->unavailableScheduleMessage($personnel->personnel_id, $date),
             ], 422);
@@ -757,7 +775,7 @@ class AttendanceController extends Controller
                     ], true)
                 ) {
                     return [
-                        'error' => 'This record is marked as ' . $record->attendance_status . ' and cannot accept a time log.',
+                        'error' => 'This record is marked as '.$record->attendance_status.' and cannot accept a time log.',
                         'record' => $record,
                     ];
                 }
@@ -765,14 +783,14 @@ class AttendanceController extends Controller
                 $eligibility = $this->determineAvailableAction($record, $schedule, $now, $isSpecialWorkingDay);
                 $action = $eligibility['action'];
 
-                if (!$action || !isset(self::ACTIONS[$action])) {
+                if (! $action || ! isset(self::ACTIONS[$action])) {
                     return [
                         'error' => $eligibility['message'],
                         'record' => $record,
                     ];
                 }
 
-                if (!$record) {
+                if (! $record) {
                     $record = AttendanceRecord::create([
                         'personnel_id' => $personnel->personnel_id,
                         'schedule_id' => $schedule?->schedule_id,
@@ -814,7 +832,7 @@ class AttendanceController extends Controller
         }
 
         return response()->json([
-            'message' => $result['action'] . ' recorded at ' . $now->format('h:i:s A') . '.',
+            'message' => $result['action'].' recorded at '.$now->format('h:i:s A').'.',
             'action' => $result['action'],
             'data' => $this->formatAttendance($result['record'], $schedule, now(), true, $isSpecialWorkingDay),
         ]);
@@ -831,7 +849,7 @@ class AttendanceController extends Controller
         );
         $certification = $certifications->firstWhere('certification_status', 'Reopened');
         $lockedCertification = $certifications->first(
-            fn(DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
+            fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
         );
         $certificationStatus = $lockedCertification?->certification_status;
 
@@ -844,7 +862,7 @@ class AttendanceController extends Controller
         }
 
         if (
-            !$this->isAuthorizedReopenedDate(
+            ! $this->isAuthorizedReopenedDate(
                 $certification,
                 $attendance->attendance_date->toDateString()
             )
@@ -905,7 +923,7 @@ class AttendanceController extends Controller
 
     public function verifyBulk(Request $request): JsonResponse
     {
-        if (!in_array($request->user()->user_role, ['Administrator', 'HR', 'Supervisor'], true)) {
+        if (! in_array($request->user()->user_role, ['Administrator', 'HR', 'Supervisor'], true)) {
             return response()->json([
                 'message' => 'You do not have permission to verify attendance records.',
             ], 403);
@@ -929,7 +947,7 @@ class AttendanceController extends Controller
             );
             $certification = $certifications->firstWhere('certification_status', 'Reopened');
             $lockedCertification = $certifications->first(
-                fn(DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
+                fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
             );
             $certificationStatus = $lockedCertification?->certification_status;
 
@@ -940,7 +958,7 @@ class AttendanceController extends Controller
             }
 
             if (
-                !$this->isAuthorizedReopenedDate(
+                ! $this->isAuthorizedReopenedDate(
                     $certification,
                     $record->attendance_date->toDateString()
                 )
@@ -990,9 +1008,9 @@ class AttendanceController extends Controller
         });
 
         return response()->json([
-            'message' => $records->count() . ' attendance '
-                . str('record')->plural($records->count())
-                . ' verified successfully.',
+            'message' => $records->count().' attendance '
+                .str('record')->plural($records->count())
+                .' verified successfully.',
             'verified_count' => $records->count(),
         ]);
     }
@@ -1010,7 +1028,7 @@ class AttendanceController extends Controller
         );
         $certification = $certifications->firstWhere('certification_status', 'Reopened');
         $lockedCertification = $certifications->first(
-            fn(DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
+            fn (DtrCertification $item) => in_array($item->certification_status, self::LOCKED_DTR_STATUSES, true)
         );
 
         if ($lockedCertification?->certification_status === 'Certified') {
@@ -1025,7 +1043,7 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        if (!$this->isAuthorizedReopenedDate($certification, $date)) {
+        if (! $this->isAuthorizedReopenedDate($certification, $date)) {
             return response()->json([
                 'message' => 'This date was not included in the approved DTR reopening request.',
             ], 422);
@@ -1047,7 +1065,7 @@ class AttendanceController extends Controller
                 ->whereDate('attendance_date', $date)
                 ->lockForUpdate()
                 ->first();
-            $isNew = !$record;
+            $isNew = ! $record;
             $record ??= new AttendanceRecord([
                 'personnel_id' => $personnel->personnel_id,
                 'attendance_date' => $date,
@@ -1085,7 +1103,7 @@ class AttendanceController extends Controller
                     'afternoon_time_out',
                 ] as $field) {
                     $record->{$field} = filled($validated[$field] ?? null)
-                        ? Carbon::parse($date . ' ' . $validated[$field], config('app.timezone'))
+                        ? Carbon::parse($date.' '.$validated[$field], config('app.timezone'))
                         : null;
                 }
 
@@ -1144,7 +1162,7 @@ class AttendanceController extends Controller
             return 'Afternoon time in and time out must both be provided.';
         }
 
-        if (!$morningIn && !$afternoonIn) {
+        if (! $morningIn && ! $afternoonIn) {
             return 'Provide at least one complete morning or afternoon attendance session.';
         }
 
@@ -1174,16 +1192,16 @@ class AttendanceController extends Controller
             : 'afternoon_time_in';
         $timeIn = $record->{$timeInField};
 
-        if (!$timeIn) {
+        if (! $timeIn) {
             return 'A proposed time-out requires its matching recorded time-in.';
         }
 
         $proposed = Carbon::parse(
-            $record->attendance_date->toDateString() . ' ' . $proposedTime,
+            $record->attendance_date->toDateString().' '.$proposedTime,
             config('app.timezone')
         );
 
-        if (!$proposed->greaterThan($timeIn)) {
+        if (! $proposed->greaterThan($timeIn)) {
             return 'The proposed time-out must be later than the recorded time-in.';
         }
 
@@ -1241,7 +1259,7 @@ class AttendanceController extends Controller
     {
         $assignment = PersonnelSchedule::query()
             ->with('schedule')
-            ->whereHas('schedule', fn($query) => $query->where('status', 'Active'))
+            ->whereHas('schedule', fn ($query) => $query->where('status', 'Active'))
             ->where('personnel_id', $personnelId)
             ->whereDate('effective_from', '<=', $date)
             ->where(function ($query) use ($date): void {
@@ -1264,8 +1282,8 @@ class AttendanceController extends Controller
             ->get();
 
         $current = $assignments->first(
-            fn(PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() <= $date
-                && (!$assignment->effective_to || $assignment->effective_to->toDateString() >= $date)
+            fn (PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() <= $date
+                && (! $assignment->effective_to || $assignment->effective_to->toDateString() >= $date)
         );
 
         if ($current && $current->schedule?->status !== 'Active') {
@@ -1273,27 +1291,27 @@ class AttendanceController extends Controller
         }
 
         $upcoming = $assignments
-            ->filter(fn(PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() > $date
+            ->filter(fn (PersonnelSchedule $assignment) => $assignment->effective_from->toDateString() > $date
                 && $assignment->schedule?->status === 'Active')
             ->sortBy('effective_from')
             ->first();
 
         if ($upcoming) {
             return 'The assigned work schedule starts on '
-                . $upcoming->effective_from->format('F j, Y')
-                . '. Change the effective date if this personnel should start today.';
+                .$upcoming->effective_from->format('F j, Y')
+                .'. Change the effective date if this personnel should start today.';
         }
 
         $expired = $assignments
-            ->filter(fn(PersonnelSchedule $assignment) => $assignment->effective_to
+            ->filter(fn (PersonnelSchedule $assignment) => $assignment->effective_to
                 && $assignment->effective_to->toDateString() < $date)
             ->sortByDesc('effective_to')
             ->first();
 
         if ($expired) {
             return 'The previous work schedule assignment ended on '
-                . $expired->effective_to->format('F j, Y')
-                . '. Assign a new active schedule before recording attendance.';
+                .$expired->effective_to->format('F j, Y')
+                .'. Assign a new active schedule before recording attendance.';
         }
 
         return 'No active work schedule is assigned for today. Assign this personnel on the Schedules page, then scan the card again.';
@@ -1322,14 +1340,14 @@ class AttendanceController extends Controller
             $referenceTime ?? now()
         );
 
-        if (!$schedule) {
+        if (! $schedule) {
             return;
         }
 
         if ($record->morning_time_in) {
             $record->late_minutes = 0;
             $scheduledStart = Carbon::parse(
-                $record->attendance_date->format('Y-m-d') . ' ' . $schedule->morning_start,
+                $record->attendance_date->format('Y-m-d').' '.$schedule->morning_start,
                 $record->morning_time_in->getTimezone()
             )->addMinutes($schedule->grace_period_minutes);
             $record->late_minutes = $record->morning_time_in->greaterThan($scheduledStart)
@@ -1339,7 +1357,7 @@ class AttendanceController extends Controller
 
         if ($record->afternoon_time_out) {
             $scheduledEnd = Carbon::parse(
-                $record->attendance_date->format('Y-m-d') . ' ' . $schedule->afternoon_end
+                $record->attendance_date->format('Y-m-d').' '.$schedule->afternoon_end
             );
             $record->undertime_minutes = $record->afternoon_time_out->lessThan($scheduledEnd)
                 ? $record->afternoon_time_out->diffInMinutes($scheduledEnd)
@@ -1353,7 +1371,7 @@ class AttendanceController extends Controller
         Carbon $now,
         bool $isSpecialWorkingDay = false
     ): array {
-        if (!$schedule) {
+        if (! $schedule) {
             return [
                 'action' => null,
                 'message' => 'No active work schedule is assigned to this personnel record.',
@@ -1373,13 +1391,13 @@ class AttendanceController extends Controller
         ) {
             return [
                 'action' => null,
-                'message' => 'This record is marked as ' . $record->attendance_status . ' and cannot accept a time log.',
+                'message' => 'This record is marked as '.$record->attendance_status.' and cannot accept a time log.',
             ];
         }
 
         $workdayField = strtolower($now->format('l'));
 
-        if (!$schedule->{$workdayField} && !$isSpecialWorkingDay) {
+        if (! $schedule->{$workdayField} && ! $isSpecialWorkingDay) {
             return [
                 'action' => null,
                 'message' => 'Today is not enabled as a duty day in the assigned work schedule.',
@@ -1427,15 +1445,15 @@ class AttendanceController extends Controller
 
         foreach ($windows as $window) {
             $start = Carbon::parse(
-                $now->toDateString() . ' ' . $window['start'],
+                $now->toDateString().' '.$window['start'],
                 $now->getTimezone()
             );
             $end = Carbon::parse(
-                $now->toDateString() . ' ' . $window['end'],
+                $now->toDateString().' '.$window['end'],
                 $now->getTimezone()
             );
 
-            if (!$now->betweenIncluded($start, $end)) {
+            if (! $now->betweenIncluded($start, $end)) {
                 continue;
             }
 
@@ -1443,47 +1461,47 @@ class AttendanceController extends Controller
                 continue;
             }
 
-            if ($window['requires'] && !$record?->{$window['requires']}) {
+            if ($window['requires'] && ! $record?->{$window['requires']}) {
                 return [
                     'action' => null,
-                    'message' => $window['label'] . ' requires a matching time-in entry.',
+                    'message' => $window['label'].' requires a matching time-in entry.',
                 ];
             }
 
             return [
                 'action' => $window['action'],
-                'message' => $window['label'] . ' is available now.',
+                'message' => $window['label'].' is available now.',
             ];
         }
 
         if ($record) {
             $lastRecordedWindow = collect($windows)
                 ->reverse()
-                ->first(fn(array $window) => (bool) $record->{$window['action']});
+                ->first(fn (array $window) => (bool) $record->{$window['action']});
 
             if ($lastRecordedWindow) {
                 $recordedAt = $record->{$lastRecordedWindow['action']};
                 $message = $lastRecordedWindow['label']
-                    . ' was already recorded at '
-                    . $recordedAt->format('h:i A')
-                    . '.';
+                    .' was already recorded at '
+                    .$recordedAt->format('h:i A')
+                    .'.';
                 $nextWindow = collect($windows)->first(function (array $window) use ($record, $now): bool {
                     if ($record->{$window['action']}) {
                         return false;
                     }
 
                     return Carbon::parse(
-                        $now->toDateString() . ' ' . $window['start'],
+                        $now->toDateString().' '.$window['start'],
                         $now->getTimezone()
                     )->greaterThan($now);
                 });
 
                 if ($nextWindow) {
                     $nextStart = Carbon::parse(
-                        $now->toDateString() . ' ' . $nextWindow['start'],
+                        $now->toDateString().' '.$nextWindow['start'],
                         $now->getTimezone()
                     );
-                    $message .= ' ' . $nextWindow['label'] . ' opens at ' . $nextStart->format('h:i A') . '.';
+                    $message .= ' '.$nextWindow['label'].' opens at '.$nextStart->format('h:i A').'.';
                 } else {
                     $message .= ' No additional attendance action is available at this time.';
                 }
@@ -1497,14 +1515,14 @@ class AttendanceController extends Controller
 
         foreach ($windows as $window) {
             $start = Carbon::parse(
-                $now->toDateString() . ' ' . $window['start'],
+                $now->toDateString().' '.$window['start'],
                 $now->getTimezone()
             );
 
-            if ($start->greaterThan($now) && !$record?->{$window['action']}) {
+            if ($start->greaterThan($now) && ! $record?->{$window['action']}) {
                 return [
                     'action' => null,
-                    'message' => $window['label'] . ' opens at ' . $start->format('h:i A') . '.',
+                    'message' => $window['label'].' opens at '.$start->format('h:i A').'.',
                 ];
             }
         }
@@ -1542,13 +1560,13 @@ class AttendanceController extends Controller
             return 'Present';
         }
 
-        if ($afternoonComplete && !$hasMorningEntry) {
+        if ($afternoonComplete && ! $hasMorningEntry) {
             return 'Half Day';
         }
 
-        if ($morningComplete && !$hasAfternoonEntry && $schedule?->afternoon_time_in_end) {
+        if ($morningComplete && ! $hasAfternoonEntry && $schedule?->afternoon_time_in_end) {
             $afternoonCutoff = Carbon::parse(
-                $referenceTime->toDateString() . ' ' . $schedule->afternoon_time_in_end,
+                $referenceTime->toDateString().' '.$schedule->afternoon_time_in_end,
                 $referenceTime->getTimezone()
             );
 
@@ -1605,17 +1623,17 @@ class AttendanceController extends Controller
         $missing = [];
 
         foreach ($checks as $check) {
-            if (!$record->{$check['time_in']} || $record->{$check['time_out']}) {
+            if (! $record->{$check['time_in']} || $record->{$check['time_out']}) {
                 continue;
             }
 
             if ($check['window_end']) {
                 $windowEnd = Carbon::parse(
-                    $record->attendance_date->toDateString() . ' ' . $check['window_end'],
+                    $record->attendance_date->toDateString().' '.$check['window_end'],
                     $referenceTime->getTimezone()
                 );
 
-                if (!$referenceTime->greaterThan($windowEnd)) {
+                if (! $referenceTime->greaterThan($windowEnd)) {
                     continue;
                 }
             } elseif ($referenceTime->toDateString() <= $record->attendance_date->toDateString()) {
@@ -1748,7 +1766,7 @@ class AttendanceController extends Controller
 
     private function formatSchedule(?WorkSchedule $schedule): ?array
     {
-        if (!$schedule) {
+        if (! $schedule) {
             return null;
         }
 
@@ -1817,7 +1835,7 @@ class AttendanceController extends Controller
         ?DtrCertification $certification,
         string $attendanceDate
     ): bool {
-        if (!$certification || $certification->certification_status !== 'Reopened') {
+        if (! $certification || $certification->certification_status !== 'Reopened') {
             return true;
         }
 

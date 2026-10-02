@@ -48,7 +48,9 @@ class DtrController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['Draft', 'Submitted', 'Submitted Late', 'Certified', 'Returned', 'Reopened'])],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
+            'sort' => ['nullable', Rule::in(['name', 'employee_number'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
             'personnel_ids' => ['nullable', 'array', 'max:100'],
             'personnel_ids.*' => ['integer', 'distinct', 'exists:personnel,personnel_id'],
         ]);
@@ -112,7 +114,7 @@ class DtrController extends Controller
                     ->where('dtr_period', $period)
                     ->where('certification_status', $status));
             });
-        $perPage = $validated['per_page'] ?? 25;
+        $perPage = $validated['per_page'] ?? 15;
         $page = $validated['page'] ?? 1;
         $totalPersonnel = (clone $personnelQuery)->count();
         $personnelIds = (clone $personnelQuery)->select('personnel_id');
@@ -139,7 +141,24 @@ class DtrController extends Controller
                 ->whereHas('schedule'))
             ->count();
 
+        $sortColumn = ($validated['sort'] ?? 'name') === 'employee_number'
+            ? 'employee_number'
+            : 'last_name';
+        $sortDirection = $validated['direction'] ?? 'asc';
         $paginator = (clone $personnelQuery)
+            ->select([
+                'personnel_id',
+                'department_id',
+                'employee_number',
+                'first_name',
+                'middle_name',
+                'last_name',
+                'suffix',
+                'personnel_type',
+                'position_title',
+                'employment_start_date',
+                'employment_end_date',
+            ])
             ->with([
                 'department:department_id,department_code,department_name',
                 'scheduleAssignments' => fn ($query) => $query
@@ -163,8 +182,9 @@ class DtrController extends Controller
                     ->where('dtr_month', $month->month)
                     ->where('dtr_period', $period),
             ])
-            ->orderBy('last_name')
-            ->orderBy('first_name')
+            ->orderBy($sortColumn, $sortDirection)
+            ->when($sortColumn === 'last_name', fn ($query) => $query->orderBy('first_name', $sortDirection))
+            ->orderBy('personnel_id', $sortDirection)
             ->paginate($perPage, ['*'], 'page', $page);
 
         $rows = collect($paginator->items())
@@ -514,6 +534,8 @@ class DtrController extends Controller
         }
 
         $batchLimit = max(1, min(100, (int) config('attendance.dtr_sync_batch_limit', 20)));
+        $monitorPerPage = collect([15, 25, 50, 100])
+            ->first(fn (int $size): bool => $size >= $batchLimit, 100);
         $validated = $request->validate([
             'month' => ['required', 'date_format:Y-m'],
             'period' => ['nullable', Rule::in(DtrPeriod::values())],
@@ -540,7 +562,7 @@ class DtrController extends Controller
             'period' => $validated['period'],
             'status' => 'Certified',
             'personnel_ids' => $validated['personnel_ids'] ?? null,
-            'per_page' => $batchLimit,
+            'per_page' => $monitorPerPage,
         ]);
         $monitorRequest->setUserResolver(fn () => $request->user());
         $monitorData = $this->index($monitorRequest)->getData(true);

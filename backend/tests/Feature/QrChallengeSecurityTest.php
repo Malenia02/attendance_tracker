@@ -512,4 +512,52 @@ class QrChallengeSecurityTest extends TestCase
             ->getJson('/api/qr-attendance/cards')
             ->assertForbidden();
     }
+
+    public function test_qr_scan_history_is_server_paginated_searchable_and_bounded(): void
+    {
+        $administrator = User::create([
+            'username' => 'qr-log-admin',
+            'password_hash' => bcrypt('ValidPassword!123'),
+            'user_role' => 'Administrator',
+            'status' => 'Active',
+        ]);
+
+        foreach (range(1, 16) as $number) {
+            $personnelId = DB::table('personnel')->insertGetId([
+                'employee_number' => 'QR-LOG-'.str_pad((string) $number, 3, '0', STR_PAD_LEFT),
+                'first_name' => $number === 16 ? 'Searchable' : 'Scan',
+                'last_name' => 'Person '.str_pad((string) $number, 3, '0', STR_PAD_LEFT),
+                'status' => 'Active',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            DB::table('qr_scan_logs')->insert([
+                'personnel_id' => $personnelId,
+                'scan_action' => 'Morning Time In',
+                'scanned_at' => now()->subMinutes(16 - $number),
+                'scanned_by' => $administrator->user_id,
+                'scan_status' => 'Accepted',
+                'message' => 'Attendance recorded.',
+            ]);
+        }
+
+        $this->actingAs($administrator)
+            ->getJson('/api/qr-attendance/logs')
+            ->assertOk()
+            ->assertJsonCount(15, 'data')
+            ->assertJsonPath('meta.pagination.per_page', 15)
+            ->assertJsonPath('meta.pagination.total', 16)
+            ->assertJsonPath('meta.pagination.last_page', 2)
+            ->assertJsonPath('data.0.employee_number', 'QR-LOG-016');
+
+        $this->actingAs($administrator)
+            ->getJson('/api/qr-attendance/logs?search=Searchable&per_page=25')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.employee_number', 'QR-LOG-016');
+
+        $this->actingAs($administrator)
+            ->getJson('/api/qr-attendance/logs?per_page=20')
+            ->assertUnprocessable();
+    }
 }

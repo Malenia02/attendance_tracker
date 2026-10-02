@@ -93,6 +93,7 @@ export default function SystemUsers() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [users, setUsers] = useState([]);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0, locked: 0 });
   const [options, setOptions] = useState({ roles: [], statuses: [], personnel: [] });
@@ -100,6 +101,7 @@ export default function SystemUsers() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [sortOption, setSortOption] = useState("username:asc");
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -162,10 +164,13 @@ export default function SystemUsers() {
 
       const params = new URLSearchParams();
       params.set("page", String(page));
-      params.set("per_page", "25");
+      params.set("per_page", String(perPage));
       if (search.trim()) params.set("search", search.trim());
       if (roleFilter) params.set("role", roleFilter);
       if (statusFilter) params.set("status", statusFilter);
+      const [sort, direction] = sortOption.split(":");
+      params.set("sort", sort);
+      params.set("direction", direction);
 
       try {
         const query = params.toString();
@@ -183,13 +188,13 @@ export default function SystemUsers() {
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
-    }, 250);
+    }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [search, roleFilter, statusFilter, page, refreshKey]);
+  }, [search, roleFilter, statusFilter, sortOption, page, perPage, refreshKey]);
 
   const availablePersonnel = useMemo(
     () =>
@@ -389,6 +394,14 @@ export default function SystemUsers() {
             <option value="">All statuses</option>
             {options.statuses.map((status) => <option key={status}>{status}</option>)}
           </select>
+          <select value={sortOption} onChange={(event) => { setSortOption(event.target.value); setPage(1); }} aria-label="Sort system users">
+            <option value="username:asc">Username A-Z</option>
+            <option value="username:desc">Username Z-A</option>
+            <option value="role:asc">Role A-Z</option>
+            <option value="status:asc">Status A-Z</option>
+            <option value="last_login_at:desc">Latest login</option>
+            <option value="last_login_at:asc">Oldest login</option>
+          </select>
         </div>
 
         <div className="users-table-wrap">
@@ -404,7 +417,7 @@ export default function SystemUsers() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !users.length ? (
                 <tr><td colSpan="6" className="users-empty">Loading system users…</td></tr>
               ) : users.length === 0 ? (
                 <tr><td colSpan="6" className="users-empty">No system users match your filters.</td></tr>
@@ -451,7 +464,10 @@ export default function SystemUsers() {
         <Pagination
           pagination={pagination}
           onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
           disabled={loading}
+          loading={loading}
           itemLabel="system users"
         />
       </div>

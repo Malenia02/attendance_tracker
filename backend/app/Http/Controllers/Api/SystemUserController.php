@@ -36,10 +36,32 @@ class SystemUserController extends Controller
             'role' => ['nullable', Rule::in(self::ROLES)],
             'status' => ['nullable', Rule::in(self::STATUSES)],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
+            'sort' => ['nullable', Rule::in(['username', 'role', 'status', 'last_login_at'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
 
+        $sortColumns = [
+            'username' => 'username',
+            'role' => 'user_role',
+            'status' => 'status',
+            'last_login_at' => 'last_login_at',
+        ];
+        $sortColumn = $sortColumns[$validated['sort'] ?? 'username'];
+        $sortDirection = $validated['direction'] ?? 'asc';
+
         $query = User::query()
+            ->select([
+                'user_id',
+                'personnel_id',
+                'username',
+                'user_role',
+                'status',
+                'failed_login_attempts',
+                'locked_until',
+                'last_login_at',
+                'created_at',
+            ])
             ->with('personnel:personnel_id,employee_number,first_name,middle_name,last_name,suffix,email')
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -56,9 +78,10 @@ class SystemUserController extends Controller
             })
             ->when($validated['role'] ?? null, fn ($query, string $role) => $query->where('user_role', $role))
             ->when($validated['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
-            ->orderBy('username');
+            ->orderBy($sortColumn, $sortDirection)
+            ->orderBy('user_id', $sortDirection);
         $paginator = $query->paginate(
-            $validated['per_page'] ?? 25,
+            $validated['per_page'] ?? 15,
             ['*'],
             'page',
             $validated['page'] ?? 1

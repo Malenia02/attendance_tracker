@@ -30,6 +30,18 @@ class HolidayController extends Controller
         $year = $validated['year'] ?? now()->year;
 
         $holidays = Holiday::query()
+            ->select([
+                'holiday_id',
+                'holiday_name',
+                'holiday_date',
+                'holiday_type',
+                'scope',
+                'department_id',
+                'description',
+                'created_by',
+                'created_at',
+                'updated_at',
+            ])
             ->with([
                 'department:department_id,department_code,department_name',
                 'creator:user_id,username',
@@ -43,6 +55,7 @@ class HolidayController extends Controller
             )
             ->orderBy('holiday_date')
             ->orderBy('holiday_name')
+            ->orderBy('holiday_id')
             ->get();
 
         return response()->json([

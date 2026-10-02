@@ -23,7 +23,9 @@ class ActivityLogController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
+            'sort' => ['nullable', Rule::in(['created_at', 'source', 'action'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
         ]);
         $activityQuery = DB::table('activity_logs as activity')
             ->leftJoin('system_users as users', 'users.user_id', '=', 'activity.user_id')
@@ -108,6 +110,8 @@ class ActivityLogController extends Controller
         $auditQuery = $activityQuery
             ->unionAll($attendanceQuery)
             ->unionAll($dtrQuery);
+        $sortColumn = $validated['sort'] ?? 'created_at';
+        $sortDirection = $validated['direction'] ?? 'desc';
         $logs = DB::query()->fromSub($auditQuery, 'audit_logs')
             ->when($validated['search'] ?? null, function ($query, string $search): void {
                 $query->where(function ($query) use ($search): void {
@@ -135,8 +139,14 @@ class ActivityLogController extends Controller
                 $validated['date_to'] ?? null,
                 fn ($query, string $date) => $query->whereDate('created_at', '<=', $date)
             )
-            ->orderByDesc('created_at')
-            ->paginate($validated['per_page'] ?? 20);
+            ->orderBy($sortColumn, $sortDirection)
+            ->orderBy('log_key', $sortDirection)
+            ->paginate(
+                $validated['per_page'] ?? 15,
+                ['*'],
+                'page',
+                $validated['page'] ?? 1
+            );
 
         return response()->json([
             'data' => collect($logs->items())->map(fn ($log) => $this->formatLog($log)),
@@ -160,8 +170,10 @@ class ActivityLogController extends Controller
                 'dtr' => DtrStatusLog::query()->count(),
             ],
             'users' => User::query()
+                ->select(['user_id', 'personnel_id', 'username'])
                 ->with('personnel:personnel_id,first_name,middle_name,last_name,suffix')
                 ->orderBy('username')
+                ->limit(50)
                 ->get()
                 ->map(fn (User $user) => [
                     'user_id' => $user->user_id,

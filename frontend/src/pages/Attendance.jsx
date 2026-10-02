@@ -78,6 +78,7 @@ export default function Attendance() {
   );
   const [records, setRecords] = useState([]);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [pagination, setPagination] = useState(null);
   const [recentLogs, setRecentLogs] = useState([]);
   const [summary, setSummary] = useState({
@@ -100,6 +101,7 @@ export default function Attendance() {
   const [selectedPersonnelId, setSelectedPersonnelId] = useState("");
   const [search, setSearch] = useState(requestedSearch);
   const [statusFilter, setStatusFilter] = useState("");
+  const [sortOption, setSortOption] = useState("name:asc");
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
   const [verifyingId, setVerifyingId] = useState(null);
@@ -147,13 +149,17 @@ export default function Attendance() {
     const controller = new AbortController();
 
     const timer = window.setTimeout(() => {
+      setLoading(true);
       const params = new URLSearchParams({
         date: selectedDate,
         page: String(page),
-        per_page: "25",
+        per_page: String(perPage),
       });
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter) params.set("status", statusFilter);
+      const [sort, direction] = sortOption.split(":");
+      params.set("sort", sort);
+      params.set("direction", direction);
 
       apiFetch(`/attendance?${params}`, { signal: controller.signal })
         .then(readResponse)
@@ -171,13 +177,13 @@ export default function Attendance() {
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
         });
-    }, 250);
+    }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [selectedDate, search, statusFilter, page, refreshKey]);
+  }, [selectedDate, search, statusFilter, sortOption, page, perPage, refreshKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -192,19 +198,6 @@ export default function Attendance() {
     return () => controller.abort();
   }, [selectedDate, refreshKey]);
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-
-    return records.filter((record) => {
-      const matchesSearch = !query
-        || record.full_name.toLowerCase().includes(query)
-        || record.employee_number.toLowerCase().includes(query)
-        || record.department?.department_code.toLowerCase().includes(query);
-      const matchesStatus = !statusFilter
-        || (statusFilter === "Late" ? record.is_late : record.display_status === statusFilter);
-      return matchesSearch && matchesStatus;
-    });
-  }, [records, search, statusFilter]);
   const missingTimeOutRecords = useMemo(
     () => records.filter((record) => record.has_missing_time_out),
     [records],
@@ -715,6 +708,12 @@ export default function Attendance() {
               <option value="">All statuses</option>
               {options.status_filters.map((status) => <option key={status}>{status}</option>)}
             </select>
+            <select value={sortOption} onChange={(event) => { setSortOption(event.target.value); setPage(1); }} aria-label="Sort attendance records">
+              <option value="name:asc">Name A-Z</option>
+              <option value="name:desc">Name Z-A</option>
+              <option value="employee_number:asc">Employee number A-Z</option>
+              <option value="employee_number:desc">Employee number Z-A</option>
+            </select>
             <input
               type="date"
               value={selectedDate}
@@ -744,11 +743,11 @@ export default function Attendance() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !records.length ? (
                 <tr><td colSpan="7" className="users-empty">Loading attendance records…</td></tr>
-              ) : filteredRecords.length === 0 ? (
+              ) : records.length === 0 ? (
                 <tr><td colSpan="7" className="users-empty">No attendance records match your filters.</td></tr>
-              ) : filteredRecords.map((record) => (
+              ) : records.map((record) => (
                 <tr key={record.personnel_id}>
                   <td>
                     <div className="user-identity">
@@ -816,7 +815,10 @@ export default function Attendance() {
         <Pagination
           pagination={pagination}
           onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
           disabled={loading}
+          loading={loading}
           itemLabel="active personnel"
         />
       </div>

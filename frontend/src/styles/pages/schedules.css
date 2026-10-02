@@ -817,12 +817,85 @@
   cursor: pointer;
 }
 
+.assignment-select-all:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.assignment-roster-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.assignment-roster-tabs button {
+  min-height: 39px;
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-soft);
+  background: var(--bg-card);
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.assignment-roster-tabs button span {
+  min-width: 22px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--bg-card-soft);
+  font-size: 8px;
+}
+
+.assignment-roster-tabs button.active {
+  color: #3155c6;
+  border-color: rgba(65, 84, 241, 0.3);
+  background: rgba(65, 84, 241, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(65, 84, 241, 0.04);
+}
+
+.assignment-roster-tabs button.active span {
+  color: #3155c6;
+  background: rgba(65, 84, 241, 0.12);
+}
+
+.assignment-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assignment-picker-actions > small {
+  color: var(--text-muted);
+  font-size: 8px;
+}
+
 .assignment-personnel-list {
   max-height: 330px;
   display: grid;
   gap: 6px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+.assignment-roster-empty {
+  min-height: 92px;
+  padding: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--bg-card-soft);
+  font-size: 9px;
+  text-align: center;
 }
 
 .assignment-personnel-list > label {
@@ -949,6 +1022,8 @@
   .schedule-day-picker { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .assignment-picker-heading { align-items: stretch; flex-direction: column; }
   .assignment-picker-heading label { width: 100%; }
+  .assignment-roster-tabs { grid-template-columns: 1fr; }
+  .assignment-picker-actions { align-items: stretch; flex-direction: column; }
   .assignment-personnel-list > label {
     grid-template-columns: auto auto minmax(0, 1fr);
   }

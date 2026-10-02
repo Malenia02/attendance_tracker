@@ -20,6 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\InputBag;
 
 class QrAttendanceController extends Controller
@@ -51,16 +52,6 @@ class QrAttendanceController extends Controller
         $todayLogs = QrScanLog::query()
             ->whereIn('personnel_id', clone $visiblePersonnelIds)
             ->whereDate('scanned_at', $today);
-        $recentLogs = QrScanLog::query()
-            ->with([
-                'personnel:personnel_id,employee_number,first_name,middle_name,last_name,suffix,photo',
-                'scanner:user_id,username',
-            ])
-            ->whereIn('personnel_id', clone $visiblePersonnelIds)
-            ->orderByDesc('scanned_at')
-            ->limit(20)
-            ->get()
-            ->map(fn (QrScanLog $log) => $this->formatScanLog($log));
 
         return response()->json([
             'server_time' => now()->toISOString(),
@@ -76,7 +67,6 @@ class QrAttendanceController extends Controller
                 'rejected_today' => (clone $todayLogs)->whereNotIn('scan_status', ['Accepted', 'Duplicate'])->count(),
                 'duplicates_today' => (clone $todayLogs)->where('scan_status', 'Duplicate')->count(),
             ],
-            'recent_scans' => $recentLogs,
             'personnel' => $canViewCards && ! $canManageCodes
                 ? Personnel::query()
                     ->with('department:department_id,department_code,department_name,office_location')
@@ -87,6 +77,102 @@ class QrAttendanceController extends Controller
                     ->get()
                     ->map(fn (Personnel $person) => $this->formatPersonnelCard($person))
                 : [],
+        ]);
+    }
+
+    public function logs(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! in_array($user->user_role, self::PAGE_ROLES, true)) {
+            return response()->json(['message' => 'You do not have access to QR attendance.'], 403);
+        }
+
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', Rule::in([
+                'Accepted',
+                'Duplicate',
+                'Expired Credential',
+                'Inactive Personnel',
+                'Invalid',
+                'Outside Contract',
+                'Outside Location',
+                'Rejected',
+                'Setup Incomplete',
+                'Wrong Schedule',
+            ])],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
+            'sort' => ['nullable', Rule::in(['scanned_at', 'status', 'action'])],
+            'direction' => ['nullable', Rule::in(['asc', 'desc'])],
+        ]);
+        $visiblePersonnelIds = PersonnelAccess::scope(
+            Personnel::query()->where('status', 'Active'),
+            $user
+        )->select('personnel_id');
+        $sortColumns = [
+            'scanned_at' => 'scanned_at',
+            'status' => 'scan_status',
+            'action' => 'scan_action',
+        ];
+        $sortDirection = $validated['direction'] ?? 'desc';
+        $paginator = QrScanLog::query()
+            ->select([
+                'qr_scan_id',
+                'personnel_id',
+                'scan_action',
+                'scanned_at',
+                'distance_from_office_meters',
+                'location_verification_method',
+                'device_identifier',
+                'scanned_by',
+                'scan_status',
+                'message',
+            ])
+            ->with([
+                'personnel:personnel_id,employee_number,first_name,middle_name,last_name,suffix,photo,updated_at',
+                'scanner:user_id,username',
+            ])
+            ->whereIn('personnel_id', $visiblePersonnelIds)
+            ->when($validated['search'] ?? null, function ($query, string $search): void {
+                $query->where(function ($query) use ($search): void {
+                    $query->where('message', 'like', "%{$search}%")
+                        ->orWhereHas('personnel', function ($query) use ($search): void {
+                            $query->where('employee_number', 'like', "%{$search}%")
+                                ->orWhere('first_name', 'like', "%{$search}%")
+                                ->orWhere('middle_name', 'like', "%{$search}%")
+                                ->orWhere('last_name', 'like', "%{$search}%");
+                        });
+                });
+            })
+            ->when(
+                $validated['status'] ?? null,
+                fn ($query, string $status) => $query->where('scan_status', $status)
+            )
+            ->orderBy(
+                $sortColumns[$validated['sort'] ?? 'scanned_at'],
+                $sortDirection
+            )
+            ->orderBy('qr_scan_id', $sortDirection)
+            ->paginate(
+                $validated['per_page'] ?? 15,
+                ['*'],
+                'page',
+                $validated['page'] ?? 1
+            );
+
+        return response()->json([
+            'data' => collect($paginator->items())
+                ->map(fn (QrScanLog $log) => $this->formatScanLog($log)),
+            'meta' => ['pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ]],
         ]);
     }
 
@@ -755,15 +841,7 @@ class QrAttendanceController extends Controller
             'full_name' => $personnel->full_name,
             'personnel_type' => $personnel->personnel_type,
             'position_title' => $personnel->position_title,
-            'photo_url' => $personnel->photo
-                ? route(
-                    'personnel.photo',
-                    ['personnel' => $personnel],
-                    config('app.frontend_deployment') === 'external'
-                        && ! config('app.frontend_api_proxy')
-                )
-                    .'?v='.($personnel->updated_at?->timestamp ?? 0)
-                : null,
+            'photo_url' => $this->personnelPhotoUrl($personnel),
             'signature_url' => $personnel->signature
                 ? route(
                     'personnel.signature',
@@ -788,9 +866,7 @@ class QrAttendanceController extends Controller
             'personnel_id' => $log->personnel_id,
             'full_name' => $log->personnel?->full_name,
             'employee_number' => $log->personnel?->employee_number,
-            'photo_url' => $log->personnel
-                ? $this->formatPersonnelIdentity($log->personnel)['photo_url']
-                : null,
+            'photo_url' => $log->personnel ? $this->personnelPhotoUrl($log->personnel) : null,
             'scan_action' => $this->displayScanAction($log),
             'scan_status' => $log->scan_status,
             'message' => $log->message,
@@ -803,6 +879,20 @@ class QrAttendanceController extends Controller
                 : null,
             'location_verification_method' => $log->location_verification_method,
         ];
+    }
+
+    private function personnelPhotoUrl(Personnel $personnel): ?string
+    {
+        if (! $personnel->photo) {
+            return null;
+        }
+
+        return route(
+            'personnel.photo',
+            ['personnel' => $personnel],
+            config('app.frontend_deployment') === 'external'
+                && ! config('app.frontend_api_proxy')
+        ).'?v='.($personnel->updated_at?->timestamp ?? 0);
     }
 
     private function displayScanAction(QrScanLog $log): string

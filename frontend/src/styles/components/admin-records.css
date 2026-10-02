@@ -885,6 +885,38 @@
   gap: 10px;
 }
 
+.records-pagination-summary {
+  flex-wrap: wrap;
+}
+
+.records-pagination-summary label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.records-pagination-summary select {
+  min-height: 34px;
+  padding: 0 28px 0 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  background: var(--bg-card-soft);
+  font: inherit;
+}
+
+.records-page-numbers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.records-page-numbers span {
+  padding: 0 3px;
+}
+
 .records-pagination strong {
   color: var(--text-main);
   font-size: 0.8rem;
@@ -916,6 +948,23 @@
   cursor: not-allowed;
 }
 
+.records-pagination .records-page-numbers button,
+.records-pagination button.page-edge {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.records-pagination .records-page-numbers button.active {
+  color: #fff;
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.records-pagination.is-loading {
+  opacity: 0.72;
+}
+
 @media (max-width: 700px) {
   .records-pagination {
     align-items: stretch;
@@ -924,6 +973,10 @@
 
   .records-pagination > div {
     justify-content: space-between;
+  }
+
+  .records-pagination-controls {
+    overflow-x: auto;
   }
 
   .records-hero {

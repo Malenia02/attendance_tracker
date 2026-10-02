@@ -20,6 +20,7 @@ import { apiFetch } from "../lib/auth";
 import ModalPortal from "../components/common/ModalPortal";
 import FormStatusBanner from "../components/common/FormStatusBanner";
 import FormDraftNotice from "../components/common/FormDraftNotice";
+import Pagination from "../components/common/Pagination";
 import useSessionFormDraft from "../hooks/useSessionFormDraft";
 import { formDraftKey } from "../lib/formDrafts";
 
@@ -58,9 +59,13 @@ function FieldError({ errors, name }) {
 export default function Departments() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [departments, setDepartments] = useState([]);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
+  const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState({ total: 0, active: 0, gps_configured: 0, personnel: 0 });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [sortOption, setSortOption] = useState("name:asc");
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [notice, setNotice] = useState("");
@@ -90,14 +95,19 @@ export default function Departments() {
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      const params = new URLSearchParams();
+      setLoading(true);
+      const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter) params.set("status", statusFilter);
+      const [sort, direction] = sortOption.split(":");
+      params.set("sort", sort);
+      params.set("direction", direction);
 
       try {
         const payload = await apiFetch(`/departments?${params}`, { signal: controller.signal })
           .then(readResponse);
         setDepartments(payload.data);
+        setPagination(payload.meta?.pagination || null);
         setSummary(payload.summary);
         setCanManageNetworks(Boolean(payload.can_manage_office_networks));
         setPageError("");
@@ -106,13 +116,13 @@ export default function Departments() {
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
-    }, 250);
+    }, 350);
 
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [search, statusFilter, refreshKey]);
+  }, [search, statusFilter, sortOption, page, perPage, refreshKey]);
 
   const cards = useMemo(() => [
     { label: "Departments", value: summary.total, icon: Building2, tone: "blue" },
@@ -357,11 +367,18 @@ export default function Departments() {
 
       <div className="panel departments-panel">
         <div className="departments-toolbar">
-          <label><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search department or office..." /></label>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <label><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search department or office..." /></label>
+          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
             <option value="">All statuses</option>
             <option>Active</option>
             <option>Inactive</option>
+          </select>
+          <select value={sortOption} onChange={(event) => { setSortOption(event.target.value); setPage(1); }} aria-label="Sort departments">
+            <option value="name:asc">Name A-Z</option>
+            <option value="name:desc">Name Z-A</option>
+            <option value="code:asc">Code A-Z</option>
+            <option value="personnel_count:desc">Most personnel</option>
+            <option value="personnel_count:asc">Fewest personnel</option>
           </select>
         </div>
 
@@ -371,7 +388,7 @@ export default function Departments() {
               <tr><th>Department</th><th>Office location</th><th>GPS coordinates</th><th>Radius</th><th>Personnel</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !departments.length ? (
                 <tr><td colSpan="7" className="users-empty">Loading departments…</td></tr>
               ) : departments.length ? departments.map((department) => (
                 <tr key={department.department_id}>
@@ -399,6 +416,15 @@ export default function Departments() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="departments"
+        />
       </div>
 
       {modalOpen && (
