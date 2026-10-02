@@ -391,6 +391,7 @@ export default function Departments() {
           loading={loading}
           itemLabel="departments"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -427,6 +428,14 @@ export default function Departments() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="departments"
+          display="navigation"
+        />
       </div>
 
       {modalOpen && (

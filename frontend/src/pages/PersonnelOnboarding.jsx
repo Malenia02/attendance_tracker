@@ -224,6 +224,7 @@ export default function PersonnelOnboarding() {
           loading={loading}
           itemLabel="personnel"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap onboarding-table-wrap">
@@ -267,6 +268,14 @@ export default function PersonnelOnboarding() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={records.meta?.pagination}
+          onPageChange={setPage}
+          disabled={loading || saving}
+          loading={loading}
+          itemLabel="personnel"
+          display="navigation"
+        />
 
       </div>
 

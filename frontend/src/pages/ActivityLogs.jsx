@@ -195,6 +195,7 @@ export default function ActivityLogs() {
           loading={loading}
           itemLabel="activity records"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -217,6 +218,14 @@ export default function ActivityLogs() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={meta}
+          onPageChange={setPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="activity records"
+          display="navigation"
+        />
 
       </div>
 

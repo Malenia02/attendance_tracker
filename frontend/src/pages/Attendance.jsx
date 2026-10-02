@@ -738,6 +738,7 @@ export default function Attendance() {
           loading={loading}
           itemLabel="active personnel"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -823,6 +824,14 @@ export default function Attendance() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="active personnel"
+          display="navigation"
+        />
       </div>
 
       {requestModal && (

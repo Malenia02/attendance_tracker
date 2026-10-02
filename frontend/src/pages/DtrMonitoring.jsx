@@ -600,6 +600,7 @@ export default function DtrMonitoring() {
           loading={loading}
           itemLabel="DTR records"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -710,6 +711,14 @@ export default function DtrMonitoring() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="DTR records"
+          display="navigation"
+        />
       </div>
 
       {selected && (

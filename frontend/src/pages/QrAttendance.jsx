@@ -963,6 +963,7 @@ export default function QrAttendance() {
           loading={scanLoading}
           itemLabel="QR scans"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -984,6 +985,14 @@ export default function QrAttendance() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={scanPagination}
+          onPageChange={setScanPage}
+          disabled={scanLoading}
+          loading={scanLoading}
+          itemLabel="QR scans"
+          display="navigation"
+        />
       </div>
       {confirmationDialog}
     </section>

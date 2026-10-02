@@ -413,6 +413,7 @@ export default function SystemUsers() {
           loading={loading}
           itemLabel="system users"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -472,6 +473,14 @@ export default function SystemUsers() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="system users"
+          display="navigation"
+        />
       </div>
 
       {modalOpen && (

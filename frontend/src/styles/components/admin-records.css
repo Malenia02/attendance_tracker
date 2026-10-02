@@ -920,6 +920,20 @@
   background: color-mix(in srgb, var(--bg-card-soft) 68%, var(--bg-card));
 }
 
+.records-pagination.page-size {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.records-pagination.page-size .records-pagination-summary {
+  grid-column: auto;
+  justify-self: auto;
+}
+
+.records-pagination.page-size .records-pagination-summary label {
+  margin-left: 0;
+}
+
 .records-pagination > div {
   display: flex;
   align-items: center;

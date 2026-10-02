@@ -571,6 +571,7 @@ export default function Schedules() {
           loading={loading}
           itemLabel="personnel assignments"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -617,6 +618,14 @@ export default function Schedules() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={personnelPagination}
+          onPageChange={setPersonnelPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="personnel assignments"
+          display="navigation"
+        />
       </div>
 
       {scheduleModal && (

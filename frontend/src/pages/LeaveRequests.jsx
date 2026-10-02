@@ -357,6 +357,7 @@ export default function LeaveRequests() {
           loading={loading}
           itemLabel="requests"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -412,6 +413,14 @@ export default function LeaveRequests() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="requests"
+          display="navigation"
+        />
       </div>
 
       {createOpen && createPortal((

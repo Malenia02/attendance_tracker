@@ -535,6 +535,7 @@ export default function Personnel() {
           loading={loading}
           itemLabel="personnel records"
           placement="top"
+          display="page-size"
         />
 
         <div className="users-table-wrap">
@@ -610,6 +611,14 @@ export default function Personnel() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          disabled={loading}
+          loading={loading}
+          itemLabel="personnel records"
+          display="navigation"
+        />
       </div>
 
       {modalOpen && (

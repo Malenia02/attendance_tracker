@@ -24,6 +24,7 @@ export default function Pagination({
   loading = false,
   itemLabel = "records",
   placement = "bottom",
+  display = "all",
 }) {
   if (!pagination) return null;
 
@@ -32,12 +33,16 @@ export default function Pagination({
   const from = pagination.from ?? 0;
   const to = pagination.to ?? 0;
   const total = pagination.total ?? 0;
+  const showSummary = display !== "page-size";
+  const showPageSize = display !== "navigation" && Boolean(onPerPageChange);
+  const showNavigation = display !== "page-size";
 
   return (
-    <nav className={`records-pagination ${placement}${loading ? " is-loading" : ""}`} aria-label={`${itemLabel} pagination`} aria-busy={loading}>
-      <div className="records-pagination-summary">
-        <span>{total ? `Showing ${from}-${to} of ${total} ${itemLabel}` : `No ${itemLabel}`}</span>
-        {onPerPageChange && (
+    <nav className={`records-pagination ${placement} ${display}${loading ? " is-loading" : ""}`} aria-label={`${itemLabel} pagination`} aria-busy={loading}>
+      {(showSummary || showPageSize) && (
+        <div className="records-pagination-summary">
+          {showSummary && <span>{total ? `Showing ${from}-${to} of ${total} ${itemLabel}` : `No ${itemLabel}`}</span>}
+          {showPageSize && (
           <label>
             Rows per page
             <select
@@ -49,9 +54,10 @@ export default function Pagination({
               {perPageOptions.map((size) => <option key={size} value={size}>{size}</option>)}
             </select>
           </label>
-        )}
-      </div>
-      <div className="records-pagination-controls">
+          )}
+        </div>
+      )}
+      {showNavigation && <div className="records-pagination-controls">
         <button type="button" className="page-edge" disabled={disabled || loading || current <= 1} onClick={() => onPageChange(1)} aria-label="First page">
           <ChevronsLeft size={15} />
         </button>
@@ -78,7 +84,7 @@ export default function Pagination({
         <button type="button" className="page-edge" disabled={disabled || loading || current >= last} onClick={() => onPageChange(last)} aria-label="Last page">
           <ChevronsRight size={15} />
         </button>
-      </div>
+      </div>}
     </nav>
   );
 }
