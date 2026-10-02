@@ -382,6 +382,17 @@ export default function Departments() {
           </select>
         </div>
 
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="departments"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table department-table">
             <thead>
@@ -416,15 +427,6 @@ export default function Departments() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={pagination}
-          onPageChange={setPage}
-          perPage={perPage}
-          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
-          disabled={loading}
-          loading={loading}
-          itemLabel="departments"
-        />
       </div>
 
       {modalOpen && (

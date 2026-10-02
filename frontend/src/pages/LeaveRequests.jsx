@@ -87,6 +87,7 @@ export default function LeaveRequests() {
   const [meta, setMeta] = useState({ can_create: false, can_review: false });
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -123,7 +124,7 @@ export default function LeaveRequests() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({
         page: String(page),
-        per_page: "25",
+        per_page: String(perPage),
       });
       if (search.trim()) params.set("search", search.trim());
       if (statusFilter) params.set("status", statusFilter);
@@ -151,13 +152,13 @@ export default function LeaveRequests() {
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
         });
-    }, 250);
+    }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [page, search, statusFilter, typeFilter, refreshKey]);
+  }, [page, perPage, search, statusFilter, typeFilter, refreshKey]);
 
   const summaryCards = useMemo(() => [
     { label: "All requests", value: summary.total, icon: CalendarDays, tone: "blue" },
@@ -347,6 +348,17 @@ export default function LeaveRequests() {
           </div>
         </div>
 
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="requests"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table leave-table">
             <thead>
@@ -361,7 +373,7 @@ export default function LeaveRequests() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !records.length ? (
                 <tr><td colSpan="7" className="users-empty">Loading requests…</td></tr>
               ) : records.length ? records.map((record) => (
                 <tr key={record.leave_id}>
@@ -400,12 +412,6 @@ export default function LeaveRequests() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={pagination}
-          onPageChange={setPage}
-          disabled={loading}
-          itemLabel="requests"
-        />
       </div>
 
       {createOpen && createPortal((

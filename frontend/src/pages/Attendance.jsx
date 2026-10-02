@@ -729,6 +729,17 @@ export default function Attendance() {
           </div>
         </div>
 
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="active personnel"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table attendance-table">
             <thead>
@@ -812,15 +823,6 @@ export default function Attendance() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={pagination}
-          onPageChange={setPage}
-          perPage={perPage}
-          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
-          disabled={loading}
-          loading={loading}
-          itemLabel="active personnel"
-        />
       </div>
 
       {requestModal && (

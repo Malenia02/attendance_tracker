@@ -87,6 +87,7 @@ export default function Personnel() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [records, setRecords] = useState([]);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState({ total: 0, active: 0, gip: 0, other_staff: 0 });
   const [options, setOptions] = useState({
@@ -168,7 +169,7 @@ export default function Personnel() {
 
       const params = new URLSearchParams();
       params.set("page", String(page));
-      params.set("per_page", "25");
+      params.set("per_page", String(perPage));
       if (search.trim()) params.set("search", search.trim());
       if (typeFilter) params.set("type", typeFilter);
       if (statusFilter) params.set("status", statusFilter);
@@ -189,13 +190,13 @@ export default function Personnel() {
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
-    }, 250);
+    }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [search, typeFilter, statusFilter, departmentFilter, page, refreshKey]);
+  }, [search, typeFilter, statusFilter, departmentFilter, page, perPage, refreshKey]);
 
   function openCreateModal() {
     releasePhotoObjectUrl();
@@ -525,6 +526,17 @@ export default function Personnel() {
           </select>
         </div>
 
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="personnel records"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table personnel-table">
             <thead>
@@ -538,7 +550,7 @@ export default function Personnel() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !records.length ? (
                 <tr><td colSpan="6" className="users-empty">Loading personnel records…</td></tr>
               ) : records.length === 0 ? (
                 <tr><td colSpan="6" className="users-empty">No personnel records match your filters.</td></tr>
@@ -598,12 +610,6 @@ export default function Personnel() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={pagination}
-          onPageChange={setPage}
-          disabled={loading}
-          itemLabel="personnel records"
-        />
       </div>
 
       {modalOpen && (

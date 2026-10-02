@@ -23,6 +23,7 @@ export default function Pagination({
   disabled = false,
   loading = false,
   itemLabel = "records",
+  placement = "bottom",
 }) {
   if (!pagination) return null;
 
@@ -33,12 +34,12 @@ export default function Pagination({
   const total = pagination.total ?? 0;
 
   return (
-    <nav className={`records-pagination${loading ? " is-loading" : ""}`} aria-label={`${itemLabel} pagination`} aria-busy={loading}>
+    <nav className={`records-pagination ${placement}${loading ? " is-loading" : ""}`} aria-label={`${itemLabel} pagination`} aria-busy={loading}>
       <div className="records-pagination-summary">
         <span>{total ? `Showing ${from}-${to} of ${total} ${itemLabel}` : `No ${itemLabel}`}</span>
         {onPerPageChange && (
           <label>
-            Rows
+            Rows per page
             <select
               value={perPage ?? pagination.per_page ?? 15}
               onChange={(event) => onPerPageChange(Number(event.target.value))}

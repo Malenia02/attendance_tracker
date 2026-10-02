@@ -268,13 +268,13 @@ class ScheduleManagementSecurityTest extends TestCase
         }
 
         $this->actingAs($administrator)
-            ->getJson('/api/schedules?personnel_page=2&personnel_per_page=10')
+            ->getJson('/api/schedules?personnel_page=2&personnel_per_page=15')
             ->assertOk()
-            ->assertJsonCount(10, 'personnel')
+            ->assertJsonCount(15, 'personnel')
             ->assertJsonPath('meta.personnel_pagination.current_page', 2)
-            ->assertJsonPath('meta.personnel_pagination.per_page', 10)
+            ->assertJsonPath('meta.personnel_pagination.per_page', 15)
             ->assertJsonPath('meta.personnel_pagination.total', 31)
-            ->assertJsonPath('meta.personnel_pagination.last_page', 4);
+            ->assertJsonPath('meta.personnel_pagination.last_page', 3);
     }
 
     private function user(string $role): User

@@ -404,6 +404,17 @@ export default function SystemUsers() {
           </select>
         </div>
 
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="system users"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table">
             <thead>
@@ -461,15 +472,6 @@ export default function SystemUsers() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={pagination}
-          onPageChange={setPage}
-          perPage={perPage}
-          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
-          disabled={loading}
-          loading={loading}
-          itemLabel="system users"
-        />
       </div>
 
       {modalOpen && (

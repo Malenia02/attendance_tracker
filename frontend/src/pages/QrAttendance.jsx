@@ -951,6 +951,20 @@ export default function QrAttendance() {
             <button type="button" onClick={loadData}><RefreshCw size={15} />Refresh</button>
           </div>
         </div>
+        <Pagination
+          pagination={scanPagination}
+          onPageChange={setScanPage}
+          perPage={scanPerPage}
+          onPerPageChange={(value) => {
+            setScanPerPage(value);
+            setScanPage(1);
+          }}
+          disabled={scanLoading}
+          loading={scanLoading}
+          itemLabel="QR scans"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table qr-history-table">
             <thead><tr><th>Personnel</th><th>Action</th><th>Result</th><th>Time</th><th>Operator</th><th>Message</th></tr></thead>
@@ -970,18 +984,6 @@ export default function QrAttendance() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={scanPagination}
-          onPageChange={setScanPage}
-          perPage={scanPerPage}
-          onPerPageChange={(value) => {
-            setScanPerPage(value);
-            setScanPage(1);
-          }}
-          disabled={scanLoading}
-          loading={scanLoading}
-          itemLabel="QR scans"
-        />
       </div>
       {confirmationDialog}
     </section>

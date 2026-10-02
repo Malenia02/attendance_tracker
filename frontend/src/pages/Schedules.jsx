@@ -119,6 +119,7 @@ export default function Schedules() {
   const [schedules, setSchedules] = useState([]);
   const [personnel, setPersonnel] = useState([]);
   const [personnelPage, setPersonnelPage] = useState(1);
+  const [personnelPerPage, setPersonnelPerPage] = useState(15);
   const [personnelPagination, setPersonnelPagination] = useState(null);
   const [summary, setSummary] = useState({
     total: 0,
@@ -146,6 +147,7 @@ export default function Schedules() {
   const [selectedPersonnel, setSelectedPersonnel] = useState([]);
   const [assignmentPersonnel, setAssignmentPersonnel] = useState([]);
   const [assignmentPersonnelPage, setAssignmentPersonnelPage] = useState(1);
+  const [assignmentPersonnelPerPage, setAssignmentPersonnelPerPage] = useState(15);
   const [assignmentPersonnelPagination, setAssignmentPersonnelPagination] = useState(null);
   const [assignmentPersonnelFilter, setAssignmentPersonnelFilter] = useState("unassigned");
   const [assignmentPersonnelLoading, setAssignmentPersonnelLoading] = useState(false);
@@ -171,7 +173,7 @@ export default function Schedules() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({
         personnel_page: String(personnelPage),
-        personnel_per_page: "25",
+        personnel_per_page: String(personnelPerPage),
       });
       if (personnelSearch.trim()) params.set("personnel_search", personnelSearch.trim());
       if (assignmentFilter) params.set("assignment", assignmentFilter);
@@ -194,13 +196,13 @@ export default function Schedules() {
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    }, 250);
+    }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [personnelSearch, assignmentFilter, personnelPage, refreshKey]);
+  }, [personnelSearch, assignmentFilter, personnelPage, personnelPerPage, refreshKey]);
 
   useEffect(() => {
     if (!assignmentModal) return undefined;
@@ -209,7 +211,7 @@ export default function Schedules() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({
         personnel_page: String(assignmentPersonnelPage),
-        personnel_per_page: "10",
+        personnel_per_page: String(assignmentPersonnelPerPage),
       });
       if (assignmentSearch.trim()) params.set("personnel_search", assignmentSearch.trim());
       if (assignmentPersonnelFilter) params.set("assignment", assignmentPersonnelFilter);
@@ -233,13 +235,13 @@ export default function Schedules() {
         .finally(() => {
           if (!controller.signal.aborted) setAssignmentPersonnelLoading(false);
         });
-    }, 250);
+    }, 350);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [assignmentModal, assignmentPersonnelFilter, assignmentPersonnelPage, assignmentSearch, refreshKey]);
+  }, [assignmentModal, assignmentPersonnelFilter, assignmentPersonnelPage, assignmentPersonnelPerPage, assignmentSearch, refreshKey]);
 
   const filteredSchedules = useMemo(() => {
     const query = scheduleSearch.trim().toLowerCase();
@@ -560,11 +562,22 @@ export default function Schedules() {
           </div>
         </div>
 
+        <Pagination
+          pagination={personnelPagination}
+          onPageChange={setPersonnelPage}
+          perPage={personnelPerPage}
+          onPerPageChange={(value) => { setPersonnelPerPage(value); setPersonnelPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="personnel assignments"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table schedule-assignment-table">
             <thead><tr><th>Personnel</th><th>Department</th><th>Current schedule</th><th>Effective period</th><th>Upcoming</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
-              {loading ? (
+              {loading && !filteredPersonnel.length ? (
                 <tr><td colSpan="6" className="users-empty">Loading assignments…</td></tr>
               ) : filteredPersonnel.length ? filteredPersonnel.map((person) => (
                 <tr key={person.personnel_id}>
@@ -604,12 +617,6 @@ export default function Schedules() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={personnelPagination}
-          onPageChange={setPersonnelPage}
-          disabled={loading}
-          itemLabel="personnel assignments"
-        />
       </div>
 
       {scheduleModal && (
@@ -811,7 +818,10 @@ export default function Schedules() {
               <Pagination
                 pagination={assignmentPersonnelPagination}
                 onPageChange={setAssignmentPersonnelPage}
+                perPage={assignmentPersonnelPerPage}
+                onPerPageChange={(value) => { setAssignmentPersonnelPerPage(value); setAssignmentPersonnelPage(1); }}
                 disabled={assignmentPersonnelLoading}
+                loading={assignmentPersonnelLoading}
                 itemLabel="personnel"
               />
 

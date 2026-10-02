@@ -32,7 +32,7 @@ class PersonnelOnboardingController extends Controller
             'state' => ['nullable', Rule::in(self::STATES)],
             'department_id' => ['nullable', 'integer', 'exists:departments,department_id'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
         ]);
         $today = today()->toDateString();
         $baseQuery = Personnel::query()
@@ -79,7 +79,7 @@ class PersonnelOnboardingController extends Controller
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->paginate(
-                $validated['per_page'] ?? 25,
+                $validated['per_page'] ?? 15,
                 ['*'],
                 'page',
                 $validated['page'] ?? 1

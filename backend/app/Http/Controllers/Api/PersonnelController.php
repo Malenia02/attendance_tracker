@@ -33,7 +33,7 @@ class PersonnelController extends Controller
             'status' => ['nullable', Rule::in(self::STATUSES)],
             'department_id' => ['nullable', 'integer', 'exists:departments,department_id'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
         ]);
 
         $query = Personnel::query()
@@ -62,7 +62,7 @@ class PersonnelController extends Controller
             ->orderBy('last_name')
             ->orderBy('first_name');
         $paginator = $query->paginate(
-            $validated['per_page'] ?? 25,
+            $validated['per_page'] ?? 15,
             ['*'],
             'page',
             $validated['page'] ?? 1

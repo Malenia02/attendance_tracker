@@ -33,7 +33,7 @@ class ScheduleController extends Controller
             'personnel_search' => ['nullable', 'string', 'max:100'],
             'assignment' => ['nullable', Rule::in(['assigned', 'unassigned'])],
             'personnel_page' => ['nullable', 'integer', 'min:1'],
-            'personnel_per_page' => ['nullable', 'integer', 'between:10,100'],
+            'personnel_per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
         ]);
         $today = now()->toDateString();
 
@@ -102,7 +102,7 @@ class ScheduleController extends Controller
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->paginate(
-                $validated['personnel_per_page'] ?? 25,
+                $validated['personnel_per_page'] ?? 15,
                 ['*'],
                 'personnel_page',
                 $validated['personnel_page'] ?? 1

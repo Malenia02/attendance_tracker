@@ -183,6 +183,20 @@ export default function ActivityLogs() {
           </select>
         </div>
 
+        <Pagination
+          pagination={meta}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => {
+            setPerPage(value);
+            setPage(1);
+          }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="activity records"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table activity-table">
             <thead><tr><th>Date & time</th><th>Operator</th><th>Action</th><th>Description</th><th>Source</th><th>IP address</th><th><span className="sr-only">Details</span></th></tr></thead>
@@ -204,18 +218,6 @@ export default function ActivityLogs() {
           </table>
         </div>
 
-        <Pagination
-          pagination={meta}
-          onPageChange={setPage}
-          perPage={perPage}
-          onPerPageChange={(value) => {
-            setPerPage(value);
-            setPage(1);
-          }}
-          disabled={loading}
-          loading={loading}
-          itemLabel="activity records"
-        />
       </div>
 
       {selectedLog && (

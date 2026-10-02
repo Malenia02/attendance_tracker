@@ -51,7 +51,7 @@ class LeaveRequestController extends Controller
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'between:10,100'],
+            'per_page' => ['nullable', 'integer', Rule::in([15, 25, 50, 100])],
         ]);
         $user = $request->user();
         $baseQuery = $this->visibleQuery($user);
@@ -100,7 +100,7 @@ class LeaveRequestController extends Controller
             )
             ->latest('created_at');
         $paginator = $query->paginate(
-            $validated['per_page'] ?? 25,
+            $validated['per_page'] ?? 15,
             ['*'],
             'page',
             $validated['page'] ?? 1

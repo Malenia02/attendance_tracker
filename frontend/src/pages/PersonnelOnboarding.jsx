@@ -45,6 +45,7 @@ export default function PersonnelOnboarding() {
   const [state, setState] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -55,7 +56,7 @@ export default function PersonnelOnboarding() {
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      const params = new URLSearchParams({ page: String(page), per_page: "25" });
+      const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
       if (search.trim()) params.set("search", search.trim());
       if (state) params.set("state", state);
       if (departmentId) params.set("department_id", departmentId);
@@ -74,13 +75,13 @@ export default function PersonnelOnboarding() {
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
         });
-    }, search ? 250 : 0);
+    }, search ? 350 : 0);
 
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [search, state, departmentId, page, refreshKey]);
+  }, [search, state, departmentId, page, perPage, refreshKey]);
 
   const actionableIds = useMemo(
     () => records.data
@@ -214,14 +215,25 @@ export default function PersonnelOnboarding() {
           </div>
         )}
 
-        <div className="onboarding-table-wrap">
-          <table className="onboarding-table">
+        <Pagination
+          pagination={records.meta?.pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading || saving}
+          loading={loading}
+          itemLabel="personnel"
+          placement="top"
+        />
+
+        <div className="users-table-wrap onboarding-table-wrap">
+          <table className="users-table onboarding-table">
             <thead><tr>
               <th><input type="checkbox" aria-label="Select actionable records" checked={actionableIds.length > 0 && selected.length === actionableIds.length} onChange={toggleAll} /></th>
               <th>Personnel</th><th>Readiness</th><th>Requirements</th><th>Assignment</th><th>Action</th>
             </tr></thead>
             <tbody>
-              {loading ? (
+              {loading && !records.data.length ? (
                 <tr><td colSpan="6" className="onboarding-empty"><RefreshCw className="spin" size={23} /> Checking readiness...</td></tr>
               ) : records.data.length ? records.data.map((record) => {
                 const actionable = ["Ready", "Active"].includes(record.readiness.state);
@@ -256,7 +268,6 @@ export default function PersonnelOnboarding() {
           </table>
         </div>
 
-        <Pagination pagination={records.meta?.pagination} onPageChange={setPage} disabled={loading || saving} itemLabel="personnel" />
       </div>
 
       <aside className="onboarding-security-note"><Building2 size={20} /><div><strong>Why activation is controlled</strong><span>Status cannot be changed from the regular personnel form. Every activation is revalidated inside one database transaction and recorded in an immutable audit history.</span></div></aside>

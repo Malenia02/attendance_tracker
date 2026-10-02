@@ -591,6 +591,17 @@ export default function DtrMonitoring() {
           </div>
         </div>
 
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="DTR records"
+          placement="top"
+        />
+
         <div className="users-table-wrap">
           <table className="users-table dtr-table">
             <thead>
@@ -699,15 +710,6 @@ export default function DtrMonitoring() {
             </tbody>
           </table>
         </div>
-        <Pagination
-          pagination={pagination}
-          onPageChange={setPage}
-          perPage={perPage}
-          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
-          disabled={loading}
-          loading={loading}
-          itemLabel="DTR records"
-        />
       </div>
 
       {selected && (

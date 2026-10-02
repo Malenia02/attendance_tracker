@@ -239,7 +239,7 @@ class LeaveRequestWorkflowSecurityTest extends TestCase
             'changed_by' => $user->user_id,
         ]);
         $this->actingAs($user)
-            ->getJson('/api/leave-requests?page=1&per_page=10')
+            ->getJson('/api/leave-requests?page=1&per_page=15')
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('meta.pagination.total', 1);
@@ -338,12 +338,12 @@ class LeaveRequestWorkflowSecurityTest extends TestCase
         }
 
         $this->actingAs($administrator)
-            ->getJson('/api/leave-requests?page=2&per_page=10')
+            ->getJson('/api/leave-requests?page=2&per_page=15')
             ->assertOk()
-            ->assertJsonCount(10, 'data')
+            ->assertJsonCount(15, 'data')
             ->assertJsonPath('meta.pagination.current_page', 2)
             ->assertJsonPath('meta.pagination.total', 30)
-            ->assertJsonPath('meta.pagination.last_page', 3);
+            ->assertJsonPath('meta.pagination.last_page', 2);
     }
 
     private function personnelUser(
