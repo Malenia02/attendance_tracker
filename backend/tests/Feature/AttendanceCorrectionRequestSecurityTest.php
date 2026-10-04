@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\AttendanceChangeLog;
 use App\Models\AttendanceRecord;
+use App\Models\Holiday;
 use App\Models\Personnel;
+use App\Models\PersonnelSchedule;
 use App\Models\User;
 use App\Models\WorkSchedule;
 use Illuminate\Database\Schema\Blueprint;
@@ -77,6 +79,28 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('personnel_schedules', function (Blueprint $table): void {
+            $table->id('personnel_schedule_id');
+            $table->unsignedBigInteger('personnel_id');
+            $table->unsignedBigInteger('schedule_id');
+            $table->date('effective_from');
+            $table->date('effective_to')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->timestamp('created_at')->useCurrent();
+        });
+
+        Schema::create('holidays', function (Blueprint $table): void {
+            $table->id('holiday_id');
+            $table->date('holiday_date');
+            $table->string('holiday_name');
+            $table->string('holiday_type');
+            $table->string('scope')->default('National');
+            $table->unsignedBigInteger('department_id')->nullable();
+            $table->text('description')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('attendance_records', function (Blueprint $table): void {
             $table->id('attendance_id');
             $table->unsignedBigInteger('personnel_id');
@@ -101,6 +125,19 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             $table->unsignedBigInteger('created_by')->nullable();
             $table->timestamps();
             $table->unique(['personnel_id', 'attendance_date']);
+        });
+
+        Schema::create('time_logs', function (Blueprint $table): void {
+            $table->id('time_log_id');
+            $table->unsignedBigInteger('personnel_id');
+            $table->unsignedBigInteger('attendance_id')->nullable();
+            $table->dateTime('log_datetime');
+            $table->string('log_type');
+            $table->string('log_source');
+            $table->string('ip_address', 45)->nullable();
+            $table->string('device_identifier')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->timestamp('created_at')->useCurrent();
         });
 
         Schema::create('attendance_change_logs', function (Blueprint $table): void {
@@ -163,7 +200,10 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
         Schema::dropIfExists('dtr_certifications');
         Schema::dropIfExists('attendance_correction_requests');
         Schema::dropIfExists('attendance_change_logs');
+        Schema::dropIfExists('time_logs');
         Schema::dropIfExists('attendance_records');
+        Schema::dropIfExists('holidays');
+        Schema::dropIfExists('personnel_schedules');
         Schema::dropIfExists('work_schedules');
         Schema::dropIfExists('system_users');
         Schema::dropIfExists('personnel');
@@ -417,6 +457,113 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
         ]);
     }
 
+    public function test_hr_can_confirm_a_past_missing_duty_day_as_an_unverified_absence(): void
+    {
+        [$hr, $personnel, $date] = $this->createAbsenceFixture();
+
+        $this->actingAs($hr)
+            ->getJson('/api/attendance?date='.$date)
+            ->assertOk()
+            ->assertJsonPath('data.0.personnel_id', $personnel->personnel_id)
+            ->assertJsonPath('data.0.display_status', 'Missing')
+            ->assertJsonPath('data.0.attendance_id', null);
+
+        $this->actingAs($hr)
+            ->postJson('/api/attendance/correction', [
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => $date,
+                'record_type' => 'Absent',
+                'reason' => 'No attendance or approved absence was recorded for this duty day.',
+            ])
+            ->assertOk()
+            ->assertJsonPath(
+                'message',
+                'Absence confirmed and audited. A different authorized reviewer must verify it before DTR certification.'
+            )
+            ->assertJsonPath('data.display_status', 'Absent')
+            ->assertJsonPath('data.is_verified', false);
+
+        $attendanceId = AttendanceRecord::query()
+            ->where('personnel_id', $personnel->personnel_id)
+            ->whereDate('attendance_date', $date)
+            ->value('attendance_id');
+
+        $this->assertDatabaseHas('attendance_records', [
+            'attendance_id' => $attendanceId,
+            'attendance_status' => 'Absent',
+            'record_source' => 'Manual',
+            'is_verified' => false,
+            'verified_by' => null,
+        ]);
+        $this->assertDatabaseHas('attendance_change_logs', [
+            'attendance_id' => $attendanceId,
+            'changed_by' => $hr->user_id,
+            'action_type' => 'Created',
+        ]);
+    }
+
+    public function test_absence_confirmation_rejects_the_current_day_and_holidays(): void
+    {
+        [$hr, $personnel, $date] = $this->createAbsenceFixture();
+
+        $this->actingAs($hr)
+            ->postJson('/api/attendance/correction', [
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => now()->toDateString(),
+                'record_type' => 'Absent',
+                'reason' => 'Trying to close attendance before the duty day has ended.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'An absence can only be confirmed after the scheduled duty day has ended.'
+            );
+
+        Holiday::create([
+            'holiday_date' => $date,
+            'holiday_name' => 'Test Public Holiday',
+            'holiday_type' => 'Regular Holiday',
+            'scope' => 'National',
+            'created_by' => $hr->user_id,
+        ]);
+
+        $this->actingAs($hr)
+            ->postJson('/api/attendance/correction', [
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => $date,
+                'record_type' => 'Absent',
+                'reason' => 'Trying to mark a protected holiday as an absence.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'An absence cannot be confirmed on Test Public Holiday.'
+            );
+
+        $this->assertDatabaseMissing('attendance_records', [
+            'personnel_id' => $personnel->personnel_id,
+            'attendance_date' => $date,
+        ]);
+    }
+
+    public function test_absence_confirmation_rejects_dates_without_schedule_coverage(): void
+    {
+        [$hr, $personnel, $date] = $this->createAbsenceFixture(false);
+
+        $this->actingAs($hr)
+            ->postJson('/api/attendance/correction', [
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => $date,
+                'record_type' => 'Absent',
+                'reason' => 'Trying to mark an uncovered date as an absence.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'An absence cannot be confirmed because no effective work schedule covers this date.'
+            );
+    }
+
     public function test_personnel_user_cannot_review_a_request(): void
     {
         [$employee, , $date] = $this->createMissingTimeOutFixture();
@@ -574,6 +721,53 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
         ]);
 
         return [$employee, $attendance, $date];
+    }
+
+    private function createAbsenceFixture(bool $assignSchedule = true): array
+    {
+        $date = now()->subDay()->toDateString();
+        $personnel = Personnel::create([
+            'employee_number' => 'ABSENCE-'.uniqid(),
+            'first_name' => 'Missing',
+            'last_name' => 'Employee',
+            'status' => 'Active',
+        ]);
+        $hr = $this->createUser('absence-reviewer-'.uniqid(), 'HR');
+        $schedule = WorkSchedule::create([
+            'schedule_name' => 'Daily test schedule',
+            'morning_start' => '07:00:00',
+            'morning_end' => '12:00:00',
+            'afternoon_start' => '13:00:00',
+            'afternoon_end' => '17:00:00',
+            'morning_time_in_start' => '06:00:00',
+            'morning_time_in_end' => '09:00:00',
+            'morning_time_out_start' => '11:30:00',
+            'morning_time_out_end' => '12:30:00',
+            'afternoon_time_in_start' => '12:30:00',
+            'afternoon_time_in_end' => '14:00:00',
+            'afternoon_time_out_start' => '16:30:00',
+            'afternoon_time_out_end' => '19:00:00',
+            'required_minutes_per_day' => 600,
+            'monday' => true,
+            'tuesday' => true,
+            'wednesday' => true,
+            'thursday' => true,
+            'friday' => true,
+            'saturday' => true,
+            'sunday' => true,
+            'status' => 'Active',
+        ]);
+
+        if ($assignSchedule) {
+            PersonnelSchedule::create([
+                'personnel_id' => $personnel->personnel_id,
+                'schedule_id' => $schedule->schedule_id,
+                'effective_from' => now()->subMonth()->toDateString(),
+                'created_by' => $hr->user_id,
+            ]);
+        }
+
+        return [$hr, $personnel, $date];
     }
 
     private function createUser(

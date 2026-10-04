@@ -24,6 +24,12 @@ services:
         value: "true"
       - key: FRONTEND_PROXY_SIGNING_SECRET
         sync: false
+      - key: BACKUP_HEARTBEAT_SECRET
+        sync: false
+      - key: BACKUP_HEARTBEAT_MAX_AGE_HOURS
+        value: "36"
+      - key: SCHEDULER_HEARTBEAT_MAX_AGE_MINUTES
+        value: "3"
       - key: FRONTEND_URL
         sync: false
       - key: TRUSTED_HOSTS

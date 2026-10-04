@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\PersonnelController;
 use App\Http\Controllers\Api\PersonnelOnboardingController;
 use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\ScheduleController;
+use App\Http\Controllers\Api\SystemHealthController;
 use App\Http\Controllers\Api\SystemUserController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,6 +35,8 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         ->middleware('role:Administrator,HR,Supervisor');
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::get('/notifications/summary', [NotificationController::class, 'summary']);
+    Route::get('/system-health', SystemHealthController::class)
+        ->middleware('role:Administrator');
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])
         ->middleware('throttle:20,1');
     Route::patch('/notifications/{notificationId}/read', [NotificationController::class, 'markRead'])

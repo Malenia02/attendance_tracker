@@ -15,3 +15,7 @@ Schedule::command('notifications:prune')
 Schedule::command('personnel:lifecycle')
     ->dailyAt('00:15')
     ->withoutOverlapping();
+
+Schedule::command('system:heartbeat')
+    ->everyMinute()
+    ->withoutOverlapping();

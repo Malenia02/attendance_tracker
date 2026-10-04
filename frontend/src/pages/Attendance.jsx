@@ -814,7 +814,9 @@ export default function Attendance() {
                             setEditingRecord(record);
                           }}
                         >
-                          <PencilLine size={13} /> {record.has_missing_time_out ? "Resolve" : "Correct"}
+                          <PencilLine size={13} /> {record.display_status === "Missing"
+                            ? "Confirm absent"
+                            : record.has_missing_time_out ? "Resolve" : "Correct"}
                         </button>
                       )}
                     </div>

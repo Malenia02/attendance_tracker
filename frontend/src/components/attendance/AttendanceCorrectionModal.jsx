@@ -25,8 +25,11 @@ export default function AttendanceCorrectionModal({
   onSave,
 }) {
   const absenceTypes = ["Absent", "Leave", "Official Business", "Work From Home"];
+  const isMissingDutyDay = record.display_status === "Missing";
   const [recordType, setRecordType] = useState(
-    absenceTypes.includes(record.display_status) ? record.display_status : "Time Entries",
+    isMissingDutyDay
+      ? "Absent"
+      : absenceTypes.includes(record.display_status) ? record.display_status : "Time Entries",
   );
   const [times, setTimes] = useState({
     morning_time_in: timeInputValue(record.morning_time_in),
@@ -70,7 +73,9 @@ export default function AttendanceCorrectionModal({
           <div className="app-modal-heading">
             <span className="app-modal-icon"><ShieldCheck size={20} /></span>
             <div>
-              <span className="app-modal-eyebrow">Audited attendance correction</span>
+              <span className="app-modal-eyebrow">
+                {isMissingDutyDay ? "Confirm missed duty day" : "Audited attendance correction"}
+              </span>
               <h2 id="attendance-correction-title">{record.full_name}</h2>
               <p>{new Date(`${date}T00:00:00`).toLocaleDateString("en-PH", {
                 weekday: "long",
@@ -94,6 +99,19 @@ export default function AttendanceCorrectionModal({
                 <span>
                   Enter the actual {missingTimeOutEntries.map((entry) => entry.label.toLowerCase()).join(" and ")}.
                   Do not use the scheduled end time unless it is supported by an approved record.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {isMissingDutyDay && (
+            <div className="attendance-correction-exception">
+              <AlertTriangle size={17} />
+              <div>
+                <strong>No attendance entry was recorded</strong>
+                <span>
+                  Confirm Absent only after checking approved leave, official business, holidays,
+                  and the personnel's effective work schedule.
                 </span>
               </div>
             </div>
@@ -141,21 +159,26 @@ export default function AttendanceCorrectionModal({
               minLength={10}
               maxLength={255}
               required
-              placeholder="Explain why this attendance record needs to be corrected..."
+              placeholder={isMissingDutyDay
+                ? "Document why this missed duty day is being confirmed as absent..."
+                : "Explain why this attendance record needs to be corrected..."}
             />
           </label>
 
           <div className="attendance-correction-note">
             <ShieldCheck size={16} />
-            This edit will be recorded with your account in Activity Logs. A different authorized reviewer
-            must verify it before DTR certification.
+            {isMissingDutyDay
+              ? "The absence will remain unverified until a different authorized reviewer checks it."
+              : "This edit will be recorded with your account in Activity Logs. A different authorized reviewer must verify it before DTR certification."}
           </div>
         </div>
 
         <footer className="app-modal-footer">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" className="save" disabled={busy || reason.trim().length < 10}>
-            {busy ? "Saving…" : "Save for review"}
+            {busy
+              ? "Saving…"
+              : isMissingDutyDay && recordType === "Absent" ? "Confirm absent for review" : "Save for review"}
           </button>
         </footer>
       </form>

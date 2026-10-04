@@ -402,6 +402,7 @@
 .attendance-status.incomplete { color: #b54708; background: #fff1e7; }
 .attendance-status.half-day { color: #087f9c; background: #e5f7fb; }
 .attendance-status.not-started { color: #667085; background: var(--bg-card-soft); }
+.attendance-status.missing { color: #b42318; background: #fff0ef; }
 .attendance-status.leave { color: #175cd3; background: #eaf2ff; }
 .attendance-status.holiday { color: #7c3aed; background: #f2eafd; }
 .attendance-status.absent { color: #b42318; background: #fff0ef; }

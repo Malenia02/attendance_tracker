@@ -1058,6 +1058,31 @@ class AttendanceController extends Controller
         }
 
         $schedule = $this->effectiveSchedule($personnel->personnel_id, $date);
+
+        if ($validated['record_type'] === 'Absent') {
+            $absenceError = $this->absenceConfirmationError($personnel, $schedule, $date);
+
+            if ($absenceError) {
+                return response()->json(['message' => $absenceError], 422);
+            }
+
+            $existingRecord = AttendanceRecord::query()
+                ->where('personnel_id', $personnel->personnel_id)
+                ->whereDate('attendance_date', $date)
+                ->first();
+
+            if ($existingRecord && collect([
+                $existingRecord->morning_time_in,
+                $existingRecord->morning_time_out,
+                $existingRecord->afternoon_time_in,
+                $existingRecord->afternoon_time_out,
+            ])->contains(fn ($value): bool => (bool) $value)) {
+                return response()->json([
+                    'message' => 'This date already contains time entries. Correct the recorded times instead of confirming an absence.',
+                ], 422);
+            }
+        }
+
         $user = $request->user();
         $result = DB::transaction(function () use ($personnel, $schedule, $date, $validated, $user): AttendanceRecord {
             $record = AttendanceRecord::query()
@@ -1137,7 +1162,9 @@ class AttendanceController extends Controller
         });
 
         return response()->json([
-            'message' => 'Attendance correction saved and audited. A different authorized reviewer must verify it before DTR certification.',
+            'message' => $validated['record_type'] === 'Absent'
+                ? 'Absence confirmed and audited. A different authorized reviewer must verify it before DTR certification.'
+                : 'Attendance correction saved and audited. A different authorized reviewer must verify it before DTR certification.',
             'data' => $this->formatAttendance(
                 $result,
                 $result->schedule,
@@ -1270,6 +1297,46 @@ class AttendanceController extends Controller
             ->first();
 
         return $assignment?->schedule;
+    }
+
+    private function absenceConfirmationError(
+        Personnel $personnel,
+        ?WorkSchedule $schedule,
+        string $date
+    ): ?string {
+        $attendanceDate = Carbon::parse($date, config('app.timezone'))->startOfDay();
+
+        if (! $attendanceDate->lt(now(config('app.timezone'))->startOfDay())) {
+            return 'An absence can only be confirmed after the scheduled duty day has ended.';
+        }
+
+        if (! $schedule) {
+            return 'An absence cannot be confirmed because no effective work schedule covers this date.';
+        }
+
+        $calendarEvents = Holiday::query()
+            ->whereDate('holiday_date', $attendanceDate)
+            ->where(fn ($query) => $query
+                ->whereNull('department_id')
+                ->orWhere('department_id', $personnel->department_id))
+            ->get();
+        $holiday = $calendarEvents->firstWhere('holiday_type', '!=', 'Special Working Holiday');
+
+        if ($holiday) {
+            return 'An absence cannot be confirmed on '.$holiday->holiday_name.'.';
+        }
+
+        $isSpecialWorkingDay = $calendarEvents->contains(
+            'holiday_type',
+            'Special Working Holiday'
+        );
+        $workdayField = strtolower($attendanceDate->format('l'));
+
+        if (! $schedule->{$workdayField} && ! $isSpecialWorkingDay) {
+            return 'An absence can only be confirmed on a scheduled duty day.';
+        }
+
+        return null;
     }
 
     private function unavailableScheduleMessage(int $personnelId, string $date): string
@@ -1658,6 +1725,12 @@ class AttendanceController extends Controller
         bool $allowAction,
         bool $isSpecialWorkingDay = false
     ): array {
+        $isDutyDay = $schedule
+            && ! $holiday
+            && ($schedule->{strtolower($referenceTime->format('l'))} || $isSpecialWorkingDay);
+        $isPastDate = $referenceTime->copy()->startOfDay()
+            ->lt(now(config('app.timezone'))->startOfDay());
+
         $formatted = $record ? $this->formatAttendance(
             $record,
             $schedule,
@@ -1671,7 +1744,9 @@ class AttendanceController extends Controller
             'afternoon_time_in' => null,
             'afternoon_time_out' => null,
             'attendance_status' => null,
-            'display_status' => $holiday ? 'Holiday' : 'Not Started',
+            'display_status' => $holiday
+                ? 'Holiday'
+                : ($isPastDate && $isDutyDay ? 'Missing' : 'Not Started'),
             'total_work_minutes' => 0,
             'late_minutes' => 0,
             'is_late' => false,

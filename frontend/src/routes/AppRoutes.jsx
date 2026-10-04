@@ -19,6 +19,7 @@ const ActionCenter = lazy(() => import("../pages/ActionCenter"));
 const Dashboard = lazy(() => import("../pages/Dashboard"));
 const Notifications = lazy(() => import("../pages/Notifications"));
 const PersonnelOnboarding = lazy(() => import("../pages/PersonnelOnboarding"));
+const SystemHealth = lazy(() => import("../pages/SystemHealth"));
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -100,14 +101,14 @@ export default function AppRoutes() {
         <Route path="authentication" element={<Navigate to="/system-users" replace />} />
 
         <Route
-          path="settings"
+          path="system-health"
           element={
-            <PlaceholderPage
-              title="Settings"
-              description="Configure system preferences."
-            />
+            <Suspense fallback={<PlaceholderPage title="System Health" description="Checking operational safeguards..." />}>
+              <SystemHealth />
+            </Suspense>
           }
         />
+        <Route path="settings" element={<Navigate to="/system-health" replace />} />
 
         <Route path="*" element={<ErrorPage code={404} embedded />} />
       </Route>

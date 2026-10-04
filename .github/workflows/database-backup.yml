@@ -48,6 +48,8 @@ jobs:
       BACKUP_KEEP_WEEKLY: "8"
       BACKUP_KEEP_MONTHLY: "12"
       RESTIC_HOST: dilg-attendance-production
+      BACKUP_HEARTBEAT_URL: ${{ vars.BACKUP_HEARTBEAT_URL }}
+      BACKUP_HEARTBEAT_SECRET: ${{ secrets.BACKUP_HEARTBEAT_SECRET }}
 
     steps:
       - name: Check out trusted backup code
@@ -70,6 +72,28 @@ jobs:
       - name: Create encrypted backup and prove restoration
         shell: bash
         run: bash deployment/backups/backup-and-verify.sh
+
+      - name: Report verified backup heartbeat
+        shell: bash
+        run: |
+          if [[ -z "${BACKUP_HEARTBEAT_URL}" || -z "${BACKUP_HEARTBEAT_SECRET}" ]]; then
+            echo "ERROR: BACKUP_HEARTBEAT_URL and BACKUP_HEARTBEAT_SECRET are required when backups are enabled." >&2
+            exit 1
+          fi
+
+          timestamp="$(date +%s)"
+          body="$(printf '{\"run_id\":\"%s\",\"commit_sha\":\"%s\",\"repository\":\"%s\"}' \
+            "${GITHUB_RUN_ID}" "${GITHUB_SHA}" "${GITHUB_REPOSITORY}")"
+          signature="$(printf '%s\n%s' "${timestamp}" "${body}" \
+            | openssl dgst -sha256 -hmac "${BACKUP_HEARTBEAT_SECRET}" -hex \
+            | awk '{print $2}')"
+
+          curl --fail --silent --show-error --retry 3 \
+            --header "Content-Type: application/json" \
+            --header "X-DILG-Backup-Timestamp: ${timestamp}" \
+            --header "X-DILG-Backup-Signature: ${signature}" \
+            --data "${body}" \
+            "${BACKUP_HEARTBEAT_URL}"
 
       - name: Write successful backup summary
         if: success()

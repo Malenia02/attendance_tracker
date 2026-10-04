@@ -206,6 +206,7 @@ class ProductionCheck extends Command
             'qr_scan_logs',
             'office_networks',
             'time_logs',
+            'system_health_checks',
         ];
 
         if (config('session.driver') === 'database') {
