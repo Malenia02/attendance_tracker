@@ -196,7 +196,9 @@ export default function Login() {
           </form>
 
           <div className="login-help">
-            <p>Having trouble signing in?</p>
+            <p>Install on your phone</p>
+            <span>Android: in Chrome, open the menu and tap Install app. iPhone: in Safari, tap Share, then Add to Home Screen.</span>
+            <p className="login-help-secondary">Having trouble signing in?</p>
             <span>On your private phone, choose Save if your browser offers to save your password. Contact your DILG system administrator if you need help.</span>
           </div>
         </div>

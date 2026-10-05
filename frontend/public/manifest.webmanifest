@@ -1,0 +1,25 @@
+{
+  "id": "./",
+  "name": "DILG AttendanceHub",
+  "short_name": "DILG GIP",
+  "description": "DILG attendance, schedules, and daily time records",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f9ff",
+  "theme_color": "#17243f",
+  "icons": [
+    {
+      "src": "./images/dilg-seal-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./images/dilg-seal.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -372,6 +372,10 @@
   font-weight: 600;
 }
 
+.login-help .login-help-secondary {
+  margin-top: 14px;
+}
+
 .login-help span {
   color: #7c8ca8;
   font-size: 11px;
