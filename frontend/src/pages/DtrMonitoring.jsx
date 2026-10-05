@@ -157,7 +157,7 @@ export default function DtrMonitoring() {
       params.set("sort", sort);
       params.set("direction", direction);
 
-      apiFetch(`/dtr?${params}`, { signal: controller.signal })
+      apiFetch(`/dtr?${params}`, { signal: controller.signal, cache: "no-store" })
         .then(readResponse)
         .then((payload) => {
         setRows(payload.data);
@@ -202,6 +202,27 @@ export default function DtrMonitoring() {
       controller.abort();
     };
   }, [month, period, search, statusFilter, sortOption, page, perPage, refreshKey]);
+
+  useEffect(() => {
+    const refreshVisibleDtr = () => {
+      if (document.visibilityState === "visible") {
+        setRefreshKey((key) => key + 1);
+      }
+    };
+
+    window.addEventListener("focus", refreshVisibleDtr);
+    document.addEventListener("visibilitychange", refreshVisibleDtr);
+
+    return () => {
+      window.removeEventListener("focus", refreshVisibleDtr);
+      document.removeEventListener("visibilitychange", refreshVisibleDtr);
+    };
+  }, []);
+
+  function openDetails(row) {
+    setSelected(row);
+    setRefreshKey((key) => key + 1);
+  }
 
   const filteredRows = useMemo(() => rows.filter((row) => {
       const matchesReadiness = !readinessFilter
@@ -702,7 +723,7 @@ export default function DtrMonitoring() {
                     </span>
                   </td>
                   <td>
-                    <button className="dtr-view-button" type="button" onClick={() => setSelected(row)}>
+                    <button className="dtr-view-button" type="button" onClick={() => openDetails(row)}>
                       View <ChevronRight size={14} />
                     </button>
                   </td>

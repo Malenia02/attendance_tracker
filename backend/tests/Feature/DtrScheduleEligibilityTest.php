@@ -657,6 +657,49 @@ class DtrScheduleEligibilityTest extends TestCase
         ]);
     }
 
+    public function test_incomplete_attendance_exposes_every_recorded_time_in_dtr_details(): void
+    {
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-08-01',
+            'created_by' => $administrator->user_id,
+        ]);
+
+        AttendanceRecord::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'attendance_date' => '2026-08-03',
+            'morning_time_in' => '2026-08-03 06:41:00',
+            'morning_time_out' => '2026-08-03 12:01:00',
+            'afternoon_time_in' => '2026-08-03 12:48:00',
+            'afternoon_time_out' => null,
+            'attendance_status' => 'Incomplete',
+            'total_work_minutes' => 320,
+            'is_verified' => false,
+            'created_by' => $administrator->user_id,
+        ]);
+
+        $dailyRecords = $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-08&period=first_half')
+            ->assertOk()
+            ->assertJsonPath('data.0.incomplete_days', 1)
+            ->assertJsonPath('data.0.unverified_days', 1)
+            ->json('data.0.daily_records');
+
+        $day = collect($dailyRecords)->firstWhere('date', '2026-08-03');
+
+        $this->assertNotNull($day);
+        $this->assertSame('06:41', Carbon::parse($day['morning_time_in'])->setTimezone('Asia/Manila')->format('H:i'));
+        $this->assertSame('12:01', Carbon::parse($day['morning_time_out'])->setTimezone('Asia/Manila')->format('H:i'));
+        $this->assertSame('12:48', Carbon::parse($day['afternoon_time_in'])->setTimezone('Asia/Manila')->format('H:i'));
+        $this->assertNull($day['afternoon_time_out']);
+        $this->assertSame('Incomplete', $day['status']);
+    }
+
     private function records(): array
     {
         $departmentId = Schema::getConnection()->table('departments')->insertGetId([
