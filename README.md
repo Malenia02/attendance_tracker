@@ -449,10 +449,15 @@ services remain appropriate for functional testing, not a live government
 records workload.
 
 The Docker deployment starts Laravel's scheduler inside the web container for
-the current single-instance test setup. On a multi-instance production plan,
-move `php artisan schedule:work` to one dedicated scheduler service. Lifecycle
-operations remain idempotent and use `withoutOverlapping` as a second line of
-protection.
+the current single-instance test setup and restarts it if the scheduler process
+exits unexpectedly. The minute-by-minute health heartbeat has no overlap lock,
+so an abrupt container stop cannot suppress it for a full day. On the free
+Render plan, the entire container still sleeps when idle: scheduled commands
+cannot run during that time, and System Health may show a stale heartbeat until
+the first minute after wake-up. For reliable all-day scheduling, use an
+always-on service and move `php artisan schedule:work` to one dedicated
+scheduler service when scaling beyond one web instance. Lifecycle operations
+remain idempotent and use `withoutOverlapping` as a second line of protection.
 
 The root `render.yaml` remains the free test configuration while the system is
 being evaluated; `render.free.yaml` is an explicit copy of that test setup.

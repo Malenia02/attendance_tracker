@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\SystemHealthCheck;
 use App\Models\User;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -99,6 +100,15 @@ class SystemHealthSecurityTest extends TestCase
             'check_key' => 'scheduler',
             'status' => 'healthy',
         ]);
+    }
+
+    public function test_scheduler_heartbeat_cannot_be_blocked_by_a_stale_overlap_lock(): void
+    {
+        $heartbeat = collect(app(Schedule::class)->events())
+            ->first(fn ($event): bool => str_contains((string) $event->command, 'system:heartbeat'));
+
+        $this->assertNotNull($heartbeat);
+        $this->assertFalse($heartbeat->withoutOverlapping);
     }
 
     public function test_backup_heartbeat_requires_a_recent_valid_hmac_signature(): void

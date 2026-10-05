@@ -139,9 +139,18 @@ chown -R www-data:www-data \
     storage/framework/cache \
     storage/framework/views
 
-# The web container also owns the lightweight Laravel scheduler on the free
-# test deployment. Every lifecycle task is idempotent and protected with
-# withoutOverlapping, so rolling deploy overlap cannot duplicate transitions.
-php artisan schedule:work --no-interaction &
+# The free test web container also owns the scheduler while it is awake. A
+# transient database error must not silently leave Apache running without it.
+# Render can still suspend this entire container while the free service sleeps.
+(
+    while :; do
+        if php artisan schedule:work --no-interaction; then
+            echo "WARNING: Laravel scheduler stopped; restarting in 30 seconds." >&2
+        else
+            echo "WARNING: Laravel scheduler failed; restarting in 30 seconds." >&2
+        fi
+        sleep 30
+    done
+) &
 
 exec apache2-foreground
