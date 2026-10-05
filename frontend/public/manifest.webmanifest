@@ -1,7 +1,7 @@
 {
   "id": "./",
   "name": "DILG AttendanceHub",
-  "short_name": "DILG GIP",
+  "short_name": "DILG AttendanceHub",
   "description": "DILG attendance, schedules, and daily time records",
   "start_url": "./",
   "scope": "./",

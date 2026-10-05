@@ -393,7 +393,7 @@ export default function Attendance() {
         <div className="attendance-hero-copy">
           <span className="attendance-kicker"><Sparkles size={14} /> Live attendance</span>
           <h1>Time In & Time Out</h1>
-          <p>Fast, secure daily attendance for DILG GIP participants and employees.</p>
+          <p>Fast, secure daily attendance for DILG personnel, GIP participants, and job order staff.</p>
         </div>
         <div className="live-clock">
           <span className="live-indicator"><i></i>Live</span>

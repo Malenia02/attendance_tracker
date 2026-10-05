@@ -9,7 +9,7 @@ services:
     healthCheckPath: /health/ready
     envVars:
       - key: APP_NAME
-        value: DILG GIP Attendance Tracker (Test)
+        value: DILG AttendanceHub (Test)
       - key: APP_ENV
         value: production
       - key: APP_DEBUG

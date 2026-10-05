@@ -63,7 +63,7 @@ export default function ErrorPage({
         <div className="error-page-brand">
           <span><DilgSeal /></span>
           <div>
-            <strong>DILG GIP Attendance</strong>
+            <strong>DILG AttendanceHub</strong>
             <small>Secure personnel management system</small>
           </div>
         </div>

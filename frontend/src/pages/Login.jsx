@@ -127,7 +127,7 @@ export default function Login() {
       <section className="login-form-panel">
         <div className="login-mobile-brand">
           <span><DilgSeal /></span>
-          <strong>DILG </strong>
+          <strong>DILG AttendanceHub</strong>
         </div>
 
         <div className="login-card">

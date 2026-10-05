@@ -1,4 +1,4 @@
-# DILG GIP Attendance Tracker
+# DILG AttendanceHub
 
 A Laravel and React attendance monitoring system for DILG Government
 Internship Program personnel. It manages personnel records, office-based
@@ -118,7 +118,7 @@ php artisan key:generate
 Update `backend/.env`:
 
 ```dotenv
-APP_NAME="DILG GIP Attendance Tracker"
+APP_NAME="DILG AttendanceHub"
 APP_ENV=local
 APP_DEBUG=true
 APP_URL=http://127.0.0.1:8000

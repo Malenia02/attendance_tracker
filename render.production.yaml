@@ -15,7 +15,7 @@ services:
       sizeGB: 1
     envVars:
       - key: APP_NAME
-        value: DILG GIP Attendance Tracker
+        value: DILG AttendanceHub
       - key: APP_ENV
         value: production
       - key: APP_DEBUG
