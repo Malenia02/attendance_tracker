@@ -93,7 +93,7 @@ export async function initializeCsrf() {
 }
 
 export async function apiFetch(path, options = {}) {
-  const { suppressToast = false, ...fetchOptions } = options;
+  const { suppressToast = false, skipAuthRedirect = false, ...fetchOptions } = options;
   const headers = new Headers(fetchOptions.headers || {});
   headers.set("Accept", "application/json");
   const method = (fetchOptions.method || "GET").toUpperCase();
@@ -111,7 +111,7 @@ export async function apiFetch(path, options = {}) {
 
   await maybeNotifyMutation(response, method, path, { suppressToast });
 
-  if (response.status === 401 && path !== "/auth/login") {
+  if (response.status === 401 && path !== "/auth/login" && !skipAuthRedirect) {
     clearAuth();
     window.location.assign("/login");
   }
@@ -140,7 +140,10 @@ export function verifySession({ force = false } = {}) {
     SESSION_CHECK_TIMEOUT_MS,
   );
 
-  sessionVerificationPromise = apiFetch("/auth/me", { signal: controller.signal })
+  sessionVerificationPromise = apiFetch("/auth/me", {
+    signal: controller.signal,
+    skipAuthRedirect: true,
+  })
     .then(async (response) => {
       const payload = await response.json().catch(() => ({}));
 

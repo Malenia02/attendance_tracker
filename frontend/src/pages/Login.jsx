@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 import {
   ArrowRight,
@@ -8,25 +8,65 @@ import {
   UserRound,
 } from "lucide-react";
 import DilgSeal from "../components/branding/DilgSeal";
-import { apiFetch, getStoredUser, initializeCsrf, storeAuth } from "../lib/auth";
+import {
+  apiFetch,
+  getStoredUser,
+  initializeCsrf,
+  storeAuth,
+  verifySession,
+} from "../lib/auth";
+
+function offerToSavePassword(username, password, user) {
+  if (typeof window.PasswordCredential !== "function" || !navigator.credentials?.store) {
+    return;
+  }
+
+  try {
+    const credential = new window.PasswordCredential({
+      id: username,
+      password,
+      name: user?.full_name || username,
+    });
+
+    navigator.credentials.store(credential).catch(() => {
+      // Saving is optional; browser settings or a user choice may decline it.
+    });
+  } catch {
+    // Signing in must still work in browsers without password-save support.
+  }
+}
 
 export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const [credentials, setCredentials] = useState({ username: "", password: "" });
-  const [remember, setRemember] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  if (getStoredUser()) return <Navigate to="/dashboard" replace />;
+  useEffect(() => {
+    if (getStoredUser()) return;
 
-  function handleChange(event) {
-    const { name, value } = event.target;
-    setCredentials((current) => ({ ...current, [name]: value }));
-  }
+    let active = true;
+    verifySession({ force: true })
+      .then(() => {
+        if (active) navigate("/dashboard", { replace: true });
+      })
+      .catch(() => {
+        // A missing or expired session leaves the login form available.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
+
+  if (getStoredUser()) return <Navigate to="/dashboard" replace />;
 
   async function handleSubmit(event) {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const username = String(form.get("username") || "").trim();
+    const password = String(form.get("password") || "");
+    const remember = form.has("remember");
     setSubmitting(true);
     setError("");
 
@@ -40,7 +80,7 @@ export default function Login() {
       const response = await apiFetch("/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...credentials, remember }),
+        body: JSON.stringify({ username, password, remember }),
       });
       const payload = await response.json().catch(() => ({}));
 
@@ -49,6 +89,7 @@ export default function Login() {
       }
 
       storeAuth(payload.user);
+      offerToSavePassword(username, password, payload.user);
       navigate("/dashboard", { replace: true });
     } catch (requestError) {
       setError(requestError.message);
@@ -96,7 +137,7 @@ export default function Login() {
             <p>Enter your assigned credentials to access the attendance system.</p>
           </div>
 
-          <form className="login-form" onSubmit={handleSubmit}>
+          <form className="login-form" method="post" onSubmit={handleSubmit}>
             {error && <div className="login-error" role="alert">{error}</div>}
 
             <label htmlFor="username">Username or email address</label>
@@ -106,10 +147,11 @@ export default function Login() {
                 id="username"
                 name="username"
                 type="text"
-                value={credentials.username}
-                onChange={handleChange}
                 placeholder="Enter your username"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 required
               />
             </div>
@@ -124,8 +166,6 @@ export default function Login() {
                 id="password"
                 name="password"
                 type={showPassword ? "text" : "password"}
-                value={credentials.password}
-                onChange={handleChange}
                 placeholder="Enter your password"
                 autoComplete="current-password"
                 required
@@ -145,8 +185,6 @@ export default function Login() {
                 id="remember"
                 name="remember"
                 type="checkbox"
-                checked={remember}
-                onChange={(event) => setRemember(event.target.checked)}
               />
               <span>Keep me signed in for 15 days on this private device</span>
             </label>
@@ -159,7 +197,7 @@ export default function Login() {
 
           <div className="login-help">
             <p>Having trouble signing in?</p>
-            <span>Contact your DILG system administrator for assistance.</span>
+            <span>On your private phone, choose Save if your browser offers to save your password. Contact your DILG system administrator if you need help.</span>
           </div>
         </div>
 
