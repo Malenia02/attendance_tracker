@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 import {
   ArrowRight,
+  CircleAlert,
   Eye,
   EyeOff,
   LockKeyhole,
@@ -138,7 +139,12 @@ export default function Login() {
           </div>
 
           <form className="login-form" method="post" onSubmit={handleSubmit}>
-            {error && <div className="login-error" role="alert">{error}</div>}
+            {error && (
+              <div className="login-error" role="alert">
+                <CircleAlert size={20} />
+                <span><strong>Sign-in unsuccessful</strong>{error}</span>
+              </div>
+            )}
 
             <label htmlFor="username">Username or email address</label>
             <div className="login-input-group">

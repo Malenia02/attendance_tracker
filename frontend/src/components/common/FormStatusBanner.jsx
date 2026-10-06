@@ -1,10 +1,10 @@
-import { BadgeCheck, X } from "lucide-react";
+import { CircleAlert, CircleCheck } from "lucide-react";
 
 export default function FormStatusBanner({ status }) {
   if (!status?.message) return null;
 
   const isSuccess = status.type === "success";
-  const Icon = isSuccess ? BadgeCheck : X;
+  const Icon = isSuccess ? CircleCheck : CircleAlert;
 
   return (
     <div
@@ -12,8 +12,11 @@ export default function FormStatusBanner({ status }) {
       role={isSuccess ? "status" : "alert"}
       aria-live={isSuccess ? "polite" : "assertive"}
     >
-      <Icon size={17} />
-      <span>{status.message}</span>
+      <span className="form-status-icon"><Icon size={21} /></span>
+      <span className="form-status-copy">
+        <strong>{isSuccess ? "Action completed" : "Action not completed"}</strong>
+        <span>{status.message}</span>
+      </span>
     </div>
   );
 }

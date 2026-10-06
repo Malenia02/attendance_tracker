@@ -142,10 +142,10 @@
 
   .users-notice {
     margin-bottom: 14px;
-    padding: 11px 12px;
+    padding: 12px 13px;
     align-items: flex-start;
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: 14px;
+    line-height: 1.5;
   }
 
   .user-summary-grid {

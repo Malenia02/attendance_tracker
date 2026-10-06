@@ -187,13 +187,31 @@
 
 .login-error {
   margin-bottom: 20px;
-  padding: 11px 13px;
-  color: #b42318;
-  border: 1px solid #f3c6c3;
-  border-radius: 6px;
-  background: #fff0ef;
-  font-size: 12px;
-  line-height: 1.45;
+  padding: 13px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  color: #233a57;
+  border: 1px solid #e9b6b2;
+  border-left: 4px solid #be342b;
+  border-radius: 11px;
+  background: #fff3f1;
+  box-shadow: 0 8px 22px rgba(190, 52, 43, 0.08);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.login-error > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #be342b;
+}
+
+.login-error strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #84231e;
+  font-size: 14px;
 }
 
 .login-form > label,
