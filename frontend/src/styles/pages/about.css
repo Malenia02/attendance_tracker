@@ -1,0 +1,37 @@
+.about-page {
+  max-width: 900px;
+}
+
+.about-release-panel {
+  padding: 24px;
+}
+
+.about-release-panel h2 {
+  margin-top: 0;
+}
+
+.about-release-panel dl {
+  margin: 20px 0;
+}
+
+.about-release-panel dl > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.about-release-panel dt {
+  color: var(--text-soft);
+}
+
+.about-release-panel dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.about-release-panel p {
+  color: var(--text-soft);
+}

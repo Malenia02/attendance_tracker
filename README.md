@@ -1,5 +1,8 @@
 # DILG AttendanceHub
 
+Release versions, update notices, and the `testing` → `main` workflow are
+documented in [docs/RELEASES.md](docs/RELEASES.md).
+
 A Laravel and React attendance monitoring system for DILG Government
 Internship Program personnel. It manages personnel records, office-based
 attendance, QR scanning, holidays and optional working days, DTR review, and

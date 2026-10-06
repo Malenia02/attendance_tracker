@@ -3,6 +3,7 @@ import { Outlet } from "react-router";
 import Footer from "./Footer";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
+import UpdateNotice from "./UpdateNotice";
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -25,6 +26,7 @@ export default function MainLayout() {
         />
 
         <main className="main-content">
+          <UpdateNotice />
           <Outlet />
         </main>
 

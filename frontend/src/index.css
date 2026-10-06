@@ -9,6 +9,7 @@
 @import "./styles/layout/sidebar.css";
 @import "./styles/layout/app-layout.css";
 @import "./styles/layout/footer.css";
+@import "./styles/components/update-notice.css";
 @import "./styles/components/notification-bell.css";
 @import "./styles/components/toasts.css";
 
@@ -18,6 +19,7 @@
 @import "./styles/pages/personnel-onboarding.css";
 @import "./styles/pages/notifications.css";
 @import "./styles/pages/system-health.css";
+@import "./styles/pages/about.css";
 @import "./styles/pages/login.css";
 
 /* Shared administration components used by system users and personnel */

@@ -14,6 +14,7 @@ import ActivityLogs from "../pages/ActivityLogs";
 import ErrorPage from "../pages/ErrorPage";
 import Schedules from "../pages/Schedules";
 import LeaveRequests from "../pages/LeaveRequests";
+import About from "../pages/About";
 
 const ActionCenter = lazy(() => import("../pages/ActionCenter"));
 const Dashboard = lazy(() => import("../pages/Dashboard"));
@@ -76,6 +77,7 @@ export default function AppRoutes() {
           }
         />
         <Route path="attendance" element={<Attendance />} />
+        <Route path="about" element={<About />} />
         <Route path="leave-requests" element={<LeaveRequests />} />
         <Route path="personnel" element={<Personnel />} />
         <Route

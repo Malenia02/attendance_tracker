@@ -183,6 +183,13 @@
   font-size: 9px !important;
 }
 
+.app-footer-copyright a {
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 @media (max-width: 1050px) {
   .app-footer {
     grid-template-columns: minmax(220px, 1fr) auto;

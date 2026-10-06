@@ -87,6 +87,15 @@
       ]
     },
     {
+      "source": "/version.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
       "source": "/index.html",
       "headers": [
         {

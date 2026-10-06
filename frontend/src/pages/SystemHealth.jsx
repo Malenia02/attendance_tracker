@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   CalendarClock,
@@ -83,11 +83,15 @@ export default function SystemHealth() {
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
+  function refreshChecks() {
+    setLoading(true);
+    setError("");
+    setRefreshKey((key) => key + 1);
+  }
+
   useEffect(() => {
     const controller = new AbortController();
 
-    setLoading(true);
-    setError("");
     apiFetch("/system-health", { signal: controller.signal })
       .then(readResponse)
       .then(setHealth)
@@ -102,16 +106,17 @@ export default function SystemHealth() {
   }, [refreshKey]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setRefreshKey((key) => key + 1), 60_000);
+    const interval = window.setInterval(() => {
+      setLoading(true);
+      setError("");
+      setRefreshKey((key) => key + 1);
+    }, 60_000);
     return () => window.clearInterval(interval);
   }, []);
 
   const overall = health?.overall_status || "warning";
   const statusCopy = STATUS_COPY[overall] || STATUS_COPY.warning;
-  const checkedLabel = useMemo(
-    () => health?.checked_at ? formatDateTime(health.checked_at) : "Not checked yet",
-    [health?.checked_at],
-  );
+  const checkedLabel = health?.checked_at ? formatDateTime(health.checked_at) : "Not checked yet";
 
   return (
     <section className="system-health-page">
@@ -135,7 +140,7 @@ export default function SystemHealth() {
         <div className="system-health-error" role="alert">
           <CircleAlert size={19} />
           <div><strong>Health data could not be loaded</strong><span>{error}</span></div>
-          <button type="button" onClick={() => setRefreshKey((key) => key + 1)}>Try again</button>
+          <button type="button" onClick={refreshChecks}>Try again</button>
         </div>
       )}
 
@@ -155,7 +160,7 @@ export default function SystemHealth() {
                 <h2>{statusCopy.title}</h2>
                 <p>{statusCopy.description}</p>
               </div>
-              <button type="button" onClick={() => setRefreshKey((key) => key + 1)} disabled={loading}>
+              <button type="button" onClick={refreshChecks} disabled={loading}>
                 <RefreshCw size={16} className={loading ? "spinning" : ""} />
                 {loading ? "Checking…" : "Refresh checks"}
               </button>

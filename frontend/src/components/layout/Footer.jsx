@@ -1,5 +1,7 @@
 import { Code2, ExternalLink, ShieldCheck, Sparkles } from "lucide-react";
 import DilgSeal from "../branding/DilgSeal";
+import { Link } from "react-router";
+import { appVersion } from "../../lib/release";
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -38,7 +40,12 @@ export default function Footer() {
           </span>
           <ExternalLink size={12} />
         </a>
-        <small className="app-footer-copyright">{"\u00A9"} {year} Malenia02. All rights reserved.</small>
+        <small className="app-footer-copyright">
+          <Link to="/about" aria-label={`About DILG AttendanceHub, version ${appVersion}`}>
+            About · v{appVersion}
+          </Link>
+          {" · \u00A9 "}{year} Malenia02. All rights reserved.
+        </small>
       </div>
     </footer>
   );
