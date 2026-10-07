@@ -6,6 +6,16 @@ both values; `version.json` lets an already-open browser detect a newer build.
 The update notice never reloads the page automatically, so an unfinished form
 is not discarded without the user's choice.
 
+## Current release
+
+### v0.1.1 - 2026-10-07
+
+- Replaced technical error pages and raw API failures with clear, actionable messages.
+- Kept exception details in internal logs and attached request IDs for support.
+- Added frontend proxy safeguards and automated tests that prevent stack-trace leakage.
+
+Deployment notes: no database migration or new environment variable is required.
+
 ## Version numbers
 
 Use `MAJOR.MINOR.PATCH` and Git tags such as `v0.1.0`:
