@@ -30,7 +30,6 @@ class ErrorBoundary extends Component {
       return (
         <ErrorPage
           code={500}
-          error={this.state.error}
           onReset={() => this.setState({ error: null })}
         />
       );

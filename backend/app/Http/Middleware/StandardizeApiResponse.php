@@ -65,18 +65,18 @@ final class StandardizeApiResponse
     private function fallbackMessage(int $status): string
     {
         return match ($status) {
-            400 => 'The request is invalid.',
+            400 => 'We could not accept this request. Check your entries and try again.',
             401 => 'Your login session is no longer valid. Please sign in again.',
-            403 => 'You do not have permission to perform this action.',
-            404 => 'The requested resource was not found.',
-            405 => 'The HTTP method is not allowed for this endpoint.',
-            409 => 'The request conflicts with the current resource state.',
+            403 => 'You do not have permission to do this. Contact your administrator if you need access.',
+            404 => 'We could not find the requested item. Refresh the page and try again.',
+            405 => 'This action is unavailable. Refresh the page and try again.',
+            409 => 'This item changed while you were working. Refresh the page and try again.',
             419 => 'Your secure session token has expired. Refresh the page and try again.',
             422 => 'Some fields are invalid.',
             429 => 'Too many requests. Please wait and try again.',
             default => $status >= 500
-                ? 'The server hit an unexpected problem. Please try again or give the request ID to the administrator.'
-                : 'The request was rejected.',
+                ? 'We could not complete your request. Please try again. If it continues, contact your administrator with the request ID.'
+                : 'We could not complete this request. Check your entries and try again.',
         };
     }
 }

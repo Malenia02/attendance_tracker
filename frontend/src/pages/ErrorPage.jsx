@@ -6,7 +6,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import DilgSeal from "../components/branding/DilgSeal";
 import { getStoredUser } from "../lib/auth";
 import "../styles/pages/error-page.css";
@@ -15,22 +15,20 @@ const ERROR_CONTENT = {
   404: {
     eyebrow: "Page not found",
     title: "We could not find that page",
-    message: "The page may have moved, the address may be incorrect, or your account may not have a link to it.",
+    message: "The link may be outdated or the address may be incorrect. Return to AttendanceHub and try again.",
   },
   500: {
     eyebrow: "Application error",
     title: "Something did not load correctly",
-    message: "The interface encountered an unexpected problem. Reload the page before repeating your last action.",
+    message: "Please reload the page and try again. If the problem continues, contact your DILG system administrator.",
   },
 };
 
 export default function ErrorPage({
   code = 404,
   embedded = false,
-  error = null,
   onReset = null,
 }) {
-  const location = useLocation();
   const authenticated = Boolean(getStoredUser());
   const homePath = authenticated ? "/dashboard" : "/login";
   const content = ERROR_CONTENT[code] || ERROR_CONTENT[500];
@@ -69,21 +67,13 @@ export default function ErrorPage({
         </div>
 
         <div className="error-page-content">
-          <div className="error-page-code" aria-hidden="true">
-            <span>{code}</span>
-            <i><TriangleAlert size={24} /></i>
+          <div className="error-page-symbol" aria-hidden="true">
+            <TriangleAlert size={34} />
           </div>
 
           <span className="error-page-eyebrow"><ShieldCheck size={14} />{content.eyebrow}</span>
           <h1 id="error-page-title">{content.title}</h1>
           <p>{content.message}</p>
-
-          {code === 404 && (
-            <div className="error-page-location">
-              <span>Requested address</span>
-              <code>{location.pathname}</code>
-            </div>
-          )}
 
           <div className="error-page-actions">
             {code === 500 ? (
@@ -103,13 +93,6 @@ export default function ErrorPage({
               Go back
             </button>
           </div>
-
-          {import.meta.env.DEV && error?.message && (
-            <details className="error-technical-details">
-              <summary>Developer details</summary>
-              <code>{error.message}</code>
-            </details>
-          )}
         </div>
 
         <footer className="error-page-footer">

@@ -109,6 +109,10 @@ jobs:
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Check frontend lint and proxy error tests
+        working-directory: frontend
+        run: npm run lint && npm test
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build

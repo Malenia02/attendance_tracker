@@ -86,10 +86,57 @@ function xsrfToken() {
 }
 
 export async function initializeCsrf() {
-  return fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
+  try {
+    return await fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+  } catch (error) {
+    console.error("Secure login initialization failed", error);
+    throw new Error("We could not start a secure login session. Check your connection and try again.", { cause: error });
+  }
+}
+
+function safeApiErrorResponse(response) {
+  const requestId = response.headers.get("X-Request-ID") || "";
+  const message = response.status >= 500
+    ? "We could not complete your request. Please try again. If it continues, contact your administrator with the request ID."
+    : "We could not complete this request. Refresh the page and try again.";
+
+  return new Response(JSON.stringify({
+    success: false,
+    message,
+    error: { code: "REQUEST_FAILED", message },
+    request_id: requestId,
+  }), {
+    status: response.status,
+    headers: {
+      "Content-Type": "application/json",
+      ...(requestId ? { "X-Request-ID": requestId } : {}),
+    },
   });
+}
+
+async function sanitizeApiError(response, path, method) {
+  if (response.status < 400) return response;
+
+  const contentType = response.headers.get("Content-Type") || "";
+  let unsafe = response.status >= 500 || !contentType.includes("application/json");
+
+  if (!unsafe) {
+    const payload = await response.clone().json().catch(() => null);
+    unsafe = !payload || typeof payload !== "object" || "trace" in payload || "exception" in payload;
+  }
+
+  if (!unsafe) return response;
+
+  console.error("Attendance API request failed", {
+    path,
+    method,
+    status: response.status,
+    requestId: response.headers.get("X-Request-ID") || "",
+  });
+  return safeApiErrorResponse(response);
 }
 
 export async function apiFetch(path, options = {}) {
@@ -103,11 +150,20 @@ export async function apiFetch(path, options = {}) {
     headers.set("X-XSRF-TOKEN", csrf);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...fetchOptions,
-    headers,
-    credentials: "include",
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...fetchOptions,
+      headers,
+      credentials: "include",
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    console.error("Attendance API connection failed", { path, method, error });
+    throw new Error("We could not connect to AttendanceHub. Check your connection and try again.", { cause: error });
+  }
+
+  response = await sanitizeApiError(response, path, method);
 
   await maybeNotifyMutation(response, method, path, { suppressToast });
 

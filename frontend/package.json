@@ -11,6 +11,7 @@
     "build": "vite build",
     "build:laravel": "vite build --mode laravel",
     "lint": "eslint .",
+    "test": "node --test tests/*.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

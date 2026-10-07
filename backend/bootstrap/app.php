@@ -55,6 +55,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->context(fn (): array => app()->bound('request')
+            ? ['request_id' => RequestId::for(request())]
+            : []);
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson()
         );
@@ -104,7 +108,7 @@ return Application::configure(basePath: dirname(__DIR__))
             $policyMessage = $exception->response()?->message();
             $message = is_string($policyMessage) && trim($policyMessage) !== ''
                 ? $policyMessage
-                : 'You do not have permission to perform this action.';
+                : 'You do not have permission to do this. Contact your administrator if you need access.';
             $status = $exception->status() ?? 403;
 
             return response()->json([
@@ -132,7 +136,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 : null;
             $message = is_string($policyMessage) && trim($policyMessage) !== ''
                 ? $policyMessage
-                : 'You do not have permission to perform this action.';
+                : 'You do not have permission to do this. Contact your administrator if you need access.';
 
             return response()->json([
                 'success' => false,
@@ -152,40 +156,62 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return response()->json([
                 'success' => false,
-                'message' => 'The requested resource was not found.',
+                'message' => 'We could not find the requested item. Refresh the page and try again.',
                 'error' => [
                     'code' => 'NOT_FOUND',
-                    'message' => 'The requested resource was not found.',
+                    'message' => 'We could not find the requested item. Refresh the page and try again.',
                 ],
                 'request_id' => RequestId::for($request),
             ], 404);
         });
 
         $exceptions->render(function (Throwable $exception, Request $request) {
-            if (! $request->is('api/*') || config('app.debug')) {
-                return null;
+            $status = match (true) {
+                $exception instanceof HttpExceptionInterface => $exception->getStatusCode(),
+                $exception instanceof ValidationException => 422,
+                $exception instanceof AuthenticationException => 401,
+                $exception instanceof AuthorizationException => $exception->status() ?? 403,
+                $exception instanceof ModelNotFoundException => 404,
+                default => 500,
+            };
+            if ($status < 400 || $status > 599) {
+                $status = 500;
             }
-
-            $status = $exception instanceof HttpExceptionInterface
-                ? $exception->getStatusCode()
-                : 500;
             $headers = $exception instanceof HttpExceptionInterface
                 ? $exception->getHeaders()
                 : [];
+
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                [$title, $message] = match ($status) {
+                    401 => ['Please sign in again', 'Your session has ended. Return to AttendanceHub to sign in.'],
+                    403 => ['You cannot open this page', 'Your account does not have access. Contact your administrator if you think this is a mistake.'],
+                    404 => ['We could not find that page', 'The link may be outdated. Return to AttendanceHub and try again.'],
+                    422 => ['Please check your information', 'Some information could not be accepted. Return and review your entries.'],
+                    default => ['Something did not load correctly', 'Please try again. If the problem continues, contact your DILG system administrator.'],
+                };
+
+                return response()->view('errors.friendly', [
+                    'title' => $title,
+                    'message' => $message,
+                    'requestId' => RequestId::for($request),
+                ], $status, $headers);
+            }
+
             $safeMessages = [
-                400 => 'The request is invalid.',
+                400 => 'We could not accept this request. Check your entries and try again.',
                 401 => 'Your login session is no longer valid. Please sign in again.',
-                403 => 'You do not have permission to perform this action.',
-                405 => 'The HTTP method is not allowed for this endpoint.',
-                409 => 'The request conflicts with the current resource state.',
+                403 => 'You do not have permission to do this. Contact your administrator if you need access.',
+                404 => 'We could not find the requested item. Refresh the page and try again.',
+                405 => 'This action is unavailable. Refresh the page and try again.',
+                409 => 'This item changed while you were working. Refresh the page and try again.',
                 419 => 'Your secure session token has expired. Refresh the page and try again.',
                 429 => 'Too many requests. Please wait and try again.',
-                500 => 'The server hit an unexpected problem. Please try again or give the request ID to the administrator.',
+                500 => 'We could not complete your request. Please try again. If it continues, contact your administrator with the request ID.',
             ];
             $message = $safeMessages[$status]
                 ?? ($status >= 500
-                    ? 'The server hit an unexpected problem. Please try again or give the request ID to the administrator.'
-                    : 'The request was rejected.');
+                    ? $safeMessages[500]
+                    : 'We could not complete this request. Check your entries and try again.');
             $code = match ($status) {
                 400 => 'BAD_REQUEST',
                 401 => 'UNAUTHENTICATED',
