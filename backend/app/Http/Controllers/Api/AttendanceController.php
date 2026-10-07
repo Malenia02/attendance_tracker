@@ -35,6 +35,7 @@ class AttendanceController extends Controller
         'Present',
         'Half Day',
         'Late',
+        'Absent',
         'Incomplete',
         'Not Started',
         'Leave',

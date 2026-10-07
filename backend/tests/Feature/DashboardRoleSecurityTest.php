@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +45,7 @@ class DashboardRoleSecurityTest extends TestCase
             $table->id('personnel_id');
             $table->unsignedBigInteger('department_id')->nullable();
             $table->string('employee_number')->unique();
+            $table->string('personnel_type')->default('Regular');
             $table->string('first_name');
             $table->string('middle_name')->nullable();
             $table->string('last_name');
@@ -130,13 +132,24 @@ class DashboardRoleSecurityTest extends TestCase
             $table->uuid('request_id')->nullable();
             $table->timestamp('created_at')->nullable();
         });
+        Schema::create('holidays', function (Blueprint $table): void {
+            $table->id('holiday_id');
+            $table->unsignedBigInteger('department_id')->nullable();
+            $table->date('holiday_date');
+            $table->string('holiday_name');
+            $table->string('holiday_type');
+            $table->string('scope')->default('National');
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
         Cache::flush();
+        Carbon::setTestNow();
 
         foreach ([
+            'holidays',
             'activity_logs',
             'dtr_certifications',
             'leave_records',
@@ -281,7 +294,69 @@ class DashboardRoleSecurityTest extends TestCase
             ->assertJsonPath('operations.unassigned_personnel', 1)
             ->assertJsonPath('security.active_users', 1)
             ->assertJsonPath('security.locked_users', 1)
-            ->assertJsonPath('security.security_events_24h', 1);
+            ->assertJsonPath('security.security_events_24h', 1)
+            ->assertJsonStructure([
+                'workforce_today' => ['expected', 'present', 'absent', 'leave', 'not_started'],
+                'system_health' => ['overall_status', 'summary', 'checks'],
+            ]);
+    }
+
+    public function test_personnel_dashboard_shows_next_action_dtr_readiness_and_upcoming_calendar(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-07 07:30:00', 'Asia/Manila'));
+        $departmentId = $this->department('DILG-CALENDAR');
+        $personnelId = $this->personnel('CALENDAR-001', $departmentId, 'Calendar');
+        DB::table('personnel')->where('personnel_id', $personnelId)->update([
+            'personnel_type' => 'GIP',
+            'employment_start_date' => '2026-10-01',
+        ]);
+        $scheduleId = DB::table('work_schedules')->insertGetId([
+            'schedule_name' => 'Standard schedule',
+            'morning_start' => '07:00:00',
+            'morning_end' => '12:00:00',
+            'afternoon_start' => '13:00:00',
+            'afternoon_end' => '18:00:00',
+            'required_minutes_per_day' => 600,
+            'monday' => true,
+            'tuesday' => true,
+            'wednesday' => true,
+            'thursday' => true,
+            'friday' => false,
+            'saturday' => false,
+            'sunday' => false,
+            'status' => 'Active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('personnel_schedules')->insert([
+            'personnel_id' => $personnelId,
+            'schedule_id' => $scheduleId,
+            'effective_from' => '2026-10-01',
+            'created_at' => now(),
+        ]);
+        DB::table('holidays')->insert([
+            'holiday_date' => '2026-10-12',
+            'holiday_name' => 'Office Foundation Day',
+            'holiday_type' => 'Local Holiday',
+            'scope' => 'Local',
+            'department_id' => $departmentId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = $this->user('calendar-dashboard', 'Personnel', $personnelId);
+
+        $this->actingAs($user)->getJson('/api/dashboard?refresh=1')
+            ->assertOk()
+            ->assertJsonPath('today_attendance.next_action', 'morning_time_in')
+            ->assertJsonPath('today_attendance.action_available', true)
+            ->assertJsonPath('dtr.period', 'first_half')
+            ->assertJsonPath('upcoming_calendar.0.title', 'Office Foundation Day')
+            ->assertJsonStructure([
+                'dtr' => [
+                    'cutoff' => ['state', 'cutoff_date', 'deadline_date'],
+                    'issues' => ['missing', 'incomplete', 'unverified', 'schedule_gaps'],
+                ],
+            ]);
     }
 
     public function test_role_change_cannot_reuse_a_cached_administrator_dashboard(): void

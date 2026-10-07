@@ -25,6 +25,18 @@ import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 import AttendanceCorrectionRequestModal from "../components/attendance/AttendanceCorrectionRequestModal";
 
+const DASHBOARD_STATUS_FILTERS = new Set([
+  "Present",
+  "Half Day",
+  "Late",
+  "Absent",
+  "Incomplete",
+  "Not Started",
+  "Leave",
+  "Official Business",
+  "Holiday",
+]);
+
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -66,6 +78,7 @@ export default function Attendance() {
   const requestedDate = searchParams.get("date");
   const requestedPersonnelId = searchParams.get("personnel");
   const requestedSearch = searchParams.get("search") || "";
+  const requestedStatus = searchParams.get("status") || "";
   const currentUser = getStoredUser();
   const canVerify = ["Administrator", "HR", "Supervisor"].includes(currentUser?.user_role);
   const canCorrect = ["Administrator", "HR"].includes(currentUser?.user_role);
@@ -100,7 +113,9 @@ export default function Attendance() {
   });
   const [selectedPersonnelId, setSelectedPersonnelId] = useState("");
   const [search, setSearch] = useState(requestedSearch);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(
+    DASHBOARD_STATUS_FILTERS.has(requestedStatus) ? requestedStatus : "",
+  );
   const [sortOption, setSortOption] = useState("name:asc");
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);

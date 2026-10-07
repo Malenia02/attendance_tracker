@@ -7,19 +7,22 @@ use App\Models\AttendanceCorrectionRequest;
 use App\Models\AttendanceRecord;
 use App\Models\Department;
 use App\Models\DtrCertification;
+use App\Models\Holiday;
 use App\Models\LeaveRecord;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Models\User;
 use App\Support\DtrPeriod;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 
 final class RoleDashboardService
 {
     public function __construct(
-        private readonly DtrCutoffService $cutoffs
+        private readonly DtrCutoffService $cutoffs,
+        private readonly SystemHealthService $systemHealth
     ) {}
 
     public function for(User $user): array
@@ -109,11 +112,12 @@ final class RoleDashboardService
                 'date_to' => $leave->date_to->toDateString(),
                 'status' => $leave->approval_status,
             ]);
-        $currentDtrPeriod = $this->cutoffs->currentContext($personnel)['period'];
+        $dtrContext = $this->cutoffs->currentContext($personnel);
+        $currentDtrPeriod = $dtrContext['period'];
         $dtr = DtrCertification::query()
             ->where('personnel_id', $personnel->personnel_id)
-            ->where('dtr_year', $monthStart->year)
-            ->where('dtr_month', $monthStart->month)
+            ->where('dtr_year', $dtrContext['year'])
+            ->where('dtr_month', $dtrContext['month_number'])
             ->whereIn('dtr_period', [$currentDtrPeriod, DtrPeriod::FULL_MONTH])
             ->orderByRaw(
                 'CASE WHEN dtr_period = ? THEN 0 WHEN dtr_period = ? THEN 1 ELSE 2 END',
@@ -121,6 +125,9 @@ final class RoleDashboardService
             )
             ->latest('version_number')
             ->first();
+        if ($dtr && $dtr->dtr_period !== $dtrContext['period']) {
+            $dtrContext = $this->cutoffs->context($monthStart, $dtr->dtr_period);
+        }
         $recentAttendance = (clone $attendanceQuery)
             ->latest('attendance_date')
             ->limit(7)
@@ -152,19 +159,18 @@ final class RoleDashboardService
                     'late_minutes' => (int) ($totals->late_minutes ?? 0),
                     'undertime_minutes' => (int) ($totals->undertime_minutes ?? 0),
                 ],
-                'today_attendance' => $this->formatTodayRecord($todayRecord),
+                'today_attendance' => $this->formatTodayRecord($todayRecord, $assignment, $personnel),
                 'schedule' => $this->formatSchedule($assignment),
                 'leave' => [
                     'pending' => (int) ($leaveSummary->pending ?? 0),
                     'approved' => (int) ($leaveSummary->approved ?? 0),
                     'recent' => $recentLeaves,
                 ],
-                'dtr' => [
-                    'status' => $dtr?->certification_status ?? 'Not started',
-                    'period' => $dtr?->dtr_period ?? $currentDtrPeriod,
-                    'version' => $dtr?->version_number,
-                    'updated_at' => $dtr?->updated_at?->toISOString(),
-                ],
+                'dtr' => $this->dtrReadiness($personnel, $dtrContext, $dtr),
+                'upcoming_calendar' => $this->upcomingCalendar(
+                    $personnel->department_id,
+                    $personnel->personnel_id
+                ),
                 'recent_attendance' => $recentAttendance,
             ],
         ];
@@ -185,6 +191,8 @@ final class RoleDashboardService
                     'attendance_statuses' => [],
                     'pending_leave' => [],
                     'lifecycle' => $this->emptyLifecycleOverview(),
+                    'workforce_today' => $this->emptyWorkforceBreakdown(),
+                    'upcoming_calendar' => [],
                 ],
             ];
         }
@@ -251,6 +259,8 @@ final class RoleDashboardService
                 'attendance_statuses' => $statuses,
                 'pending_leave' => $pendingLeave,
                 'lifecycle' => $this->lifecycleOverview($departmentId),
+                'workforce_today' => $this->workforceBreakdown($departmentId),
+                'upcoming_calendar' => $this->upcomingCalendar($departmentId),
             ],
         ];
     }
@@ -264,6 +274,8 @@ final class RoleDashboardService
                 'queues' => $this->globalWorkflowQueues(),
                 'queue_preview' => $this->globalQueuePreview(),
                 'lifecycle' => $this->lifecycleOverview(),
+                'workforce_today' => $this->workforceBreakdown(),
+                'upcoming_calendar' => $this->upcomingCalendar(),
             ],
         ];
     }
@@ -334,6 +346,9 @@ final class RoleDashboardService
                 ],
                 'queue_preview' => $this->globalQueuePreview(),
                 'lifecycle' => $this->lifecycleOverview(),
+                'workforce_today' => $this->workforceBreakdown(),
+                'upcoming_calendar' => $this->upcomingCalendar(),
+                'system_health' => $this->dashboardHealth(),
             ],
         ];
     }
@@ -524,13 +539,368 @@ final class RoleDashboardService
         ];
     }
 
-    private function formatTodayRecord(?AttendanceRecord $record): array
+    private function dtrReadiness(
+        Personnel $personnel,
+        array $context,
+        ?DtrCertification $certification
+    ): array {
+        $cutoff = today()->lessThan($context['end']) ? today() : $context['end']->copy();
+        $assignments = PersonnelSchedule::query()
+            ->with('schedule')
+            ->where('personnel_id', $personnel->personnel_id)
+            ->whereDate('effective_from', '<=', $cutoff)
+            ->where(function (Builder $query) use ($context): void {
+                $query->whereNull('effective_to')
+                    ->orWhereDate('effective_to', '>=', $context['start']);
+            })
+            ->orderByDesc('effective_from')
+            ->get();
+        $records = AttendanceRecord::query()
+            ->where('personnel_id', $personnel->personnel_id)
+            ->whereBetween('attendance_date', [
+                $context['start']->toDateString(),
+                $cutoff->toDateString(),
+            ])
+            ->get()
+            ->keyBy(fn (AttendanceRecord $record): string => $record->attendance_date->toDateString());
+        $holidays = Holiday::query()
+            ->whereBetween('holiday_date', [
+                $context['start']->toDateString(),
+                $cutoff->toDateString(),
+            ])
+            ->where(function (Builder $query) use ($personnel): void {
+                $query->whereNull('department_id')
+                    ->orWhere('department_id', $personnel->department_id);
+            })
+            ->get()
+            ->groupBy(fn (Holiday $holiday): string => $holiday->holiday_date->toDateString());
+        $expected = 0;
+        $missing = 0;
+        $incomplete = 0;
+        $unverified = 0;
+        $scheduleGaps = 0;
+
+        foreach (CarbonPeriod::create($context['start'], $cutoff) as $date) {
+            if ($personnel->employment_start_date && $date->lessThan($personnel->employment_start_date)) {
+                continue;
+            }
+            if ($personnel->employment_end_date && $date->greaterThan($personnel->employment_end_date)) {
+                continue;
+            }
+
+            $assignment = $assignments->first(
+                fn (PersonnelSchedule $item): bool => $item->effective_from->lte($date)
+                    && (! $item->effective_to || $item->effective_to->gte($date))
+            );
+            $schedule = $assignment?->schedule;
+            if (! $schedule) {
+                $scheduleGaps++;
+
+                continue;
+            }
+
+            $events = $holidays->get($date->toDateString(), collect());
+            $holiday = $events->first(
+                fn (Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday'
+            );
+            $specialWorkingDay = $events->contains(
+                fn (Holiday $event): bool => $event->holiday_type === 'Special Working Holiday'
+            );
+            $isDutyDay = ! $holiday
+                && ($schedule->{strtolower($date->format('l'))} || $specialWorkingDay);
+            if (! $isDutyDay) {
+                continue;
+            }
+
+            $expected++;
+            $record = $records->get($date->toDateString());
+            if (! $record) {
+                $missing++;
+
+                continue;
+            }
+            if ($record->attendance_status === 'Incomplete') {
+                $incomplete++;
+            }
+            if (! $record->is_verified) {
+                $unverified++;
+            }
+        }
+
+        $resolved = max(0, $expected - $missing - $incomplete);
+        $timeline = $this->cutoffs->timeline($context, $certification?->certification_status);
+
+        return [
+            'status' => $certification?->certification_status ?? 'Not started',
+            'period' => $certification?->dtr_period ?? $context['period'],
+            'period_label' => $context['label'],
+            'version' => $certification?->version_number,
+            'updated_at' => $certification?->updated_at?->toISOString(),
+            'cutoff' => $timeline,
+            'expected_days' => $expected,
+            'completion_percent' => $expected > 0
+                ? (int) round(($resolved / $expected) * 100)
+                : null,
+            'issues' => [
+                'missing' => $missing,
+                'incomplete' => $incomplete,
+                'unverified' => $unverified,
+                'schedule_gaps' => $scheduleGaps,
+            ],
+            'is_ready' => $scheduleGaps === 0
+                && $expected > 0
+                && $missing === 0
+                && $incomplete === 0
+                && $unverified === 0,
+        ];
+    }
+
+    private function workforceBreakdown(?int $departmentId = null): array
     {
+        $date = today();
+        $events = Holiday::query()
+            ->whereDate('holiday_date', $date)
+            ->get();
+        $nonWorking = $events->where('holiday_type', '!=', 'Special Working Holiday');
+        $globalHoliday = $nonWorking->contains(fn (Holiday $event): bool => ! $event->department_id);
+        $nonWorkingDepartments = $nonWorking->pluck('department_id')->filter()->map(
+            fn ($id): int => (int) $id
+        )->values()->all();
+        if ($globalHoliday || ($departmentId && in_array($departmentId, $nonWorkingDepartments, true))) {
+            return $this->emptyWorkforceBreakdown();
+        }
+
+        $specialWorking = $events->where('holiday_type', 'Special Working Holiday');
+        $globalSpecialWorking = $specialWorking->contains(fn (Holiday $event): bool => ! $event->department_id);
+        $specialWorkingDepartments = $specialWorking->pluck('department_id')->filter()->map(
+            fn ($id): int => (int) $id
+        )->values()->all();
+        $dayField = strtolower($date->format('l'));
+        $activeAssignment = function (Builder $query) use ($date): void {
+            $query->whereDate('effective_from', '<=', $date)
+                ->where(function (Builder $dates) use ($date): void {
+                    $dates->whereNull('effective_to')
+                        ->orWhereDate('effective_to', '>=', $date);
+                })
+                ->whereHas('schedule', fn (Builder $schedule) => $schedule->where('status', 'Active'));
+        };
+        $regularAssignment = function (Builder $query) use ($activeAssignment, $dayField): void {
+            $activeAssignment($query);
+            $query->whereHas(
+                'schedule',
+                fn (Builder $schedule) => $schedule->where($dayField, true)
+            );
+        };
+        $expectedQuery = Personnel::query()
+            ->where('status', 'Active')
+            ->when($departmentId, fn (Builder $query) => $query->where('department_id', $departmentId))
+            ->when(
+                $nonWorkingDepartments !== [],
+                fn (Builder $query) => $query->whereNotIn('department_id', $nonWorkingDepartments)
+            )
+            ->where(function (Builder $query) use ($date): void {
+                $query->whereNull('employment_start_date')
+                    ->orWhereDate('employment_start_date', '<=', $date);
+            })
+            ->where(function (Builder $query) use ($date): void {
+                $query->whereNull('employment_end_date')
+                    ->orWhereDate('employment_end_date', '>=', $date);
+            })
+            ->whereHas('scheduleAssignments', $activeAssignment);
+
+        if (! $globalSpecialWorking) {
+            $expectedQuery->where(function (Builder $query) use (
+                $regularAssignment,
+                $specialWorkingDepartments
+            ): void {
+                $query->whereHas('scheduleAssignments', $regularAssignment);
+                if ($specialWorkingDepartments !== []) {
+                    $query->orWhereIn('department_id', $specialWorkingDepartments);
+                }
+            });
+        }
+
+        $expectedIds = (clone $expectedQuery)->select('personnel_id');
+        $attendanceBase = AttendanceRecord::query()
+            ->whereDate('attendance_date', $date)
+            ->whereIn('personnel_id', clone $expectedIds);
+        $attendance = (clone $attendanceBase)
+            ->selectRaw('attendance_status, COUNT(DISTINCT personnel_id) as total')
+            ->groupBy('attendance_status')
+            ->pluck('total', 'attendance_status');
+        $covered = (clone $expectedQuery)
+            ->where(function (Builder $query) use ($date): void {
+                $query->whereHas(
+                    'attendanceRecords',
+                    fn (Builder $attendance) => $attendance->whereDate('attendance_date', $date)
+                )->orWhereHas('leaveRecords', function (Builder $leave) use ($date): void {
+                    $leave->where('approval_status', 'Approved')
+                        ->whereDate('date_from', '<=', $date)
+                        ->whereDate('date_to', '>=', $date);
+                });
+            })
+            ->count();
+        $leaveCount = $this->coveredLeaveCount($expectedQuery, false);
+        $officialBusinessCount = $this->coveredLeaveCount($expectedQuery, true);
+        $expected = (clone $expectedQuery)->count();
+
+        return [
+            'expected' => $expected,
+            'recorded' => (clone $attendanceBase)->distinct()->count('personnel_id'),
+            'present' => (int) (($attendance['Present'] ?? 0) + ($attendance['Half Day'] ?? 0)),
+            'absent' => (int) ($attendance['Absent'] ?? 0),
+            'leave' => max((int) ($attendance['Leave'] ?? 0), $leaveCount),
+            'official_business' => max(
+                (int) ($attendance['Official Business'] ?? 0),
+                $officialBusinessCount
+            ),
+            'incomplete' => (int) ($attendance['Incomplete'] ?? 0),
+            'not_started' => max(0, $expected - $covered),
+        ];
+    }
+
+    private function coveredLeaveCount(Builder $expectedQuery, bool $officialBusiness): int
+    {
+        return (clone $expectedQuery)
+            ->whereHas('leaveRecords', function (Builder $query) use ($officialBusiness): void {
+                $query->where('approval_status', 'Approved')
+                    ->whereDate('date_from', '<=', today())
+                    ->whereDate('date_to', '>=', today())
+                    ->when(
+                        $officialBusiness,
+                        fn (Builder $leave) => $leave->where('leave_type', 'Official Business'),
+                        fn (Builder $leave) => $leave->where('leave_type', '!=', 'Official Business')
+                    );
+            })
+            ->count();
+    }
+
+    private function emptyWorkforceBreakdown(): array
+    {
+        return [
+            'expected' => 0,
+            'recorded' => 0,
+            'present' => 0,
+            'absent' => 0,
+            'leave' => 0,
+            'official_business' => 0,
+            'incomplete' => 0,
+            'not_started' => 0,
+        ];
+    }
+
+    private function upcomingCalendar(?int $departmentId = null, ?int $personnelId = null): array
+    {
+        $start = today();
+        $end = today()->addDays(14);
+        $holidays = Holiday::query()
+            ->select([
+                'holiday_id',
+                'department_id',
+                'holiday_date',
+                'holiday_name',
+                'holiday_type',
+                'scope',
+            ])
+            ->with('department:department_id,department_code')
+            ->whereBetween('holiday_date', [$start, $end])
+            ->when($departmentId, fn (Builder $query) => $query->where(function (Builder $scope) use ($departmentId): void {
+                $scope->whereNull('department_id')->orWhere('department_id', $departmentId);
+            }))
+            ->orderBy('holiday_date')
+            ->limit(12)
+            ->get()
+            ->map(fn (Holiday $holiday): array => [
+                'id' => 'holiday-'.$holiday->holiday_id,
+                'type' => $holiday->holiday_type === 'Special Working Holiday' ? 'duty_day' : 'holiday',
+                'date' => $holiday->holiday_date->toDateString(),
+                'title' => $holiday->holiday_name,
+                'detail' => $holiday->department?->department_code ?? $holiday->scope,
+            ]);
+
+        $personalEvents = collect();
+        if ($personnelId) {
+            $leaves = LeaveRecord::query()
+                ->where('personnel_id', $personnelId)
+                ->where('approval_status', 'Approved')
+                ->whereDate('date_from', '<=', $end)
+                ->whereDate('date_to', '>=', $start)
+                ->orderBy('date_from')
+                ->limit(6)
+                ->get(['leave_id', 'leave_type', 'date_from', 'date_to'])
+                ->map(function (LeaveRecord $leave) use ($start): array {
+                    $displayDate = $leave->date_from->lessThan($start) ? $start : $leave->date_from;
+
+                    return [
+                        'id' => 'leave-'.$leave->leave_id,
+                        'type' => $leave->leave_type === 'Official Business' ? 'official_business' : 'leave',
+                        'date' => $displayDate->toDateString(),
+                        'title' => $leave->leave_type,
+                        'detail' => $leave->date_from->equalTo($leave->date_to)
+                            ? 'Approved for this date'
+                            : 'Approved through '.$leave->date_to->format('M j'),
+                    ];
+                });
+            $scheduleChanges = PersonnelSchedule::query()
+                ->with('schedule:schedule_id,schedule_name')
+                ->where('personnel_id', $personnelId)
+                ->whereBetween('effective_from', [$start->copy()->addDay(), $end])
+                ->orderBy('effective_from')
+                ->limit(4)
+                ->get()
+                ->map(fn (PersonnelSchedule $assignment): array => [
+                    'id' => 'schedule-'.$assignment->personnel_schedule_id,
+                    'type' => 'schedule',
+                    'date' => $assignment->effective_from->toDateString(),
+                    'title' => 'Schedule assignment starts',
+                    'detail' => $assignment->schedule?->schedule_name ?? 'Assigned work schedule',
+                ]);
+            $personalEvents = $leaves->concat($scheduleChanges);
+        }
+
+        return $holidays
+            ->concat($personalEvents)
+            ->sortBy(fn (array $event): string => $event['date'].'-'.$event['id'])
+            ->take(8)
+            ->values()
+            ->all();
+    }
+
+    private function dashboardHealth(): array
+    {
+        $health = $this->systemHealth->snapshot();
+
+        return [
+            'overall_status' => $health['overall_status'],
+            'checked_at' => $health['checked_at'],
+            'release' => $health['release'],
+            'summary' => $health['summary'],
+            'checks' => collect($health['checks'])
+                ->whereIn('key', ['api', 'database', 'scheduler', 'backup'])
+                ->map(fn (array $check): array => [
+                    'key' => $check['key'],
+                    'label' => $check['label'],
+                    'status' => $check['status'],
+                    'message' => $check['message'],
+                    'last_success_at' => $check['last_success_at'],
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    private function formatTodayRecord(
+        ?AttendanceRecord $record,
+        ?PersonnelSchedule $assignment,
+        Personnel $personnel
+    ): array {
+        $action = $this->attendanceAction($record, $assignment, $personnel);
+
         if (! $record) {
             return [
                 'recorded' => false,
                 'status' => 'Not started',
-                'next_action' => 'morning_time_in',
+                ...$action,
             ];
         }
 
@@ -543,7 +913,144 @@ final class RoleDashboardService
             'afternoon_out' => $record->afternoon_time_out?->format('h:i A'),
             'work_minutes' => $record->total_work_minutes,
             'verified' => $record->is_verified,
-            'next_action' => $record->next_action,
+            ...$action,
+        ];
+    }
+
+    private function attendanceAction(
+        ?AttendanceRecord $record,
+        ?PersonnelSchedule $assignment,
+        Personnel $personnel
+    ): array {
+        $schedule = $assignment?->schedule;
+        $now = now(config('app.timezone'));
+
+        if (! $schedule) {
+            return $this->actionResult(null, 'No active work schedule is assigned. Contact HR or your administrator.');
+        }
+
+        $events = Holiday::query()
+            ->whereDate('holiday_date', $now->toDateString())
+            ->where(function (Builder $query) use ($personnel): void {
+                $query->whereNull('department_id')
+                    ->orWhere('department_id', $personnel->department_id);
+            })
+            ->get();
+        $holiday = $events->first(
+            fn (Holiday $event): bool => $event->holiday_type !== 'Special Working Holiday'
+        );
+        if ($holiday) {
+            return $this->actionResult(null, 'Attendance is closed for '.$holiday->holiday_name.'.');
+        }
+
+        $specialWorkingDay = $events->contains(
+            fn (Holiday $event): bool => $event->holiday_type === 'Special Working Holiday'
+        );
+        $dayField = strtolower($now->format('l'));
+        if (! $schedule->{$dayField} && ! $specialWorkingDay) {
+            return $this->actionResult(null, 'Today is not a duty day in your assigned schedule.');
+        }
+
+        if ($record && in_array($record->attendance_status, [
+            'Absent',
+            'Leave',
+            'Holiday',
+            'Rest Day',
+            'Official Business',
+            'Work From Home',
+            'Half Day',
+        ], true)) {
+            return $this->actionResult(
+                null,
+                'Today is marked as '.$record->attendance_status.' and does not accept another time entry.'
+            );
+        }
+
+        if ($record?->is_complete) {
+            return $this->actionResult(null, 'Today\'s required time entries are complete.');
+        }
+
+        $windows = [
+            [
+                'action' => 'morning_time_in',
+                'label' => 'Morning Time In',
+                'start' => $schedule->morning_time_in_start ?? $schedule->morning_start,
+                'end' => $schedule->morning_time_out_end ?? $schedule->morning_end,
+                'requires' => null,
+            ],
+            [
+                'action' => 'morning_time_out',
+                'label' => 'Morning Time Out',
+                'start' => $schedule->morning_time_out_start ?? $schedule->morning_end,
+                'end' => $schedule->morning_time_out_end ?? $schedule->morning_end,
+                'requires' => 'morning_time_in',
+            ],
+            [
+                'action' => 'afternoon_time_in',
+                'label' => 'Afternoon Time In',
+                'start' => $schedule->afternoon_time_in_start ?? $schedule->afternoon_start,
+                'end' => $schedule->afternoon_time_in_end ?? $schedule->afternoon_start,
+                'requires' => null,
+            ],
+            [
+                'action' => 'afternoon_time_out',
+                'label' => 'Afternoon Time Out',
+                'start' => $schedule->afternoon_time_out_start ?? $schedule->afternoon_end,
+                'end' => $schedule->afternoon_time_out_end ?? $schedule->afternoon_end,
+                'requires' => 'afternoon_time_in',
+            ],
+        ];
+
+        foreach ($windows as $window) {
+            if (! $window['start'] || ! $window['end'] || $record?->{$window['action']}) {
+                continue;
+            }
+
+            $start = Carbon::parse($now->toDateString().' '.$window['start'], $now->getTimezone());
+            $end = Carbon::parse($now->toDateString().' '.$window['end'], $now->getTimezone());
+            if (! $now->betweenIncluded($start, $end)) {
+                continue;
+            }
+
+            if ($window['requires'] && ! $record?->{$window['requires']}) {
+                return $this->actionResult(
+                    null,
+                    $window['label'].' requires the matching time-in entry.'
+                );
+            }
+
+            return $this->actionResult(
+                $window['action'],
+                $window['label'].' is available now.'
+            );
+        }
+
+        foreach ($windows as $window) {
+            if (! $window['start'] || $record?->{$window['action']}) {
+                continue;
+            }
+
+            $start = Carbon::parse($now->toDateString().' '.$window['start'], $now->getTimezone());
+            if ($start->greaterThan($now)) {
+                return $this->actionResult(
+                    null,
+                    $window['label'].' opens at '.$start->format('h:i A').'.'
+                );
+            }
+        }
+
+        return $this->actionResult(null, 'All attendance windows have closed for today.');
+    }
+
+    private function actionResult(?string $action, string $message): array
+    {
+        return [
+            'next_action' => $action,
+            'next_action_label' => $action
+                ? str($action)->replace('_', ' ')->title()->toString()
+                : null,
+            'action_available' => $action !== null,
+            'action_message' => $message,
         ];
     }
 
@@ -610,10 +1117,30 @@ final class RoleDashboardService
                 'recorded' => false,
                 'status' => 'Unavailable',
                 'next_action' => null,
+                'next_action_label' => null,
+                'action_available' => false,
+                'action_message' => 'Link this account to a personnel record to use attendance.',
             ],
             'schedule' => ['assigned' => false],
             'leave' => ['pending' => 0, 'approved' => 0, 'recent' => []],
-            'dtr' => ['status' => 'Not started', 'version' => null, 'updated_at' => null],
+            'dtr' => [
+                'status' => 'Not started',
+                'period' => null,
+                'period_label' => 'Unavailable',
+                'version' => null,
+                'updated_at' => null,
+                'cutoff' => null,
+                'expected_days' => 0,
+                'completion_percent' => null,
+                'issues' => [
+                    'missing' => 0,
+                    'incomplete' => 0,
+                    'unverified' => 0,
+                    'schedule_gaps' => 0,
+                ],
+                'is_ready' => false,
+            ],
+            'upcoming_calendar' => [],
             'recent_attendance' => [],
         ];
     }

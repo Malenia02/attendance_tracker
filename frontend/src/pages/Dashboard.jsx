@@ -8,13 +8,18 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  CalendarRange,
+  CheckCircle2,
   ClipboardCheck,
   Clock3,
+  DatabaseBackup,
   FileCheck2,
   FileWarning,
+  HeartPulse,
   ListChecks,
   LockKeyhole,
   QrCode,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   TimerReset,
@@ -73,6 +78,14 @@ function greeting() {
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
+}
+
+function relativeTime(value, now) {
+  if (!value) return "Not updated yet";
+  const seconds = Math.max(0, Math.floor((now - new Date(value)) / 1000));
+  if (seconds < 10) return "Updated just now";
+  if (seconds < 60) return `Updated ${seconds}s ago`;
+  return `Updated ${Math.floor(seconds / 60)}m ago`;
 }
 
 function MetricCard({ label, value, helper, icon: Icon, tone = "blue", path }) {
@@ -169,6 +182,94 @@ function LifecyclePanel({ lifecycle, title = "Employment lifecycle" }) {
   );
 }
 
+const WORKFORCE_ITEMS = [
+  ["expected", "Expected", ""],
+  ["present", "Present", "Present"],
+  ["not_started", "Not started", "Not Started"],
+  ["absent", "Absent", "Absent"],
+  ["leave", "On leave", "Leave"],
+  ["official_business", "Official business", "Official Business"],
+  ["incomplete", "Incomplete", "Incomplete"],
+];
+
+function WorkforcePanel({ workforce }) {
+  const navigate = useNavigate();
+
+  return (
+    <article className="role-panel workforce-panel">
+      <header>
+        <div><span>Current duty day</span><h2>Today&apos;s workforce</h2></div>
+        <button type="button" onClick={() => navigate("/attendance")}>Open attendance <ArrowRight size={14} /></button>
+      </header>
+      <div className="workforce-breakdown-grid">
+        {WORKFORCE_ITEMS.map(([key, label, status]) => (
+          <button
+            type="button"
+            key={key}
+            onClick={() => navigate(status ? `/attendance?status=${encodeURIComponent(status)}` : "/attendance")}
+          >
+            <strong>{workforce?.[key] || 0}</strong>
+            <small>{label}</small>
+          </button>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function CalendarPreview({ events }) {
+  const navigate = useNavigate();
+
+  return (
+    <article className="role-panel dashboard-calendar-panel">
+      <header>
+        <div><span>Next 14 days</span><h2>Upcoming calendar</h2></div>
+        <button type="button" onClick={() => navigate("/calendar")}>Open calendar <ArrowRight size={14} /></button>
+      </header>
+      <div className="dashboard-calendar-list">
+        {(events || []).map((event) => (
+          <button type="button" key={event.id} onClick={() => navigate("/calendar")}>
+            <time><strong>{formatDate(event.date, { day: "2-digit" })}</strong><small>{formatDate(event.date, { month: "short" })}</small></time>
+            <span><strong>{event.title}</strong><small>{event.detail}</small></span>
+            <em className={event.type}>{event.type.replaceAll("_", " ")}</em>
+          </button>
+        ))}
+        {!events?.length && (
+          <div className="role-empty-state compact"><CalendarRange size={24} /><strong>No upcoming calendar events</strong><small>The next 14 days are clear.</small></div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function SystemHealthPreview({ health }) {
+  const navigate = useNavigate();
+
+  return (
+    <article className={`role-panel dashboard-health-panel ${health?.overall_status || "warning"}`}>
+      <header>
+        <div><span>Operational safeguards</span><h2>System health</h2></div>
+        <button type="button" onClick={() => navigate("/system-health")}>View diagnostics <ArrowRight size={14} /></button>
+      </header>
+      <div className="dashboard-health-summary">
+        <span className={`health-overall ${health?.overall_status || "warning"}`}>
+          <HeartPulse size={20} />
+          <strong>{health?.overall_status || "Checking"}</strong>
+        </span>
+        <small>{health?.release ? `Release ${health.release}` : "Release information unavailable"}</small>
+      </div>
+      <div className="dashboard-health-checks">
+        {(health?.checks || []).map((check) => (
+          <button type="button" key={check.key} onClick={() => navigate("/system-health")}>
+            {check.key === "backup" ? <DatabaseBackup size={17} /> : <CheckCircle2 size={17} />}
+            <span><strong>{check.label}</strong><small>{check.status}</small></span>
+          </button>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function PersonalDashboard({ data }) {
   const navigate = useNavigate();
 
@@ -203,7 +304,13 @@ function PersonalDashboard({ data }) {
             <span><small>Afternoon in</small><strong>{today.afternoon_in || "—"}</strong></span>
             <span><small>Afternoon out</small><strong>{today.afternoon_out || "—"}</strong></span>
           </div>
-          <button type="button" className="role-primary-action" onClick={() => navigate("/attendance")}>Open attendance <ArrowRight size={14} /></button>
+          <div className={`today-action-summary ${today.action_available ? "available" : "waiting"}`}>
+            {today.action_available ? <Clock3 size={18} /> : <CalendarClock size={18} />}
+            <span><strong>{today.next_action_label || "Attendance status"}</strong><small>{today.action_message}</small></span>
+          </div>
+          <button type="button" className="role-primary-action" onClick={() => navigate("/attendance")}>
+            {today.action_available ? today.next_action_label : "Open attendance"} <ArrowRight size={14} />
+          </button>
         </article>
 
         <article className="role-panel schedule-card">
@@ -220,11 +327,26 @@ function PersonalDashboard({ data }) {
         </article>
 
         <article className="role-panel leave-dtr-card">
-          <header><div><span>Requests and records</span><h2>Leave and DTR</h2></div><FileCheck2 size={20} /></header>
+          <header><div><span>{data.dtr.period_label}</span><h2>DTR readiness</h2></div><FileCheck2 size={20} /></header>
+          <div className="dtr-readiness-heading">
+            <span className={data.dtr.is_ready ? "ready" : "attention"}>
+              {data.dtr.is_ready ? <BadgeCheck size={16} /> : <AlertTriangle size={16} />}
+              {data.dtr.is_ready ? "Ready" : data.dtr.status}
+            </span>
+            <strong>{data.dtr.completion_percent ?? 0}%</strong>
+          </div>
+          <div className="dtr-readiness-progress"><i style={{ width: `${data.dtr.completion_percent ?? 0}%` }}></i></div>
+          <div className="dtr-issue-grid">
+            <span><strong>{data.dtr.issues?.missing || 0}</strong><small>Missing</small></span>
+            <span><strong>{data.dtr.issues?.incomplete || 0}</strong><small>Incomplete</small></span>
+            <span><strong>{data.dtr.issues?.unverified || 0}</strong><small>Unverified</small></span>
+            <span><strong>{data.dtr.issues?.schedule_gaps || 0}</strong><small>Schedule gaps</small></span>
+          </div>
+          {data.dtr.cutoff && <p className="dtr-cutoff-message"><CalendarClock size={14} />{data.dtr.cutoff.message}</p>}
           <div className="personal-workflow-summary">
             <button type="button" onClick={() => navigate("/leave-requests")}><strong>{data.leave.pending}</strong><small>Pending leave</small></button>
             <button type="button" onClick={() => navigate("/leave-requests")}><strong>{data.leave.approved}</strong><small>Approved leave</small></button>
-            <button type="button" onClick={() => navigate("/dtr")}><strong>{data.dtr.status}</strong><small>{data.period.month_label} DTR</small></button>
+            <button type="button" onClick={() => navigate(`/dtr?month=${data.period.month}&period=${data.dtr.period}`)}><strong>Review</strong><small>Open current DTR</small></button>
           </div>
         </article>
 
@@ -256,6 +378,7 @@ function PersonalDashboard({ data }) {
           </div>
         </article>
       </div>
+      <CalendarPreview events={data.upcoming_calendar} />
     </>
   );
 }
@@ -273,19 +396,11 @@ function SupervisorDashboard({ data }) {
         <MetricCard label="Late today" value={data.metrics.late_today} helper="Department arrivals" icon={Clock3} tone="orange" path="/attendance" />
         <MetricCard label="Incomplete" value={data.metrics.incomplete_today} helper="Needs follow-up" icon={AlertTriangle} tone="violet" path="/attendance" />
       </div>
+      <WorkforcePanel workforce={data.workforce_today} />
       <div className="role-content-grid supervisor-grid">
         <article className="role-panel supervisor-queue-panel">
           <header><div><span>My department</span><h2>Pending approvals</h2></div><ListChecks size={20} /></header>
           <QueueGrid queues={data.queues} compact />
-        </article>
-        <article className="role-panel status-panel">
-          <header><div><span>Today</span><h2>Attendance distribution</h2></div><Activity size={20} /></header>
-          <div className="status-breakdown">
-            {Object.entries(data.attendance_statuses || {}).map(([status, total]) => (
-              <div key={status}><span>{status}</span><i><b style={{ width: `${Math.min(100, (total / Math.max(1, data.metrics.active_personnel)) * 100)}%` }}></b></i><strong>{total}</strong></div>
-            ))}
-            {!Object.keys(data.attendance_statuses || {}).length && <div className="role-empty-state"><Activity size={25} /><strong>No records today</strong><small>Attendance will appear after personnel time in.</small></div>}
-          </div>
         </article>
         <article className="role-panel supervisor-leave-panel">
           <header><div><span>Oldest first</span><h2>Pending leave requests</h2></div><CalendarDays size={20} /></header>
@@ -298,6 +413,7 @@ function SupervisorDashboard({ data }) {
         </article>
         <LifecyclePanel lifecycle={data.lifecycle} title="Department lifecycle" />
       </div>
+      <CalendarPreview events={data.upcoming_calendar} />
     </>
   );
 }
@@ -308,7 +424,9 @@ function HrDashboard({ data }) {
     <>
       <div className="role-summary-strip"><span><ListChecks size={20} /></span><div><small>Open workflow items</small><strong>{total}</strong><p>Across verification, corrections, leave, and DTR review.</p></div></div>
       <QueueGrid queues={data.queues} />
+      <WorkforcePanel workforce={data.workforce_today} />
       <LifecyclePanel lifecycle={data.lifecycle} />
+      <CalendarPreview events={data.upcoming_calendar} />
       <QueuePreview items={data.queue_preview} />
     </>
   );
@@ -328,6 +446,13 @@ function AdministratorDashboard({ data }) {
         <MetricCard label="Incomplete" value={data.operations.incomplete_today} helper="Attendance exceptions" icon={AlertTriangle} tone="violet" path="/attendance" />
         <MetricCard label="Unassigned" value={data.operations.unassigned_personnel} helper="No department" icon={Building2} tone="orange" path="/personnel" />
         <MetricCard label="No schedule" value={data.operations.without_schedule} helper="Active personnel" icon={CalendarClock} tone="violet" path="/schedules" />
+      </div>
+
+      <WorkforcePanel workforce={data.workforce_today} />
+
+      <div className="admin-insight-grid">
+        <SystemHealthPreview health={data.system_health} />
+        <CalendarPreview events={data.upcoming_calendar} />
       </div>
 
       <LifecyclePanel lifecycle={data.lifecycle} />
@@ -361,6 +486,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [now, setNow] = useState(new Date());
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -369,23 +496,35 @@ export default function Dashboard() {
 
   useEffect(() => {
     const controller = new AbortController();
-    apiFetch("/dashboard", { signal: controller.signal })
+    const endpoint = refreshKey > 0 ? "/dashboard?refresh=1" : "/dashboard";
+    apiFetch(endpoint, { signal: controller.signal })
       .then(readResponse)
-      .then(setData)
+      .then((payload) => {
+        setData(payload);
+        setError("");
+      })
       .catch((requestError) => {
         if (requestError.name !== "AbortError") setError(requestError.message);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       });
     return () => controller.abort();
-  }, []);
+  }, [refreshKey]);
+
+  function refreshDashboard() {
+    setRefreshing(true);
+    setRefreshKey((value) => value + 1);
+  }
 
   if (loading) {
     return <section className="ops-dashboard"><div className="dashboard-loading"><span><Activity size={25} /></span><strong>Preparing your secured dashboard…</strong><small>Loading your role-specific workspace</small></div></section>;
   }
 
-  if (error || !data) {
+  if (!data) {
     return <section className="ops-dashboard"><div className="users-notice error"><X size={18} />{error || "Dashboard data is unavailable."}</div></section>;
   }
 
@@ -407,9 +546,22 @@ export default function Dashboard() {
           <p>{view.description}</p>
           <div className="ops-hero-meta"><span><ShieldCheck size={14} /> {data.role} access</span><span><BadgeCheck size={14} /> {data.scope}</span></div>
         </div>
-        <div className="ops-live-clock"><small>{data.period.today_label}</small><strong>{now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong><span>{view.title}</span></div>
+        <div className="ops-live-clock">
+          <small>{data.period.today_label}</small>
+          <strong>{now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong>
+          <span>{view.title}</span>
+          <div className="dashboard-freshness">
+            <small>{relativeTime(data.server_time, now)}</small>
+            <button type="button" onClick={refreshDashboard} disabled={refreshing}>
+              <RefreshCw size={13} className={refreshing ? "is-spinning" : ""} />
+              {refreshing ? "Refreshing" : "Refresh"}
+            </button>
+          </div>
+        </div>
         <i></i>
       </header>
+
+      {error && <div className="users-notice error"><X size={18} />{error}</div>}
 
       <nav className="ops-quick-actions" aria-label="Role quick actions">
         {quickActions.map(([label, Icon, path]) => (

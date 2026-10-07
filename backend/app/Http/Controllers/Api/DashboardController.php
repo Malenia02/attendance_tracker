@@ -12,13 +12,16 @@ final class DashboardController extends Controller
 {
     public function index(Request $request, RoleDashboardService $dashboard): JsonResponse
     {
+        $validated = $request->validate([
+            'refresh' => ['nullable', 'boolean'],
+        ]);
         $user = $request->user();
         $user->loadMissing('personnel.department');
 
         $cacheSeconds = max(0, (int) config('attendance.dashboard_cache_seconds', 30));
         $cacheKey = implode(':', [
             'dashboard',
-            'v4',
+            'v5',
             today()->toDateString(),
             'user',
             $user->user_id,
@@ -29,13 +32,19 @@ final class DashboardController extends Controller
             'department',
             $user->personnel?->department_id ?? 'none',
         ]);
-        $payload = $cacheSeconds > 0
-            ? Cache::remember(
+        $refresh = (bool) ($validated['refresh'] ?? false);
+        if ($cacheSeconds > 0 && ! $refresh) {
+            $payload = Cache::remember(
                 $cacheKey,
                 now()->addSeconds($cacheSeconds),
                 fn (): array => $dashboard->for($user)
-            )
-            : $dashboard->for($user);
+            );
+        } else {
+            $payload = $dashboard->for($user);
+            if ($cacheSeconds > 0) {
+                Cache::put($cacheKey, $payload, now()->addSeconds($cacheSeconds));
+            }
+        }
 
         return response()->json($payload)->withHeaders([
             'Cache-Control' => 'private, no-store',
