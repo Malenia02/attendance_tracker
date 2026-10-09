@@ -8,6 +8,14 @@ is not discarded without the user's choice.
 
 ## Current release
 
+### v0.2.4 - 2026-10-09
+
+- Added duplicate-safe Time In/Out retries with a unique request key.
+- After a connection failure, the attendance page checks whether the server saved the entry before offering a safe retry.
+- Kept the pending key for the current browser session so a reload can still confirm the original entry.
+
+Deployment notes: run the `2026_10_09_000000_add_client_request_id_to_time_logs` migration before deploying the new backend code. The column is nullable so existing QR and other time logs remain valid. No new environment variable is required.
+
 ### v0.1.1 - 2026-10-07
 
 - Replaced technical error pages and raw API failures with clear, actionable messages.

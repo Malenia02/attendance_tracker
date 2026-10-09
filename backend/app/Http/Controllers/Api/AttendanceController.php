@@ -702,6 +702,7 @@ class AttendanceController extends Controller
         $validated = $request->validate([
             'personnel_id' => ['required', 'integer', 'exists:personnel,personnel_id'],
             'device_identifier' => ['nullable', 'string', 'max:255'],
+            'client_request_id' => ['nullable', 'uuid'],
         ]);
         $user = $request->user();
         $trustedQrScan = $request->attributes->get('trusted_qr_scan') === true;
@@ -723,6 +724,11 @@ class AttendanceController extends Controller
         $personnel = Personnel::query()
             ->where('status', 'Active')
             ->findOrFail($validated['personnel_id']);
+        $clientRequestId = $validated['client_request_id'] ?? null;
+        if ($clientRequestId && $saved = TimeLog::query()->where('client_request_id', $clientRequestId)->first()) {
+            return $this->savedTimeAttemptResponse($saved, $user->user_id, $personnel->personnel_id);
+        }
+
         $now = now();
         $date = $now->toDateString();
 
@@ -757,12 +763,16 @@ class AttendanceController extends Controller
         }
 
         try {
-            $result = DB::transaction(function () use ($personnel, $schedule, $now, $request, $validated, $user, $isSpecialWorkingDay): array {
+            $result = DB::transaction(function () use ($personnel, $schedule, $now, $request, $validated, $user, $isSpecialWorkingDay, $clientRequestId): array {
                 $record = AttendanceRecord::query()
                     ->where('personnel_id', $personnel->personnel_id)
                     ->whereDate('attendance_date', $now->toDateString())
                     ->lockForUpdate()
                     ->first();
+
+                if ($clientRequestId && $saved = TimeLog::query()->where('client_request_id', $clientRequestId)->first()) {
+                    return ['replay_log' => $saved];
+                }
 
                 if (
                     $record && in_array($record->attendance_status, [
@@ -815,6 +825,7 @@ class AttendanceController extends Controller
                     'ip_address' => ClientIp::for($request),
                     'device_identifier' => $validated['device_identifier'] ?? $request->userAgent(),
                     'created_by' => $user->user_id,
+                    'client_request_id' => $clientRequestId,
                 ]);
 
                 return [
@@ -823,9 +834,17 @@ class AttendanceController extends Controller
                 ];
             });
         } catch (UniqueConstraintViolationException) {
+            if ($clientRequestId && $saved = TimeLog::query()->where('client_request_id', $clientRequestId)->first()) {
+                return $this->savedTimeAttemptResponse($saved, $user->user_id, $personnel->personnel_id);
+            }
+
             return response()->json([
                 'message' => 'This attendance action was already recorded by another request. Refresh the record before trying again.',
             ], 409);
+        }
+
+        if (isset($result['replay_log'])) {
+            return $this->savedTimeAttemptResponse($result['replay_log'], $user->user_id, $personnel->personnel_id);
         }
 
         if (isset($result['error'])) {
@@ -836,6 +855,53 @@ class AttendanceController extends Controller
             'message' => $result['action'].' recorded at '.$now->format('h:i:s A').'.',
             'action' => $result['action'],
             'data' => $this->formatAttendance($result['record'], $schedule, now(), true, $isSpecialWorkingDay),
+        ]);
+    }
+
+    public function timeLogAttempt(Request $request, string $clientRequestId): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user->personnel_id) {
+            return response()->json(['message' => 'No saved time entry was found for this account.'], 404);
+        }
+
+        $saved = TimeLog::query()
+            ->where('client_request_id', $clientRequestId)
+            ->where('personnel_id', $user->personnel_id)
+            ->where('created_by', $user->user_id)
+            ->where('log_source', 'Web Portal')
+            ->first();
+
+        if (! $saved) {
+            return response()->json(['message' => 'No saved time entry was found for this request.'], 404);
+        }
+
+        return $this->savedTimeAttemptResponse($saved, $user->user_id, $user->personnel_id);
+    }
+
+    private function savedTimeAttemptResponse(TimeLog $saved, int $userId, int $personnelId): JsonResponse
+    {
+        if ((int) $saved->created_by !== $userId || (int) $saved->personnel_id !== $personnelId || $saved->log_source !== 'Web Portal') {
+            return response()->json(['message' => 'This request key cannot be used for this time entry.'], 409);
+        }
+
+        $record = AttendanceRecord::query()->with('schedule')->find($saved->attendance_id);
+        if (! $record) {
+            return response()->json(['message' => 'The saved time entry could not be confirmed. Contact your administrator.'], 409);
+        }
+
+        $savedAt = $saved->log_datetime;
+
+        return response()->json([
+            'message' => $saved->log_type.' was already recorded at '.$savedAt->format('h:i:s A').'.',
+            'action' => $saved->log_type,
+            'replayed' => true,
+            'data' => $this->formatAttendance(
+                $record,
+                $record->schedule,
+                now(),
+                $record->attendance_date->isToday()
+            ),
         ]);
     }
 

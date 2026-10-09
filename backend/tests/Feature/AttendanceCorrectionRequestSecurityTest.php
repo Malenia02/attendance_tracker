@@ -137,6 +137,7 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             $table->string('ip_address', 45)->nullable();
             $table->string('device_identifier')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
+            $table->uuid('client_request_id')->nullable()->unique();
             $table->timestamp('created_at')->useCurrent();
         });
 
@@ -670,6 +671,64 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
                 'message',
                 'Attendance denied. You can only time in or time out using your own linked personnel account.'
             );
+    }
+
+    public function test_retried_time_entry_returns_the_original_log_without_creating_a_second_one(): void
+    {
+        $this->travelTo(now()->startOfWeek()->addDay()->setTime(7, 30));
+        [, $personnel] = $this->createAbsenceFixture();
+        $employee = $this->createUser('clock-retry-employee', 'Personnel', $personnel->personnel_id);
+        $requestId = '1b0c925b-758b-4a58-8c87-221a2cd50799';
+        $body = ['personnel_id' => $personnel->personnel_id, 'client_request_id' => $requestId];
+
+        $this->actingAs($employee)
+            ->getJson("/api/attendance/time-log-attempt/{$requestId}")
+            ->assertNotFound();
+
+        $first = $this->actingAs($employee)->postJson('/api/attendance/time-log', $body)
+            ->assertOk()
+            ->assertJsonPath('action', 'Morning In');
+        $this->travel(2)->minutes();
+
+        $this->actingAs($employee)->postJson('/api/attendance/time-log', $body)
+            ->assertOk()
+            ->assertJsonPath('replayed', true)
+            ->assertJsonPath('data.attendance_id', $first->json('data.attendance_id'));
+        $this->actingAs($employee)
+            ->getJson("/api/attendance/time-log-attempt/{$requestId}")
+            ->assertOk()
+            ->assertJsonPath('action', 'Morning In');
+        $this->assertDatabaseCount('time_logs', 1);
+        $this->assertDatabaseCount('attendance_records', 1);
+    }
+
+    public function test_time_entry_confirmation_is_private_to_the_employee_who_saved_it(): void
+    {
+        $this->travelTo(now()->startOfWeek()->addDay()->setTime(7, 30));
+        [, $personnel] = $this->createAbsenceFixture();
+        $employee = $this->createUser('clock-owner', 'Personnel', $personnel->personnel_id);
+        $otherPersonnel = Personnel::create([
+            'employee_number' => 'CLOCK-OTHER',
+            'first_name' => 'Other',
+            'last_name' => 'Employee',
+            'status' => 'Active',
+        ]);
+        $other = $this->createUser('clock-other', 'Personnel', $otherPersonnel->personnel_id);
+        $requestId = '4d787128-d4b1-458c-909b-c462274372b8';
+
+        $this->actingAs($employee)->postJson('/api/attendance/time-log', [
+            'personnel_id' => $personnel->personnel_id,
+            'client_request_id' => $requestId,
+        ])->assertOk();
+
+        $this->actingAs($other)
+            ->getJson("/api/attendance/time-log-attempt/{$requestId}")
+            ->assertNotFound();
+        $this->actingAs($other)->postJson('/api/attendance/time-log', [
+            'personnel_id' => $otherPersonnel->personnel_id,
+            'client_request_id' => $requestId,
+        ])->assertStatus(409);
+        $this->assertDatabaseCount('time_logs', 1);
     }
 
     private function createMissingTimeOutFixture(): array

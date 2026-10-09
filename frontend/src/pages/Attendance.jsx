@@ -37,6 +37,7 @@ const DASHBOARD_STATUS_FILTERS = new Set([
   "Official Business",
   "Holiday",
 ]);
+const PENDING_TIME_ENTRY_KEY = "attendance_pending_time_entry_v1";
 
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -67,7 +68,9 @@ async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(payload.message || "The request could not be completed.");
+    const error = new Error(payload.message || "The request could not be completed.");
+    error.status = response.status;
+    throw error;
   }
 
   return payload;
@@ -121,6 +124,16 @@ export default function Attendance() {
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
   const [timeEntryFeedback, setTimeEntryFeedback] = useState(null);
+  const [pendingTimeEntry, setPendingTimeEntry] = useState(() => {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(PENDING_TIME_ENTRY_KEY) || "null");
+      return value?.userId === currentUser?.user_id && value?.date === today
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  });
   const timeEntryPending = useRef(false);
   const [verifyingId, setVerifyingId] = useState(null);
   const [pageError, setPageError] = useState("");
@@ -145,6 +158,15 @@ export default function Attendance() {
     const timer = window.setTimeout(() => setTimeEntryFeedback(null), 6000);
     return () => window.clearTimeout(timer);
   }, [timeEntryFeedback]);
+
+  useEffect(() => {
+    if (!pendingTimeEntry) return undefined;
+    const controller = new AbortController();
+    confirmTimeEntry(pendingTimeEntry, controller.signal);
+    return () => controller.abort();
+  // Check a persisted attempt only on mount. Live attempts are checked in recordTime.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -267,8 +289,51 @@ export default function Attendance() {
     { key: "afternoon_time_out", label: "Time out", icon: LogOut },
   ];
 
+  function clearPendingTimeEntry() {
+    sessionStorage.removeItem(PENDING_TIME_ENTRY_KEY);
+    setPendingTimeEntry(null);
+  }
+
+  function applySavedTimeEntry(payload, personnelId) {
+    setRecords((current) => current.map((record) => (
+      Number(record.personnel_id) === personnelId
+        ? { ...record, ...payload.data }
+        : record
+    )));
+    clearPendingTimeEntry();
+    setTimeEntryFeedback({ status: "saved", message: payload.message });
+    setRefreshKey((key) => key + 1);
+  }
+
+  async function confirmTimeEntry(attempt, signal) {
+    setTimeEntryFeedback({ status: "checking", message: "Checking whether the server saved your time entry…" });
+    try {
+      const response = await apiFetch(`/attendance/time-log-attempt/${attempt.id}`, {
+        signal,
+        suppressToast: true,
+      });
+      if (response.status === 404) {
+        setTimeEntryFeedback({
+          status: "uncertain",
+          message: "We could not confirm the entry yet. Use Retry safely; it will reuse the same request and cannot create a duplicate.",
+        });
+        return;
+      }
+      const payload = await readResponse(response);
+      applySavedTimeEntry(payload, attempt.personnelId);
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      setTimeEntryFeedback({
+        status: "uncertain",
+        message: "We could not check the server right now. Use Retry safely when your connection returns; it will not create a duplicate.",
+      });
+    }
+  }
+
   async function recordTime() {
-    if (timeEntryPending.current || !selectedPersonnelId || !isToday || dayClosed || !selectedRecord?.next_action) return;
+    const retry = pendingTimeEntry?.personnelId === Number(selectedPersonnelId)
+      && pendingTimeEntry?.date === today;
+    if (timeEntryPending.current || !selectedPersonnelId || !isToday || (!retry && (dayClosed || !selectedRecord?.next_action))) return;
 
     if (!selectedRecordIsOwn) {
       setPageError(
@@ -280,7 +345,15 @@ export default function Attendance() {
     }
 
     const personnelId = Number(selectedPersonnelId);
-    const actionLabel = selectedRecord.next_action_label;
+    const actionLabel = selectedRecord.next_action_label || "time entry";
+    const attempt = retry ? pendingTimeEntry : {
+      id: crypto.randomUUID(),
+      personnelId,
+      date: today,
+      userId: currentUser?.user_id,
+    };
+    sessionStorage.setItem(PENDING_TIME_ENTRY_KEY, JSON.stringify(attempt));
+    setPendingTimeEntry(attempt);
     timeEntryPending.current = true;
     setActionBusy(true);
     setTimeEntryFeedback({ status: "saving", message: `Saving ${actionLabel.toLowerCase()} using the current server time…` });
@@ -289,26 +362,28 @@ export default function Attendance() {
     try {
       const response = await apiFetch("/attendance/time-log", {
         method: "POST",
+        suppressToast: true,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           personnel_id: personnelId,
           device_identifier: navigator.userAgent,
+          client_request_id: attempt.id,
         }),
       });
       const payload = await readResponse(response);
 
-      setRecords((current) => current.map((record) => (
-        Number(record.personnel_id) === personnelId
-          ? { ...record, ...payload.data }
-          : record
-      )));
-      setTimeEntryFeedback({ status: "saved", message: payload.message });
-      setRefreshKey((key) => key + 1);
+      applySavedTimeEntry(payload, personnelId);
     } catch (error) {
-      setTimeEntryFeedback({
-        status: "error",
-        message: error.message || "The time entry could not be saved. Please try again.",
-      });
+      if (error.cause || error.status >= 500) {
+        await confirmTimeEntry(attempt);
+      } else {
+        clearPendingTimeEntry();
+        if (error.status === 409) setRefreshKey((key) => key + 1);
+        setTimeEntryFeedback({
+          status: "error",
+          message: error.message || "The time entry could not be saved. Please try again.",
+        });
+      }
     } finally {
       timeEntryPending.current = false;
       setActionBusy(false);
@@ -665,9 +740,9 @@ export default function Attendance() {
                 aria-busy={actionBusy}
                 disabled={
                   actionBusy
-                  || dayClosed
+                  || (dayClosed && pendingTimeEntry?.personnelId !== Number(selectedPersonnelId))
                   || !isToday
-                  || !selectedRecord.next_action
+                  || (!selectedRecord.next_action && pendingTimeEntry?.personnelId !== Number(selectedPersonnelId))
                   || timeActionRestricted
                 }
               >
@@ -682,7 +757,9 @@ export default function Attendance() {
                 <div>
                   <strong>
                     {actionBusy
-                      ? `Saving ${nextAction}…`
+                      ? `Saving ${nextAction || "time entry"}…`
+                      : pendingTimeEntry?.personnelId === Number(selectedPersonnelId)
+                        ? "Retry time entry safely"
                       : !hasLinkedPersonnel
                       ? "Personnel profile link required"
                       : !selectedRecordIsOwn
@@ -698,6 +775,8 @@ export default function Attendance() {
                   <small>
                     {actionBusy
                       ? "Please wait while the server confirms your time entry."
+                      : pendingTimeEntry?.personnelId === Number(selectedPersonnelId)
+                        ? "Uses the same request key; no duplicate entry will be created"
                       : !hasLinkedPersonnel
                       ? "Link this user in System Users, or record through QR Attendance"
                       : !selectedRecordIsOwn
@@ -716,13 +795,13 @@ export default function Attendance() {
               </button>
               <div
                 className={`time-entry-feedback ${timeEntryFeedback?.status || ""}`}
-                role={timeEntryFeedback?.status === "error" ? "alert" : "status"}
-                aria-live={timeEntryFeedback?.status === "error" ? "assertive" : "polite"}
+                role={["error", "uncertain"].includes(timeEntryFeedback?.status) ? "alert" : "status"}
+                aria-live={["error", "uncertain"].includes(timeEntryFeedback?.status) ? "assertive" : "polite"}
                 aria-atomic="true"
               >
                 {timeEntryFeedback && (
                   <>
-                    {timeEntryFeedback.status === "saving"
+                    {["saving", "checking"].includes(timeEntryFeedback.status)
                       ? <LoaderCircle size={18} className="time-action-spinner" />
                       : timeEntryFeedback.status === "saved"
                         ? <CheckCircle2 size={18} />

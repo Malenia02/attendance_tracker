@@ -643,6 +643,12 @@
   background: color-mix(in srgb, #b42318 8%, var(--bg-card));
 }
 
+.time-entry-feedback.uncertain {
+  border-color: rgba(180, 111, 10, 0.35);
+  color: #995500;
+  background: color-mix(in srgb, #f4a11b 11%, var(--bg-card));
+}
+
 @keyframes attendance-spin {
   to { transform: rotate(360deg); }
 }

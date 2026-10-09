@@ -23,6 +23,7 @@ class TimeLog extends Model
         'ip_address',
         'device_identifier',
         'created_by',
+        'client_request_id',
     ];
 
     protected $casts = [
