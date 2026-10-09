@@ -1,4 +1,4 @@
-   import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   Fingerprint,
   LogIn,
   LogOut,
+  LoaderCircle,
   PencilLine,
   Search,
   ShieldCheck,
@@ -119,6 +120,8 @@ export default function Attendance() {
   const [sortOption, setSortOption] = useState("name:asc");
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
+  const [timeEntryFeedback, setTimeEntryFeedback] = useState(null);
+  const timeEntryPending = useRef(false);
   const [verifyingId, setVerifyingId] = useState(null);
   const [pageError, setPageError] = useState("");
   const [notice, setNotice] = useState("");
@@ -135,6 +138,13 @@ export default function Attendance() {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (timeEntryFeedback?.status !== "saved") return undefined;
+
+    const timer = window.setTimeout(() => setTimeEntryFeedback(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [timeEntryFeedback]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -258,7 +268,7 @@ export default function Attendance() {
   ];
 
   async function recordTime() {
-    if (!selectedPersonnelId || !isToday || dayClosed || !selectedRecord?.next_action) return;
+    if (timeEntryPending.current || !selectedPersonnelId || !isToday || dayClosed || !selectedRecord?.next_action) return;
 
     if (!selectedRecordIsOwn) {
       setPageError(
@@ -269,7 +279,11 @@ export default function Attendance() {
       return;
     }
 
+    const personnelId = Number(selectedPersonnelId);
+    const actionLabel = selectedRecord.next_action_label;
+    timeEntryPending.current = true;
     setActionBusy(true);
+    setTimeEntryFeedback({ status: "saving", message: `Saving ${actionLabel.toLowerCase()} using the current server time…` });
     setPageError("");
 
     try {
@@ -277,18 +291,26 @@ export default function Attendance() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          personnel_id: Number(selectedPersonnelId),
+          personnel_id: personnelId,
           device_identifier: navigator.userAgent,
         }),
       });
       const payload = await readResponse(response);
 
-      setNotice(payload.message);
+      setRecords((current) => current.map((record) => (
+        Number(record.personnel_id) === personnelId
+          ? { ...record, ...payload.data }
+          : record
+      )));
+      setTimeEntryFeedback({ status: "saved", message: payload.message });
       setRefreshKey((key) => key + 1);
-      window.setTimeout(() => setNotice(""), 4000);
     } catch (error) {
-      setPageError(error.message);
+      setTimeEntryFeedback({
+        status: "error",
+        message: error.message || "The time entry could not be saved. Please try again.",
+      });
     } finally {
+      timeEntryPending.current = false;
       setActionBusy(false);
     }
   }
@@ -531,8 +553,11 @@ export default function Attendance() {
             <select
               id="attendance-personnel"
               value={selectedPersonnelId}
-              onChange={(event) => setSelectedPersonnelId(event.target.value)}
-              disabled={!options.can_manage_others}
+              onChange={(event) => {
+                setSelectedPersonnelId(event.target.value);
+                setTimeEntryFeedback(null);
+              }}
+              disabled={!options.can_manage_others || actionBusy}
             >
               {options.personnel.map((person) => (
                 <option key={person.personnel_id} value={person.personnel_id}>
@@ -606,8 +631,8 @@ export default function Attendance() {
                 {timeSteps.map(({ key, label, icon: Icon }, index) => {
                   const value = selectedRecord[key];
                   return (
-                    <div className={`time-step ${value ? "done" : ""}`} key={key}>
-                      <span><Icon size={16} /></span>
+                    <div className={`time-step ${value ? "done" : ""} ${actionBusy && selectedRecord.next_action === key ? "saving" : ""}`} key={key}>
+                      <span>{actionBusy && selectedRecord.next_action === key ? <LoaderCircle size={16} /> : <Icon size={16} />}</span>
                       <div><small>{label}</small><strong>{formatTime(value)}</strong></div>
                       {index < timeSteps.length - 1 && <i></i>}
                     </div>
@@ -635,8 +660,9 @@ export default function Attendance() {
 
               <button
                 type="button"
-                className={`time-action-button ${dayClosed ? "complete" : ""} ${isHalfDay ? "half-day" : ""} ${timeActionRestricted ? "restricted" : ""}`}
+                className={`time-action-button ${dayClosed ? "complete" : ""} ${isHalfDay ? "half-day" : ""} ${timeActionRestricted ? "restricted" : ""} ${actionBusy ? "saving" : ""}`}
                 onClick={recordTime}
+                aria-busy={actionBusy}
                 disabled={
                   actionBusy
                   || dayClosed
@@ -646,29 +672,33 @@ export default function Attendance() {
                 }
               >
                 <span className="action-rings"><i></i><i></i></span>
-                {timeActionRestricted
+                {actionBusy
+                  ? <LoaderCircle size={25} className="time-action-spinner" />
+                  : timeActionRestricted
                   ? <ShieldCheck size={24} />
                   : dayClosed
                     ? <CheckCircle2 size={24} />
                     : <Fingerprint size={25} />}
                 <div>
                   <strong>
-                    {!hasLinkedPersonnel
+                    {actionBusy
+                      ? `Saving ${nextAction}…`
+                      : !hasLinkedPersonnel
                       ? "Personnel profile link required"
                       : !selectedRecordIsOwn
                         ? "Protected personnel attendance"
                         : !isToday
                           ? "View only"
-                          : actionBusy
-                            ? "Recording…"
-                            : isHalfDay
+                          : isHalfDay
                               ? `${selectedRecord.half_day_period} half day recorded`
                               : completed
                                 ? "Attendance complete"
                                 : nextAction || "Not available right now"}
                   </strong>
                   <small>
-                    {!hasLinkedPersonnel
+                    {actionBusy
+                      ? "Please wait while the server confirms your time entry."
+                      : !hasLinkedPersonnel
                       ? "Link this user in System Users, or record through QR Attendance"
                       : !selectedRecordIsOwn
                         ? "Administrators cannot clock in or out on behalf of another person"
@@ -684,6 +714,23 @@ export default function Attendance() {
                   </small>
                 </div>
               </button>
+              <div
+                className={`time-entry-feedback ${timeEntryFeedback?.status || ""}`}
+                role={timeEntryFeedback?.status === "error" ? "alert" : "status"}
+                aria-live={timeEntryFeedback?.status === "error" ? "assertive" : "polite"}
+                aria-atomic="true"
+              >
+                {timeEntryFeedback && (
+                  <>
+                    {timeEntryFeedback.status === "saving"
+                      ? <LoaderCircle size={18} className="time-action-spinner" />
+                      : timeEntryFeedback.status === "saved"
+                        ? <CheckCircle2 size={18} />
+                        : <AlertTriangle size={18} />}
+                    <span>{timeEntryFeedback.message}</span>
+                  </>
+                )}
+              </div>
             </>
           ) : (
             <div className="attendance-no-personnel">Select a personnel record to continue.</div>
@@ -733,9 +780,11 @@ export default function Attendance() {
               type="date"
               value={selectedDate}
               max={today}
+              disabled={actionBusy}
               onChange={(event) => {
                 setLoading(true);
                 setPageError("");
+                setTimeEntryFeedback(null);
                 setSelectedDate(event.target.value);
                 setPage(1);
               }}

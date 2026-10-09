@@ -444,6 +444,14 @@
   transform: scale(1.04);
 }
 
+.time-step.saving > span {
+  border-color: #5268ed;
+  color: #4154f1;
+  background: color-mix(in srgb, #4154f1 9%, var(--bg-card));
+  box-shadow: 0 0 0 5px rgba(65, 84, 241, 0.12);
+  animation: attendance-step-pulse 1.4s ease-in-out infinite;
+}
+
 .time-step > i {
   position: absolute;
   z-index: 1;
@@ -554,6 +562,21 @@
   box-shadow: none;
 }
 
+.time-action-button.saving {
+  cursor: progress;
+  opacity: 1;
+  box-shadow: 0 12px 28px rgba(65, 84, 241, 0.28);
+}
+
+.time-action-button.saving::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.19) 50%, transparent 75%);
+  content: "";
+  transform: translateX(-100%);
+  animation: attendance-button-sweep 1.45s ease-in-out infinite;
+}
+
 .half-day-period {
   margin-top: 4px;
   display: block;
@@ -573,6 +596,63 @@
 .time-action-button:disabled {
   cursor: not-allowed;
   opacity: 0.78;
+}
+
+.time-action-button.saving:disabled {
+  cursor: progress;
+  opacity: 1;
+}
+
+.time-action-spinner,
+.time-step.saving > span svg {
+  animation: attendance-spin 0.9s linear infinite;
+}
+
+.time-entry-feedback {
+  margin-top: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+  border-radius: 9px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 6%, var(--bg-card));
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.time-entry-feedback:empty {
+  display: none;
+}
+
+.time-entry-feedback > svg {
+  flex: 0 0 auto;
+}
+
+.time-entry-feedback.saved {
+  border-color: rgba(32, 167, 101, 0.3);
+  color: #137a45;
+  background: color-mix(in srgb, #20a765 9%, var(--bg-card));
+}
+
+.time-entry-feedback.error {
+  border-color: rgba(180, 35, 24, 0.3);
+  color: #b42318;
+  background: color-mix(in srgb, #b42318 8%, var(--bg-card));
+}
+
+@keyframes attendance-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes attendance-step-pulse {
+  50% { box-shadow: 0 0 0 9px rgba(65, 84, 241, 0.04); }
+}
+
+@keyframes attendance-button-sweep {
+  to { transform: translateX(100%); }
 }
 
 .time-action-button > svg,
@@ -1762,6 +1842,13 @@
   .attendance-summary-grid article,
   .recent-time-list article,
   .attendance-correction-modal {
+    animation: none;
+  }
+
+  .time-action-button.saving::after,
+  .time-action-spinner,
+  .time-step.saving > span,
+  .time-step.saving > span svg {
     animation: none;
   }
 }
