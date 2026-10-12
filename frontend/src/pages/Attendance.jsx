@@ -153,6 +153,25 @@ export default function Attendance() {
   }, []);
 
   useEffect(() => {
+    if (selectedDate !== today) return undefined;
+
+    const refreshAttendance = () => setRefreshKey((key) => key + 1);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshAttendance();
+    };
+    const timer = window.setInterval(refreshAttendance, 60_000);
+
+    window.addEventListener("focus", refreshAttendance);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshAttendance);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [selectedDate, today]);
+
+  useEffect(() => {
     if (timeEntryFeedback?.status !== "saved") return undefined;
 
     const timer = window.setTimeout(() => setTimeEntryFeedback(null), 6000);

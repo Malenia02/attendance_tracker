@@ -1505,6 +1505,10 @@ class AttendanceController extends Controller
         Carbon $now,
         bool $isSpecialWorkingDay = false
     ): array {
+        // Attendance windows are office-local business rules. Normalize every
+        // caller's reference time before comparing it with schedule clock times.
+        $now = $now->copy()->setTimezone(config('app.timezone'));
+
         if (! $schedule) {
             return [
                 'action' => null,
@@ -1577,7 +1581,23 @@ class AttendanceController extends Controller
             ],
         ];
 
+        $afternoonTimeInStart = Carbon::parse(
+            $now->toDateString().' '.$schedule->afternoon_time_in_start,
+            $now->getTimezone()
+        );
+
         foreach ($windows as $window) {
+            // Once the afternoon session opens, a personnel member who has no
+            // morning entry must enter the afternoon session. This also makes
+            // overlapping or overly broad schedule windows deterministic.
+            if (
+                ! $record?->morning_time_in
+                && in_array($window['action'], ['morning_time_in', 'morning_time_out'], true)
+                && $now->greaterThanOrEqualTo($afternoonTimeInStart)
+            ) {
+                continue;
+            }
+
             $start = Carbon::parse(
                 $now->toDateString().' '.$window['start'],
                 $now->getTimezone()

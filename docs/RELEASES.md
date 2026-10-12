@@ -8,6 +8,14 @@ is not discarded without the user's choice.
 
 ## Current release
 
+### v0.2.6 - 2026-10-12
+
+- Corrected afternoon attendance eligibility so a missed morning session cannot be recorded as Morning Time In after the afternoon window opens.
+- Normalized attendance-window comparisons to the configured `Asia/Manila` office timezone.
+- Refreshes the current-day attendance action every minute and when the browser tab becomes active again.
+
+Deployment notes: no database migration or new environment variable is required. Confirm that the existing `APP_TIMEZONE` value remains `Asia/Manila` in production.
+
 ### v0.2.5 - 2026-10-12
 
 - Standardized operational and administrative page headers, content panels, and responsive geometry.

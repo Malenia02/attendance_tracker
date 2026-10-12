@@ -80,6 +80,27 @@ class AttendanceEligibilityTest extends TestCase
         $this->assertSame('afternoon_time_in', $result['action']);
     }
 
+    public function test_afternoon_time_in_wins_when_morning_windows_overlap(): void
+    {
+        $this->schedule->morning_time_out_end = '15:00:00';
+
+        $result = $this->check(null, '2026-07-23 13:15:00');
+
+        $this->assertSame('afternoon_time_in', $result['action']);
+    }
+
+    public function test_eligibility_normalizes_utc_reference_time_to_office_timezone(): void
+    {
+        $result = $this->eligibility->invoke(
+            new AttendanceController,
+            null,
+            $this->schedule,
+            Carbon::parse('2026-07-23 05:15:00', 'UTC')
+        );
+
+        $this->assertSame('afternoon_time_in', $result['action']);
+    }
+
     public function test_late_morning_arrival_can_still_time_in_before_morning_closes(): void
     {
         $result = $this->check(null, '2026-07-23 11:45:00');
