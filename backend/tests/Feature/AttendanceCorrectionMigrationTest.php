@@ -40,6 +40,22 @@ class AttendanceCorrectionMigrationTest extends TestCase
         $this->assertForeignKeyExists('schedule_id');
     }
 
+    public function test_upgrade_repairs_schedule_column_left_by_a_partial_mysql_migration(): void
+    {
+        $this->createPreviousSchema(withAttendanceForeignKey: true, withExistingScheduleColumn: true);
+        DB::table('work_schedules')->insert(['schedule_id' => 7]);
+        DB::table('attendance_correction_requests')->update(['schedule_id' => 7]);
+
+        $this->runUpgrade();
+
+        $this->assertDatabaseHas('attendance_correction_requests', [
+            'attendance_correction_request_id' => 34,
+            'attendance_id' => 12,
+            'schedule_id' => 7,
+        ]);
+        $this->assertForeignKeyExists('schedule_id');
+    }
+
     public function test_upgrade_stops_before_schema_changes_when_existing_attendance_reference_is_orphaned(): void
     {
         $this->createPreviousSchema(withAttendanceForeignKey: false);
@@ -56,17 +72,25 @@ class AttendanceCorrectionMigrationTest extends TestCase
         $this->assertSame(999, DB::table('attendance_correction_requests')->value('attendance_id'));
     }
 
-    private function createPreviousSchema(bool $withAttendanceForeignKey): void
-    {
+    private function createPreviousSchema(
+        bool $withAttendanceForeignKey,
+        bool $withExistingScheduleColumn = false
+    ): void {
         Schema::create('attendance_records', function (Blueprint $table): void {
             $table->bigIncrements('attendance_id');
         });
         Schema::create('work_schedules', function (Blueprint $table): void {
-            $table->bigIncrements('schedule_id');
+            $table->increments('schedule_id');
         });
-        Schema::create('attendance_correction_requests', function (Blueprint $table) use ($withAttendanceForeignKey): void {
+        Schema::create('attendance_correction_requests', function (Blueprint $table) use (
+            $withAttendanceForeignKey,
+            $withExistingScheduleColumn
+        ): void {
             $table->bigIncrements('attendance_correction_request_id');
             $table->unsignedBigInteger('attendance_id');
+            if ($withExistingScheduleColumn) {
+                $table->unsignedBigInteger('schedule_id')->nullable();
+            }
             $table->unsignedBigInteger('personnel_id');
             $table->date('attendance_date');
             $table->enum('missing_field', ['morning_time_out', 'afternoon_time_out']);

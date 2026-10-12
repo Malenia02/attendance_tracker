@@ -24,6 +24,7 @@ return new class extends Migration
         }
 
         $this->dropForeignKeysForColumn('attendance_id');
+        $this->dropForeignKeysForColumn('schedule_id');
 
         Schema::table('attendance_correction_requests', function (Blueprint $table): void {
             $table->unsignedBigInteger('attendance_id')->nullable()->change();
@@ -34,7 +35,9 @@ return new class extends Migration
                 'afternoon_time_out',
             ])->change();
             if (! Schema::hasColumn('attendance_correction_requests', 'schedule_id')) {
-                $table->unsignedBigInteger('schedule_id')->nullable()->after('attendance_id');
+                $table->unsignedInteger('schedule_id')->nullable()->after('attendance_id');
+            } else {
+                $table->unsignedInteger('schedule_id')->nullable()->change();
             }
         });
 

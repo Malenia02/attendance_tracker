@@ -8,6 +8,13 @@ is not discarded without the user's choice.
 
 ## Current release
 
+### v0.3.2 - 2026-10-12
+
+- Match the correction-request `schedule_id` type to `work_schedules.schedule_id` (`INT UNSIGNED`).
+- Repair a partially applied migration by normalizing an existing schedule column before adding its foreign key.
+
+Deployment notes: the previous migration attempt may already have added `schedule_id` as `BIGINT UNSIGNED`, even though it failed and remains pending. Deploy this release and rerun `php artisan migrate --force`; it converts the column to the referenced key's type while preserving values, then adds the foreign key. The migration stops if it detects orphaned schedule references.
+
 ### v0.3.1 - 2026-10-12
 
 - Made the time-in correction migration discover existing attendance foreign keys by their columns instead of assuming a generated constraint name.
