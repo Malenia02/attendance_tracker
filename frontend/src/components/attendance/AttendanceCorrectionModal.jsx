@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, ShieldCheck, X } from "lucide-react";
 import FormStatusBanner from "../common/FormStatusBanner";
+import ModalPortal from "../common/ModalPortal";
 
 const MODAL_SUCCESS_DELAY_MS = 850;
 
@@ -60,6 +61,7 @@ export default function AttendanceCorrectionModal({
   }
 
   return (
+    <ModalPortal onClose={onClose} closeOnEscape={!busy}>
     <div className="modal-backdrop attendance-correction-backdrop" role="presentation" onMouseDown={onClose}>
       <form
         className="app-modal attendance-correction-modal"
@@ -183,5 +185,6 @@ export default function AttendanceCorrectionModal({
         </footer>
       </form>
     </div>
+    </ModalPortal>
   );
 }

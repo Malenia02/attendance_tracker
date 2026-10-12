@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, ShieldCheck, X, XCir
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import FormStatusBanner from "../common/FormStatusBanner";
+import ModalPortal from "../common/ModalPortal";
 
 const MODAL_SUCCESS_DELAY_MS = 850;
 
@@ -75,6 +76,7 @@ export default function AttendanceCorrectionRequestModal({
   }
 
   return (
+    <ModalPortal onClose={onClose} closeOnEscape={!busy}>
     <div className="modal-backdrop attendance-request-backdrop" role="presentation" onMouseDown={onClose}>
       <form
         className="app-modal attendance-request-modal"
@@ -263,5 +265,6 @@ export default function AttendanceCorrectionRequestModal({
         </div>
       </form>
     </div>
+    </ModalPortal>
   );
 }

@@ -21,6 +21,7 @@ import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
 import FormStatusBanner from "../components/common/FormStatusBanner";
 import FormDraftNotice from "../components/common/FormDraftNotice";
+import ModalPortal from "../components/common/ModalPortal";
 import useSessionFormDraft from "../hooks/useSessionFormDraft";
 import { formDraftKey } from "../lib/formDrafts";
 
@@ -629,6 +630,14 @@ export default function Schedules() {
       </div>
 
       {scheduleModal && (
+        <ModalPortal
+          closeOnEscape={!savingSchedule}
+          onClose={() => {
+            if (savingSchedule) return;
+            setScheduleStatus(null);
+            setScheduleModal(false);
+          }}
+        >
         <div className="modal-backdrop schedule-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !savingSchedule) {
             setScheduleStatus(null);
@@ -726,9 +735,18 @@ export default function Schedules() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {assignmentModal && (
+        <ModalPortal
+          closeOnEscape={!savingAssignment}
+          onClose={() => {
+            if (savingAssignment) return;
+            setAssignmentStatus(null);
+            setAssignmentModal(false);
+          }}
+        >
         <div className="modal-backdrop schedule-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !savingAssignment) {
             setAssignmentStatus(null);
@@ -800,6 +818,18 @@ export default function Schedules() {
               <FieldError errors={assignmentErrors} name="personnel_ids" />
               <FieldError errors={assignmentErrors} name="personnel_ids.0" />
 
+              <Pagination
+                pagination={assignmentPersonnelPagination}
+                onPageChange={setAssignmentPersonnelPage}
+                perPage={assignmentPersonnelPerPage}
+                onPerPageChange={(value) => { setAssignmentPersonnelPerPage(value); setAssignmentPersonnelPage(1); }}
+                disabled={assignmentPersonnelLoading}
+                loading={assignmentPersonnelLoading}
+                itemLabel="personnel"
+                placement="top"
+                display="page-size"
+              />
+
               <div className="assignment-personnel-list">
                 {assignmentPersonnelLoading ? (
                   <div className="assignment-roster-empty">Loading personnel...</div>
@@ -827,11 +857,10 @@ export default function Schedules() {
               <Pagination
                 pagination={assignmentPersonnelPagination}
                 onPageChange={setAssignmentPersonnelPage}
-                perPage={assignmentPersonnelPerPage}
-                onPerPageChange={(value) => { setAssignmentPersonnelPerPage(value); setAssignmentPersonnelPage(1); }}
                 disabled={assignmentPersonnelLoading}
                 loading={assignmentPersonnelLoading}
                 itemLabel="personnel"
+                display="navigation"
               />
 
               <div className="user-modal-actions">
@@ -841,6 +870,7 @@ export default function Schedules() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
       {confirmationDialog}
     </section>

@@ -290,6 +290,7 @@ export default function QrAttendance() {
   const [notice, setNotice] = useState("");
   const [cardSearch, setCardSearch] = useState("");
   const [cardPage, setCardPage] = useState(1);
+  const [cardPerPage, setCardPerPage] = useState(12);
   const [cardPagination, setCardPagination] = useState(null);
   const [scanLogs, setScanLogs] = useState([]);
   const [scanPage, setScanPage] = useState(1);
@@ -324,7 +325,7 @@ export default function QrAttendance() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({
         page: String(cardPage),
-        per_page: "12",
+        per_page: String(cardPerPage),
       });
       if (cardSearch.trim()) params.set("search", cardSearch.trim());
 
@@ -346,7 +347,7 @@ export default function QrAttendance() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [data.can_manage_codes, data.can_scan, tab, cardSearch, cardPage]);
+  }, [data.can_manage_codes, data.can_scan, tab, cardSearch, cardPage, cardPerPage]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -838,6 +839,27 @@ export default function QrAttendance() {
               </div>
             </div>
           )}
+          {data.can_manage_codes && (
+            <Pagination
+              pagination={cardPagination}
+              onPageChange={(nextPage) => {
+                setCardPage(nextPage);
+                setSelectedCardIds([]);
+              }}
+              perPage={cardPerPage}
+              perPageOptions={[12, 24, 48]}
+              onPerPageChange={(value) => {
+                setCardPerPage(value);
+                setCardPage(1);
+                setSelectedCardIds([]);
+              }}
+              disabled={loading}
+              loading={loading}
+              itemLabel="personnel cards"
+              placement="top"
+              display="page-size"
+            />
+          )}
           <div className="qr-print-grid">
             {filteredPersonnel.map((person) => (
               <div
@@ -891,7 +913,9 @@ export default function QrAttendance() {
               setSelectedCardIds([]);
             }}
             disabled={loading}
+            loading={loading}
             itemLabel="personnel cards"
+            display="navigation"
           />
         </div>
       )}

@@ -84,6 +84,7 @@ export default function ActionCenter() {
   const [queue, setQueue] = useState(initialQueue);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -104,7 +105,7 @@ export default function ActionCenter() {
       const params = new URLSearchParams({
         queue,
         page: String(page),
-        per_page: "15",
+        per_page: String(perPage),
       });
       if (search.trim()) params.set("search", search.trim());
 
@@ -130,7 +131,7 @@ export default function ActionCenter() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [queue, search, page, refreshKey]);
+  }, [queue, search, page, perPage, refreshKey]);
 
   const selectedQueue = useMemo(
     () => data.summary.find((item) => item.key === queue),
@@ -268,6 +269,19 @@ export default function ActionCenter() {
           </label>
         </div>
 
+        <Pagination
+          pagination={data.meta?.pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          perPageOptions={[15, 25, 50]}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="actions"
+          placement="top"
+          display="page-size"
+        />
+
         <div className="action-center-list" aria-live="polite">
           {loading ? (
             <div className="action-center-state">
@@ -322,7 +336,9 @@ export default function ActionCenter() {
           pagination={data.meta?.pagination}
           onPageChange={setPage}
           disabled={loading}
+          loading={loading}
           itemLabel="actions"
+          display="navigation"
         />
       </div>
 

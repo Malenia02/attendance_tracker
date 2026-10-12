@@ -1,17 +1,9 @@
-import { useEffect } from "react";
 import { AlertTriangle, X } from "lucide-react";
+import ModalPortal from "./ModalPortal";
 
 export default function ConfirmDialog({ options, onResult }) {
-  useEffect(() => {
-    function handleKeyDown(event) {
-      if (event.key === "Escape") onResult(false);
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onResult]);
-
   return (
+    <ModalPortal onClose={() => onResult(false)}>
     <div
       className="modal-backdrop confirm-modal-backdrop"
       role="presentation"
@@ -58,5 +50,6 @@ export default function ConfirmDialog({ options, onResult }) {
         </div>
       </section>
     </div>
+    </ModalPortal>
   );
 }

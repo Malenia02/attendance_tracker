@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   BadgeCheck,
   Ban,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import Pagination from "../components/common/Pagination";
 import FormStatusBanner from "../components/common/FormStatusBanner";
+import ModalPortal from "../components/common/ModalPortal";
 import { apiFetch } from "../lib/auth";
 
 const emptyForm = {
@@ -423,7 +423,8 @@ export default function LeaveRequests() {
         />
       </div>
 
-      {createOpen && createPortal((
+      {createOpen && (
+        <ModalPortal onClose={closeCreate} closeOnEscape={!saving}>
         <div className="modal-backdrop leave-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeCreate();
         }}>
@@ -549,9 +550,18 @@ export default function LeaveRequests() {
             </form>
           </div>
         </div>
-      ), document.body)}
+        </ModalPortal>
+      )}
 
-      {selected && createPortal((
+      {selected && (
+        <ModalPortal
+          closeOnEscape={!actionBusy}
+          onClose={() => {
+            if (actionBusy) return;
+            setActionStatus(null);
+            setSelected(null);
+          }}
+        >
         <div className="modal-backdrop leave-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !actionBusy) {
             setActionStatus(null);
@@ -669,7 +679,8 @@ export default function LeaveRequests() {
             )}
           </div>
         </div>
-      ), document.body)}
+        </ModalPortal>
+      )}
     </section>
   );
 }

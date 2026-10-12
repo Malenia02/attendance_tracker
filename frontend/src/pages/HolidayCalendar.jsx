@@ -15,6 +15,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch, getStoredUser } from "../lib/auth";
 import FormStatusBanner from "../components/common/FormStatusBanner";
+import ModalPortal from "../components/common/ModalPortal";
 
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -486,6 +487,7 @@ export default function HolidayCalendar() {
       </div>
 
       {modalOpen && (
+        <ModalPortal onClose={closeModal}>
         <div className="modal-backdrop holiday-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>
@@ -584,6 +586,7 @@ export default function HolidayCalendar() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
       {confirmationDialog}
     </section>

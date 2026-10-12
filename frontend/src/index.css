@@ -35,6 +35,9 @@
 @import "./styles/pages/activity-logs.css";
 @import "./styles/pages/leave-requests.css";
 
+/* Shared geometry and surface rules that normalize feature-page variants. */
+@import "./styles/components/ui-consistency.css";
+
 /* Cross-page phone and small-screen safeguards */
 @import "./styles/core/responsive.css";
 

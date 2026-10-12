@@ -8,6 +8,15 @@ is not discarded without the user's choice.
 
 ## Current release
 
+### v0.2.5 - 2026-10-12
+
+- Standardized operational and administrative page headers, content panels, and responsive geometry.
+- Moved page-size controls above lists and kept page navigation below them across remaining paginated views.
+- Unified modal rendering with background scroll locking, focus trapping, focus restoration, and topmost-dialog Escape handling.
+- Aligned legacy and current theme tokens so light and dark surfaces use the same colors across pages.
+
+Deployment notes: no database migration or new environment variable is required.
+
 ### v0.2.4 - 2026-10-09
 
 - Added duplicate-safe Time In/Out retries with a unique request key.

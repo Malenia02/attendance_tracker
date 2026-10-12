@@ -27,6 +27,7 @@ import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
 import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
+import ModalPortal from "../components/common/ModalPortal";
 
 function currentMonthKey() {
   const date = new Date();
@@ -855,15 +856,16 @@ function DtrDetails({
   }
 
   return (
+    <ModalPortal onClose={onClose} closeOnEscape={!busy}>
     <div className="dtr-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="dtr-detail-drawer" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="dtr-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="dtr-detail-title" onMouseDown={(event) => event.stopPropagation()}>
         <header>
           <div>
             <span>
               DTR detail · {monthLabel} · Version {row.certification.version_number}
               {row.certification.is_amended ? " (Amended)" : ""}
             </span>
-            <h2>{row.full_name}</h2>
+            <h2 id="dtr-detail-title">{row.full_name}</h2>
             <p>{row.employee_number} · {row.department?.name || "No assigned office"}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close DTR detail"><X size={19} /></button>
@@ -1341,5 +1343,6 @@ function DtrDetails({
         </footer>
       </section>
     </div>
+    </ModalPortal>
   );
 }

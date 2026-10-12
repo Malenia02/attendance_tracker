@@ -484,7 +484,7 @@ export default function SystemUsers() {
       </div>
 
       {modalOpen && (
-        <ModalPortal>
+        <ModalPortal onClose={closeModal}>
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>

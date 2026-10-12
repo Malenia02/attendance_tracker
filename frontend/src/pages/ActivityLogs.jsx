@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import ModalPortal from "../components/common/ModalPortal";
 
 async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
@@ -230,6 +231,7 @@ export default function ActivityLogs() {
       </div>
 
       {selectedLog && (
+        <ModalPortal onClose={() => setSelectedLog(null)}>
         <div className="modal-backdrop activity-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setSelectedLog(null);
         }}>
@@ -279,6 +281,7 @@ export default function ActivityLogs() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </section>
   );

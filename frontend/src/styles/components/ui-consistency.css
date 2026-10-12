@@ -1,0 +1,158 @@
+/* Cross-page visual contract.
+   Feature colors and content remain page-specific; geometry and surfaces do not. */
+
+:root {
+  --app-surface-radius: 16px;
+  --app-hero-radius: 20px;
+  --app-surface-shadow: 0 14px 36px rgba(28, 39, 84, 0.09);
+}
+
+.modal-portal-root {
+  display: contents;
+}
+
+/* Primary operational and status pages share one strong header scale. */
+:is(
+  .ops-dashboard-hero,
+  .action-center-hero,
+  .notifications-hero,
+  .attendance-hero,
+  .holiday-hero,
+  .dtr-hero,
+  .qr-hero,
+  .onboarding-hero,
+  .system-health-hero
+) {
+  min-height: 184px;
+  padding: 32px 36px;
+  gap: 28px;
+  border-radius: var(--app-hero-radius);
+}
+
+:is(
+  .ops-dashboard-hero,
+  .action-center-hero,
+  .notifications-hero,
+  .attendance-hero,
+  .holiday-hero,
+  .dtr-hero,
+  .qr-hero,
+  .onboarding-hero,
+  .system-health-hero
+) h1 {
+  font-size: clamp(28px, 3.4vw, 38px);
+  line-height: 1.08;
+  letter-spacing: -0.7px;
+}
+
+/* Administrative records use the quieter light-card header family. */
+:is(
+  .records-hero,
+  .departments-hero,
+  .activity-hero,
+  .schedules-hero,
+  .leave-hero
+) {
+  min-height: 154px;
+  padding: 28px 30px;
+  gap: 24px;
+  border-radius: var(--app-surface-radius);
+}
+
+:is(
+  .records-hero,
+  .departments-hero,
+  .activity-hero,
+  .schedules-hero,
+  .leave-hero
+) h1 {
+  font-size: clamp(26px, 3vw, 35px);
+  line-height: 1.1;
+  letter-spacing: -0.45px;
+}
+
+/* All reusable content panels now sit on the same surface treatment. */
+.panel {
+  border: 1px solid color-mix(in srgb, var(--border) 90%, var(--primary) 10%);
+  border-radius: var(--app-surface-radius);
+  box-shadow: var(--app-surface-shadow);
+}
+
+:is(
+  .action-center-panel,
+  .notifications-panel,
+  .onboarding-panel,
+  .users-panel
+) {
+  border-radius: var(--app-surface-radius);
+}
+
+@media (max-width: 700px) {
+  :is(
+    .ops-dashboard-hero,
+    .action-center-hero,
+    .notifications-hero,
+    .attendance-hero,
+    .holiday-hero,
+    .dtr-hero,
+    .qr-hero,
+    .onboarding-hero,
+    .system-health-hero,
+    .records-hero,
+    .departments-hero,
+    .activity-hero,
+    .schedules-hero,
+    .leave-hero
+  ) {
+    min-height: auto;
+    padding: 22px 20px;
+    gap: 18px;
+    border-radius: 14px;
+  }
+
+  :is(
+    .ops-dashboard-hero,
+    .action-center-hero,
+    .notifications-hero,
+    .attendance-hero,
+    .holiday-hero,
+    .dtr-hero,
+    .qr-hero,
+    .onboarding-hero,
+    .system-health-hero,
+    .records-hero,
+    .departments-hero,
+    .activity-hero,
+    .schedules-hero,
+    .leave-hero
+  ) h1 {
+    font-size: clamp(24px, 7vw, 29px);
+    line-height: 1.16;
+    letter-spacing: -0.35px;
+  }
+
+  .panel {
+    border-radius: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(
+    .action-center-page,
+    .activity-page,
+    .attendance-page,
+    .departments-page,
+    .dtr-page,
+    .holiday-page,
+    .leave-page,
+    .onboarding-page,
+    .ops-dashboard,
+    .personnel-page,
+    .qr-page,
+    .schedules-page,
+    .system-health-page,
+    .system-users-page
+  ) {
+    animation: none;
+  }
+}

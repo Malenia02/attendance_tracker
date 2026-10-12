@@ -33,6 +33,7 @@ export default function Notifications() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [items, setItems] = useState([]);
@@ -43,7 +44,7 @@ export default function Notifications() {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ status, page: String(page), per_page: "15" });
+      const params = new URLSearchParams({ status, page: String(page), per_page: String(perPage) });
       const response = await apiFetch(`/notifications?${params}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || "Notifications could not be loaded.");
@@ -55,7 +56,7 @@ export default function Notifications() {
     } finally {
       setLoading(false);
     }
-  }, [page, status]);
+  }, [page, perPage, status]);
 
   useEffect(() => {
     const loadId = window.setTimeout(() => loadNotifications(), 0);
@@ -127,6 +128,19 @@ export default function Notifications() {
           </div>
         </div>
 
+        <Pagination
+          pagination={pagination}
+          onPageChange={setPage}
+          perPage={perPage}
+          perPageOptions={[15, 25, 50]}
+          onPerPageChange={(value) => { setPerPage(value); setPage(1); }}
+          disabled={loading}
+          loading={loading}
+          itemLabel="notifications"
+          placement="top"
+          display="page-size"
+        />
+
         <div className="notifications-list" aria-live="polite">
           {loading ? (
             <div className="notifications-state"><LoaderCircle className="spin" size={28} /><strong>Loading your notifications…</strong></div>
@@ -156,7 +170,9 @@ export default function Notifications() {
           pagination={pagination}
           onPageChange={setPage}
           disabled={loading}
+          loading={loading}
           itemLabel="notifications"
+          display="navigation"
         />
       </div>
     </section>

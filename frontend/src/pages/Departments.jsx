@@ -439,7 +439,7 @@ export default function Departments() {
       </div>
 
       {modalOpen && (
-        <ModalPortal>
+        <ModalPortal onClose={closeModal}>
         <div className="modal-backdrop department-modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeModal();
         }}>

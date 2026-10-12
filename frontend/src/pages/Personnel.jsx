@@ -622,7 +622,7 @@ export default function Personnel() {
       </div>
 
       {modalOpen && (
-        <ModalPortal>
+        <ModalPortal onClose={closeModal}>
         <div
           className="modal-backdrop"
           role="presentation"

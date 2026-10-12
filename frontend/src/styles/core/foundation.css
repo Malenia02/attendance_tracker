@@ -27,6 +27,14 @@
   --text-muted: #899bbd;
   --text-soft: #51678f;
   --shadow: 0 0 30px rgba(1, 41, 112, 0.1);
+  /* Compatibility aliases for feature styles that use the shorter token set. */
+  --bg: var(--bg-main);
+  --sidebar-bg: var(--bg-sidebar);
+  --header-bg: var(--bg-topbar);
+  --card-bg: var(--bg-card);
+  --card-bg-soft: var(--bg-card-soft);
+  --text: var(--text-main);
+  --text-faint: var(--text-muted);
 }
 
 :root[data-theme="dark"] {
@@ -42,6 +50,14 @@
   --text-muted: #91a0bd;
   --text-soft: #b8c3d9;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  /* Keep both historical token names visually identical in dark mode. */
+  --bg: var(--bg-main);
+  --sidebar-bg: var(--bg-sidebar);
+  --header-bg: var(--bg-topbar);
+  --card-bg: var(--bg-card);
+  --card-bg-soft: var(--bg-card-soft);
+  --text: var(--text-main);
+  --text-faint: var(--text-muted);
 }
 
 html,
