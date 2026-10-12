@@ -8,6 +8,13 @@ is not discarded without the user's choice.
 
 ## Current release
 
+### v0.3.1 - 2026-10-12
+
+- Made the time-in correction migration discover existing attendance foreign keys by their columns instead of assuming a generated constraint name.
+- The migration now handles a missing key, preserves existing requests, and stops before schema changes if it finds orphaned references.
+
+Deployment notes: the reported production failure occurred at the first `ALTER TABLE` statement, so it did not change the schema or request data and Laravel should leave the migration pending. Deploy this release, then retry `php artisan migrate --force`. The migration checks existing references before adding the constraints.
+
 ### v0.3.0 - 2026-10-12
 
 - DTR monitoring now identifies pending attendance-correction requests by date and sends HR directly to the review queue.
