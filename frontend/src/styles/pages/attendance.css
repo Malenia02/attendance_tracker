@@ -413,6 +413,54 @@
   grid-template-columns: repeat(4, 1fr);
 }
 
+.attendance-session-status {
+  margin: -6px 0 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.attendance-session-status > span {
+  min-width: 0;
+  padding: 8px 11px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card-soft);
+}
+
+.attendance-session-status strong,
+.attendance-session-status em {
+  font-size: 11px;
+}
+
+.attendance-session-status strong {
+  color: var(--text-soft);
+}
+
+.attendance-session-status em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-weight: 800;
+  text-align: right;
+}
+
+.attendance-session-status [data-status="missed"] em,
+.attendance-session-status [data-status="incomplete"] em {
+  color: #b54708;
+}
+
+.attendance-session-status [data-status="completed"] em {
+  color: #168953;
+}
+
+.attendance-session-status [data-status="in progress"] em {
+  color: #175cd3;
+}
+
 .time-step {
   position: relative;
   min-width: 0;

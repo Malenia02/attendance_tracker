@@ -8,6 +8,22 @@ is not discarded without the user's choice.
 
 ## Current release
 
+### v0.3.0 - 2026-10-12
+
+- DTR monitoring now identifies pending attendance-correction requests by date and sends HR directly to the review queue.
+- A DTR cannot be submitted or certified until its pending correction requests are reviewed.
+- Added regression coverage for pending-request visibility and DTR submission blocking.
+
+Deployment notes: no additional migration is needed for this release beyond the previously documented time-in correction migration. Pending requests already stored in the database will be included automatically.
+
+### v0.2.7 - 2026-10-12
+
+- Personnel can submit a reviewed correction request for a missing morning or afternoon time-in, even when the day has no attendance row.
+- HR approval creates or updates an attendance row as a manual, unverified correction and records the change in the audit log.
+- Attendance now clearly shows morning and afternoon session states such as Missed, In progress, and Completed.
+
+Deployment notes: run the `2026_10_12_000000_allow_time_in_attendance_corrections` migration before deploying the application code. It makes correction requests compatible with missing attendance rows and stores the applicable schedule. The migration preserves prior requests and refuses rollback if new request data would be lost.
+
 ### v0.2.6 - 2026-10-12
 
 - Corrected afternoon attendance eligibility so a missed morning session cannot be recorded as Morning Time In after the afternoon window opens.

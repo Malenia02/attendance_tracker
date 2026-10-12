@@ -31,7 +31,10 @@ export default function AttendanceCorrectionRequestModal({
   onSubmit,
 }) {
   const missingEntries = useMemo(
-    () => record?.missing_time_out_entries || [],
+    () => [
+      ...(record?.missing_time_in_entries || []),
+      ...(record?.missing_time_out_entries || []),
+    ],
     [record],
   );
   const [missingField, setMissingField] = useState(missingEntries[0]?.field || "");
@@ -40,6 +43,8 @@ export default function AttendanceCorrectionRequestModal({
   const [reviewRemarks, setReviewRemarks] = useState("");
   const [status, setStatus] = useState(null);
   const isReview = mode === "review";
+  const selectedEntry = missingEntries.find((entry) => entry.field === missingField);
+  const selectedEntryLabel = isReview ? request?.missing_label : selectedEntry?.label;
 
   async function submitEmployeeRequest(event) {
     event.preventDefault();
@@ -176,8 +181,8 @@ export default function AttendanceCorrectionRequestModal({
 
             <div className="attendance-request-security">
               <ShieldCheck size={16} />
-              Approval applies only the requested missing time-out. The resulting attendance record
-              remains unverified and requires a different authorized reviewer.
+              Approval applies only the requested missing attendance entry. The resulting attendance record
+              remains unverified and requires authorized review before DTR certification.
             </div>
 
             <footer className="app-modal-footer review-actions">
@@ -206,7 +211,7 @@ export default function AttendanceCorrectionRequestModal({
               <AlertTriangle size={18} />
               <div>
                 <strong>Submit an explanation, not a direct attendance edit</strong>
-                <span>Use the time you actually left the office. HR will review it before any record changes.</span>
+                <span>Enter the actual time for the missing entry. HR will review it before any attendance record changes.</span>
               </div>
             </div>
 
@@ -224,7 +229,7 @@ export default function AttendanceCorrectionRequestModal({
             </label>
 
             <label>
-              Actual time you left
+              Actual {selectedEntryLabel?.toLowerCase() || "attendance time"}
               <input
                 type="time"
                 value={proposedTime}
@@ -234,7 +239,7 @@ export default function AttendanceCorrectionRequestModal({
             </label>
 
             <label>
-              Why did you forget to time out?
+              Why is this attendance entry missing?
               <textarea
                 value={reason}
                 onChange={(event) => { setReason(event.target.value); setStatus(null); }}

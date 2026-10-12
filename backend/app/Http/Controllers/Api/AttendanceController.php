@@ -364,6 +364,9 @@ class AttendanceController extends Controller
             ->with([
                 'personnel:personnel_id,department_id,employee_number,first_name,middle_name,last_name,suffix',
                 'personnel.department:department_id,department_code,department_name',
+                'schedule',
+                'attendance:attendance_id,schedule_id,attendance_status,record_source,is_verified,morning_time_in,morning_time_out,afternoon_time_in,afternoon_time_out',
+                'attendance.schedule:schedule_id,schedule_name',
                 'submittedBy:user_id,username',
                 'reviewedBy:user_id,username',
             ])
@@ -391,6 +394,7 @@ class AttendanceController extends Controller
         $correctionRequest->loadMissing([
             'personnel:personnel_id,department_id,employee_number,first_name,middle_name,last_name,suffix',
             'personnel.department:department_id,department_code,department_name',
+            'schedule',
             'attendance:attendance_id,schedule_id,attendance_status,record_source,is_verified,morning_time_in,morning_time_out,afternoon_time_in,afternoon_time_out',
             'attendance.schedule:schedule_id,schedule_name',
             'submittedBy:user_id,username',
@@ -415,7 +419,12 @@ class AttendanceController extends Controller
     {
         $validated = $request->validate([
             'attendance_date' => ['required', 'date', 'before_or_equal:today'],
-            'missing_field' => ['required', Rule::in(['morning_time_out', 'afternoon_time_out'])],
+            'missing_field' => ['required', Rule::in([
+                'morning_time_in',
+                'morning_time_out',
+                'afternoon_time_in',
+                'afternoon_time_out',
+            ])],
             'proposed_time' => ['required', 'date_format:H:i'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
         ]);
@@ -427,61 +436,123 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        $date = Carbon::parse($validated['attendance_date'])->toDateString();
+        $date = Carbon::parse($validated['attendance_date'], config('app.timezone'))->toDateString();
         $attendance = AttendanceRecord::query()
             ->with('schedule')
             ->where('personnel_id', $user->personnel_id)
             ->whereDate('attendance_date', $date)
             ->first();
 
-        if (! $attendance) {
+        $personnel = Personnel::query()->findOrFail($user->personnel_id);
+        $schedule = $attendance?->schedule ?? $this->assignedScheduleForDate($personnel->personnel_id, $date);
+        $calendarEvents = Holiday::query()
+            ->whereDate('holiday_date', $date)
+            ->where(fn ($query) => $query
+                ->whereNull('department_id')
+                ->orWhere('department_id', $personnel->department_id))
+            ->get();
+        $holiday = $calendarEvents->firstWhere('holiday_type', '!=', 'Special Working Holiday');
+        $isSpecialWorkingDay = $calendarEvents->contains('holiday_type', 'Special Working Holiday');
+        $isDutyDay = $schedule
+            && ! $holiday
+            && ($schedule->{strtolower(Carbon::parse($date)->format('l'))} || $isSpecialWorkingDay);
+
+        if (! $schedule || ! $isDutyDay) {
             return response()->json([
-                'message' => 'No attendance record exists for this date.',
+                'message' => 'A correction can only be requested for a scheduled duty day with an effective work schedule.',
             ], 422);
         }
 
-        $referenceTime = $attendance->attendance_date->isToday()
-            ? now()
-            : $attendance->attendance_date->copy()->endOfDay();
-        $missingFields = collect(
-            $this->missingTimeOutEntries($attendance, $attendance->schedule, $referenceTime)
-        )->pluck('field');
+        $referenceTime = Carbon::parse($date, config('app.timezone'))->isToday()
+            ? now(config('app.timezone'))
+            : Carbon::parse($date, config('app.timezone'))->endOfDay();
+        $missingEntries = [
+            ...$this->missingTimeInEntries($attendance, $schedule, $referenceTime, true),
+            ...($attendance
+                ? $this->missingTimeOutEntries($attendance, $schedule, $referenceTime)
+                : []),
+        ];
+        $missingFields = collect($missingEntries)->pluck('field');
 
         if (! $missingFields->contains($validated['missing_field'])) {
             return response()->json([
-                'message' => 'That time-out is not currently flagged as missing.',
+                'message' => 'That attendance entry is not currently flagged as missing.',
             ], 422);
         }
 
+        $validationRecord = $attendance ?? new AttendanceRecord([
+            'attendance_date' => $date,
+            'schedule_id' => $schedule->schedule_id,
+        ]);
+        $validationRecord->setRelation('schedule', $schedule);
+
         if (
             $timeError = $this->validateProposedTime(
-                $attendance,
+                $validationRecord,
                 $validated['missing_field'],
                 $validated['proposed_time'],
-                now()
+                $referenceTime
             )
         ) {
             return response()->json(['message' => $timeError], 422);
         }
 
-        $result = DB::transaction(function () use ($attendance, $validated, $date, $user, $request): array {
+        $result = DB::transaction(function () use ($personnel, $schedule, $validated, $date, $user, $request): array {
+            Personnel::query()->whereKey($personnel->personnel_id)->lockForUpdate()->firstOrFail();
             $lockedAttendance = AttendanceRecord::query()
-                ->whereKey($attendance->attendance_id)
+                ->with('schedule')
+                ->where('personnel_id', $personnel->personnel_id)
+                ->whereDate('attendance_date', $date)
                 ->lockForUpdate()
-                ->firstOrFail();
-            $pendingKey = $lockedAttendance->attendance_id.':'.$validated['missing_field'];
+                ->first();
+            $lockedSchedule = $lockedAttendance?->schedule ?? $schedule;
+            $lockedReferenceTime = Carbon::parse($date, config('app.timezone'))->isToday()
+                ? now(config('app.timezone'))
+                : Carbon::parse($date, config('app.timezone'))->endOfDay();
+            $recordForValidation = $lockedAttendance ?? new AttendanceRecord([
+                'attendance_date' => $date,
+                'schedule_id' => $lockedSchedule->schedule_id,
+            ]);
+            $recordForValidation->setRelation('schedule', $lockedSchedule);
+            $stillMissing = collect([
+                ...$this->missingTimeInEntries($lockedAttendance, $lockedSchedule, $lockedReferenceTime, true),
+                ...($lockedAttendance
+                    ? $this->missingTimeOutEntries($lockedAttendance, $lockedSchedule, $lockedReferenceTime)
+                    : []),
+            ])->contains('field', $validated['missing_field']);
+
+            if (! $stillMissing) {
+                return ['error' => 'That attendance entry is no longer eligible for a correction request. Refresh the attendance page and try again.'];
+            }
+
+            if (
+                $timeError = $this->validateProposedTime(
+                    $recordForValidation,
+                    $validated['missing_field'],
+                    $validated['proposed_time'],
+                    $lockedReferenceTime
+                )
+            ) {
+                return ['error' => $timeError];
+            }
+
+            $pendingKey = $personnel->personnel_id.':'.$date.':'.$validated['missing_field'];
             $existing = AttendanceCorrectionRequest::query()
-                ->where('pending_key', $pendingKey)
+                ->where('personnel_id', $personnel->personnel_id)
+                ->whereDate('attendance_date', $date)
+                ->where('missing_field', $validated['missing_field'])
+                ->where('request_status', 'Pending')
                 ->lockForUpdate()
                 ->first();
 
             if ($existing) {
-                return ['error' => 'A correction request for this missing time-out is already pending.'];
+                return ['error' => 'A correction request for this missing attendance entry is already pending.'];
             }
 
             $correctionRequest = AttendanceCorrectionRequest::create([
-                'attendance_id' => $lockedAttendance->attendance_id,
-                'personnel_id' => $lockedAttendance->personnel_id,
+                'attendance_id' => $lockedAttendance?->attendance_id,
+                'schedule_id' => $lockedAttendance?->schedule_id ?? $lockedSchedule->schedule_id,
+                'personnel_id' => $personnel->personnel_id,
                 'submitted_by' => $user->user_id,
                 'attendance_date' => $date,
                 'missing_field' => $validated['missing_field'],
@@ -501,9 +572,9 @@ class AttendanceController extends Controller
         }
 
         return response()->json([
-            'message' => 'Your missing time-out explanation was submitted for HR review.',
+            'message' => 'Your missing attendance entry request was submitted for HR review.',
             'data' => $this->formatCorrectionRequest(
-                $result['request']->load(['personnel.department', 'submittedBy', 'reviewedBy'])
+                $result['request']->load(['personnel.department', 'schedule', 'submittedBy', 'reviewedBy'])
             ),
         ], 201);
     }
@@ -587,23 +658,39 @@ class AttendanceController extends Controller
                 return ['error' => 'This correction request has already been reviewed.'];
             }
 
-            $attendance = AttendanceRecord::query()
+            $attendanceQuery = AttendanceRecord::query()
                 ->with('schedule')
-                ->whereKey($lockedRequest->attendance_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+                ->where('personnel_id', $lockedRequest->personnel_id)
+                ->whereDate('attendance_date', $lockedRequest->attendance_date);
+            if ($lockedRequest->attendance_id) {
+                $attendanceQuery->whereKey($lockedRequest->attendance_id);
+            }
+            $attendance = $attendanceQuery->lockForUpdate()->first();
 
             if ($validated['action'] === 'Approved') {
-                $missingFields = collect($this->missingTimeOutEntries(
-                    $attendance,
-                    $attendance->schedule,
-                    $attendance->attendance_date->isToday()
-                    ? now()
-                    : $attendance->attendance_date->copy()->endOfDay()
-                ))->pluck('field');
+                $schedule = $attendance?->schedule ?? $lockedRequest->schedule;
+                if (! $schedule) {
+                    return ['error' => 'The schedule for this correction could not be found. Reassign the schedule and submit a new request.'];
+                }
+                $attendance ??= new AttendanceRecord([
+                    'personnel_id' => $lockedRequest->personnel_id,
+                    'schedule_id' => $schedule->schedule_id,
+                    'attendance_date' => $lockedRequest->attendance_date->toDateString(),
+                    'record_source' => 'Manual',
+                    'is_verified' => false,
+                    'created_by' => $request->user()->user_id,
+                ]);
+                $attendance->setRelation('schedule', $schedule);
+                $referenceTime = $attendance->attendance_date->isToday()
+                    ? now(config('app.timezone'))
+                    : $attendance->attendance_date->copy()->endOfDay();
+                $missingFields = collect([
+                    ...$this->missingTimeInEntries($attendance, $schedule, $referenceTime, true),
+                    ...$this->missingTimeOutEntries($attendance, $schedule, $referenceTime),
+                ])->pluck('field');
 
                 if (! $missingFields->contains($lockedRequest->missing_field)) {
-                    return ['error' => 'The missing time-out has already been resolved or is no longer eligible.'];
+                    return ['error' => 'The missing attendance entry has already been resolved or is no longer eligible.'];
                 }
 
                 if (
@@ -611,7 +698,7 @@ class AttendanceController extends Controller
                         $attendance,
                         $lockedRequest->missing_field,
                         $lockedRequest->proposed_time,
-                        now()
+                        $referenceTime
                     )
                 ) {
                     return ['error' => $timeError];
@@ -632,7 +719,10 @@ class AttendanceController extends Controller
                     'remarks',
                     'record_source',
                 ];
-                $oldValues = $attendance->only($trackedFields);
+                $wasNew = ! $attendance->exists;
+                $oldValues = $wasNew
+                    ? array_fill_keys($trackedFields, null)
+                    : $attendance->only($trackedFields);
                 $attendance->{$lockedRequest->missing_field} = Carbon::parse(
                     $attendance->attendance_date->toDateString().' '.$lockedRequest->proposed_time,
                     config('app.timezone')
@@ -647,17 +737,23 @@ class AttendanceController extends Controller
                 $attendance->is_verified = false;
                 $attendance->verified_by = null;
                 $attendance->verified_at = null;
+                if ($wasNew) {
+                    $attendance->created_by = $request->user()->user_id;
+                }
                 $this->recalculate(
                     $attendance,
-                    $attendance->schedule,
-                    $attendance->attendance_date->copy()->endOfDay()
+                    $schedule,
+                    $attendance->attendance_date->isToday()
+                        ? $referenceTime
+                        : $attendance->attendance_date->copy()->endOfDay()
                 );
                 $attendance->save();
+                $lockedRequest->attendance_id = $attendance->attendance_id;
 
                 AttendanceChangeLog::create([
                     'attendance_id' => $attendance->attendance_id,
                     'changed_by' => $request->user()->user_id,
-                    'action_type' => 'Updated',
+                    'action_type' => $wasNew ? 'Created' : 'Updated',
                     'old_values' => $oldValues,
                     'new_values' => $attendance->only($trackedFields),
                     'reason' => Str::limit(
@@ -692,7 +788,13 @@ class AttendanceController extends Controller
                 ? 'Correction request approved and applied. The attendance record must be verified before DTR certification.'
                 : 'Correction request rejected. The employee can review the decision and submit a new request.',
             'data' => $this->formatCorrectionRequest(
-                $result['request']->load(['personnel.department', 'submittedBy', 'reviewedBy'])
+                $result['request']->load([
+                    'personnel.department',
+                    'schedule',
+                    'attendance.schedule',
+                    'submittedBy',
+                    'reviewedBy',
+                ])
             ),
         ]);
     }
@@ -1281,29 +1383,57 @@ class AttendanceController extends Controller
         string $proposedTime,
         Carbon $referenceTime
     ): ?string {
-        $timeInField = $missingField === 'morning_time_out'
-            ? 'morning_time_in'
-            : 'afternoon_time_in';
-        $timeIn = $record->{$timeInField};
-
-        if (! $timeIn) {
-            return 'A proposed time-out requires its matching recorded time-in.';
-        }
-
         $proposed = Carbon::parse(
             $record->attendance_date->toDateString().' '.$proposedTime,
             config('app.timezone')
         );
 
+        if (str_ends_with($missingField, '_time_in')) {
+            $schedule = $record->schedule;
+            if (! $schedule) {
+                return 'The effective work schedule for this date could not be found.';
+            }
+
+            $isMorning = $missingField === 'morning_time_in';
+            $start = $isMorning ? $schedule->morning_time_in_start : $schedule->afternoon_time_in_start;
+            $end = $isMorning ? $schedule->morning_time_out_end : $schedule->afternoon_time_in_end;
+            $windowStart = Carbon::parse($record->attendance_date->toDateString().' '.$start, config('app.timezone'));
+            $windowEnd = Carbon::parse($record->attendance_date->toDateString().' '.$end, config('app.timezone'));
+
+            if (! $proposed->betweenIncluded($windowStart, $windowEnd)) {
+                return 'The proposed time-in must fall within the scheduled attendance window.';
+            }
+
+            $matchingOut = $isMorning ? $record->morning_time_out : $record->afternoon_time_out;
+            if ($matchingOut && ! $proposed->lessThan($matchingOut)) {
+                return 'The proposed time-in must be earlier than its matching time-out.';
+            }
+
+            if ($isMorning && $record->afternoon_time_in && $proposed->greaterThan($record->afternoon_time_in)) {
+                return 'The proposed morning time-in cannot be later than the afternoon time-in.';
+            }
+            if (! $isMorning && $record->morning_time_out && $proposed->lessThan($record->morning_time_out)) {
+                return 'The proposed afternoon time-in cannot be earlier than the morning time-out.';
+            }
+
+            if ($record->attendance_date->isToday() && $proposed->greaterThan($referenceTime)) {
+                return 'The proposed time-in cannot be in the future.';
+            }
+
+            return null;
+        }
+
+        $timeInField = $missingField === 'morning_time_out' ? 'morning_time_in' : 'afternoon_time_in';
+        $timeIn = $record->{$timeInField};
+        if (! $timeIn) {
+            return 'A proposed time-out requires its matching recorded time-in.';
+        }
+
         if (! $proposed->greaterThan($timeIn)) {
             return 'The proposed time-out must be later than the recorded time-in.';
         }
 
-        if (
-            $missingField === 'morning_time_out'
-            && $record->afternoon_time_in
-            && $proposed->greaterThan($record->afternoon_time_in)
-        ) {
+        if ($missingField === 'morning_time_out' && $record->afternoon_time_in && $proposed->greaterThan($record->afternoon_time_in)) {
             return 'The proposed morning time-out cannot be later than the recorded afternoon time-in.';
         }
 
@@ -1354,6 +1484,22 @@ class AttendanceController extends Controller
         $assignment = PersonnelSchedule::query()
             ->with('schedule')
             ->whereHas('schedule', fn ($query) => $query->where('status', 'Active'))
+            ->where('personnel_id', $personnelId)
+            ->whereDate('effective_from', '<=', $date)
+            ->where(function ($query) use ($date): void {
+                $query->whereNull('effective_to')->orWhereDate('effective_to', '>=', $date);
+            })
+            ->latest('effective_from')
+            ->latest('personnel_schedule_id')
+            ->first();
+
+        return $assignment?->schedule;
+    }
+
+    private function assignedScheduleForDate(int $personnelId, string $date): ?WorkSchedule
+    {
+        $assignment = PersonnelSchedule::query()
+            ->with('schedule')
             ->where('personnel_id', $personnelId)
             ->whereDate('effective_from', '<=', $date)
             ->where(function ($query) use ($date): void {
@@ -1803,6 +1949,103 @@ class AttendanceController extends Controller
         return $missing;
     }
 
+    private function missingTimeInEntries(
+        ?AttendanceRecord $record,
+        ?WorkSchedule $schedule,
+        Carbon $referenceTime,
+        bool $isDutyDay
+    ): array {
+        if (! $schedule || ! $isDutyDay) {
+            return [];
+        }
+
+        $date = $record?->attendance_date?->toDateString() ?? $referenceTime->toDateString();
+        $checks = [
+            [
+                'field' => 'morning_time_in',
+                'label' => 'Morning time-in',
+                'recorded_at' => $record?->morning_time_in,
+                'cutoff' => $schedule->morning_time_out_end,
+            ],
+            [
+                'field' => 'afternoon_time_in',
+                'label' => 'Afternoon time-in',
+                'recorded_at' => $record?->afternoon_time_in,
+                'cutoff' => $schedule->afternoon_time_in_end,
+            ],
+        ];
+        $missing = [];
+
+        foreach ($checks as $check) {
+            if ($check['recorded_at']) {
+                continue;
+            }
+
+            $cutoff = Carbon::parse($date.' '.$check['cutoff'], $referenceTime->getTimezone());
+            if ($referenceTime->toDateString() <= $date && ! $referenceTime->greaterThan($cutoff)) {
+                continue;
+            }
+
+            $missing[] = ['field' => $check['field'], 'label' => $check['label']];
+        }
+
+        return $missing;
+    }
+
+    private function formatSessionStatus(
+        ?AttendanceRecord $record,
+        ?WorkSchedule $schedule,
+        Carbon $referenceTime,
+        bool $isDutyDay
+    ): array {
+        if (! $schedule || ! $isDutyDay) {
+            return ['morning' => 'Off duty', 'afternoon' => 'Off duty'];
+        }
+
+        $date = $record?->attendance_date?->toDateString() ?? $referenceTime->toDateString();
+        $status = function (string $timeInField, string $timeOutField, string $start, string $cutoff) use (
+            $date,
+            $record,
+            $referenceTime
+        ): string {
+            $timeIn = $record?->{$timeInField};
+            $timeOut = $record?->{$timeOutField};
+
+            if ($timeIn && $timeOut) {
+                return 'Completed';
+            }
+            if ($timeIn || $timeOut) {
+                return $timeIn ? 'In progress' : 'Incomplete';
+            }
+
+            $startAt = Carbon::parse($date.' '.$start, $referenceTime->getTimezone());
+            $cutoffAt = Carbon::parse($date.' '.$cutoff, $referenceTime->getTimezone());
+            if ($referenceTime->toDateString() < $date || $referenceTime->lessThan($startAt)) {
+                return 'Upcoming';
+            }
+            if ($referenceTime->greaterThan($cutoffAt)) {
+                return 'Missed';
+            }
+
+            return 'Not started';
+        };
+
+        return [
+            'morning' => $status(
+                'morning_time_in',
+                'morning_time_out',
+                $schedule->morning_time_in_start,
+                $schedule->morning_time_out_end
+            ),
+            'afternoon' => $status(
+                'afternoon_time_in',
+                'afternoon_time_out',
+                $schedule->afternoon_time_in_start,
+                $schedule->afternoon_time_in_end
+            ),
+        ];
+    }
+
     private function formatDailyPersonnel(
         Personnel $personnel,
         ?AttendanceRecord $record,
@@ -1844,6 +2087,18 @@ class AttendanceController extends Controller
             'half_day_period' => null,
             'has_missing_time_out' => false,
             'missing_time_out_entries' => [],
+            'missing_time_in_entries' => $this->missingTimeInEntries(
+                null,
+                $schedule,
+                $referenceTime,
+                (bool) $isDutyDay
+            ),
+            'session_status' => $this->formatSessionStatus(
+                null,
+                $schedule,
+                $referenceTime,
+                (bool) $isDutyDay
+            ),
             ...$this->formatEligibility(
                 $allowAction
                 ? $this->determineAvailableAction(null, $schedule, $referenceTime, $isSpecialWorkingDay)
@@ -1881,6 +2136,16 @@ class AttendanceController extends Controller
             $schedule,
             $referenceTime
         );
+        $workdayField = strtolower($record->attendance_date->format('l'));
+        $isDutyDay = $schedule
+            && ! in_array($record->attendance_status, ['Holiday', 'Rest Day', 'Leave', 'Official Business'], true)
+            && ($schedule->{$workdayField} || $isSpecialWorkingDay);
+        $missingTimeInEntries = $this->missingTimeInEntries(
+            $record,
+            $schedule,
+            $referenceTime,
+            $isDutyDay
+        );
         $eligibility = $allowAction
             ? $this->determineAvailableAction($record, $schedule, $referenceTime, $isSpecialWorkingDay)
             : ['action' => null, 'message' => 'Historical attendance is view only.'];
@@ -1908,6 +2173,13 @@ class AttendanceController extends Controller
             'half_day_period' => $this->halfDayPeriod($record, $displayStatus),
             'has_missing_time_out' => $missingTimeOutEntries !== [],
             'missing_time_out_entries' => $missingTimeOutEntries,
+            'missing_time_in_entries' => $missingTimeInEntries,
+            'session_status' => $this->formatSessionStatus(
+                $record,
+                $schedule,
+                $referenceTime,
+                $isDutyDay
+            ),
             ...$this->formatEligibility($eligibility),
             'schedule' => $this->formatSchedule($schedule),
         ];
@@ -1961,12 +2233,19 @@ class AttendanceController extends Controller
         return [
             'request_id' => $correctionRequest->attendance_correction_request_id,
             'attendance_id' => $correctionRequest->attendance_id,
+            'schedule_id' => $correctionRequest->schedule_id,
             'personnel_id' => $correctionRequest->personnel_id,
             'attendance_date' => $correctionRequest->attendance_date->toDateString(),
             'missing_field' => $correctionRequest->missing_field,
-            'missing_label' => $correctionRequest->missing_field === 'morning_time_out'
-                ? 'Morning time-out'
-                : 'Afternoon time-out',
+            'missing_label' => match ($correctionRequest->missing_field) {
+                'morning_time_in' => 'Morning time-in',
+                'morning_time_out' => 'Morning time-out',
+                'afternoon_time_in' => 'Afternoon time-in',
+                default => 'Afternoon time-out',
+            },
+            'schedule' => $correctionRequest->relationLoaded('schedule')
+                ? $this->formatSchedule($correctionRequest->schedule)
+                : null,
             'proposed_time' => Carbon::parse($correctionRequest->proposed_time)->format('H:i'),
             'reason' => $correctionRequest->reason,
             'status' => $correctionRequest->request_status,

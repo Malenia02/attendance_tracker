@@ -272,12 +272,15 @@ export default function Attendance() {
   const selectedRecord = records.find(
     (record) => String(record.personnel_id) === String(selectedPersonnelId),
   );
+  const requestMatchesRecord = (request, record) =>
+    String(request.personnel_id) === String(record?.personnel_id)
+      && request.attendance_date === selectedDate;
   const selectedPendingRequest = correctionRequests.find(
-    (request) => request.attendance_id === selectedRecord?.attendance_id
+    (request) => requestMatchesRecord(request, selectedRecord)
       && request.status === "Pending",
   );
   const selectedLatestRequest = correctionRequests.find(
-    (request) => request.attendance_id === selectedRecord?.attendance_id,
+    (request) => requestMatchesRecord(request, selectedRecord),
   );
   const currentPersonnelId = options.current_user_personnel_id;
   const hasLinkedPersonnel = currentPersonnelId !== null
@@ -568,11 +571,11 @@ export default function Attendance() {
           <div className="attendance-exception-list">
             {missingTimeOutRecords.map((record) => {
               const pendingRequest = correctionRequests.find(
-                (request) => request.attendance_id === record.attendance_id
+                (request) => requestMatchesRecord(request, record)
                   && request.status === "Pending",
               );
               const latestRequest = correctionRequests.find(
-                (request) => request.attendance_id === record.attendance_id,
+                (request) => requestMatchesRecord(request, record),
               );
               const isOwnRecord = Number(currentPersonnelId) === Number(record.personnel_id);
 
@@ -677,14 +680,18 @@ export default function Attendance() {
                 )}
               </div>
 
-              {selectedRecord.has_missing_time_out && (
+              {((selectedRecord.missing_time_in_entries?.length || 0) > 0
+                || (selectedRecord.missing_time_out_entries?.length || 0) > 0) && (
                 <div className="attendance-missing-timeout-alert">
                   <AlertTriangle size={18} />
                   <div>
-                    <strong>Missing time-out detected</strong>
+                    <strong>Missing attendance entry detected</strong>
                     <span>
-                      {selectedRecord.missing_time_out_entries.map((entry) => entry.label).join(" and ")}
-                      {" "}must be corrected before this entry can be verified.
+                      {[
+                        ...(selectedRecord.missing_time_in_entries || []),
+                        ...(selectedRecord.missing_time_out_entries || []),
+                      ].map((entry) => entry.label).join(" and ")}
+                      {" "}can be requested for correction and must be resolved before DTR certification.
                     </span>
                     {selectedPendingRequest && (
                       <em>Your explanation has been submitted and is pending HR review.</em>
@@ -750,6 +757,15 @@ export default function Attendance() {
                     }}
                   ></i>
                 </div>
+              </div>
+
+              <div className="attendance-session-status" aria-label="Attendance session status">
+                <span data-status={(selectedRecord.session_status?.morning || "Not started").toLowerCase()}>
+                  <strong>Morning</strong><em>{selectedRecord.session_status?.morning || "Not started"}</em>
+                </span>
+                <span data-status={(selectedRecord.session_status?.afternoon || "Not started").toLowerCase()}>
+                  <strong>Afternoon</strong><em>{selectedRecord.session_status?.afternoon || "Not started"}</em>
+                </span>
               </div>
 
               <button
@@ -947,6 +963,11 @@ export default function Attendance() {
                         {record.missing_time_out_entries.map((entry) => entry.label).join(" and ")}
                       </small>
                     )}
+                    {!!record.missing_time_in_entries?.length && (
+                      <small className="missing-timeout-row-flag">
+                        {record.missing_time_in_entries.map((entry) => entry.label).join(" and ")}
+                      </small>
+                    )}
                     {record.is_late && <small className="late-row-flag">Late by {formatDuration(record.late_minutes)}</small>}
                     {record.half_day_period && (
                       <small className="half-day-period">{record.half_day_period} session</small>
@@ -1000,6 +1021,7 @@ export default function Attendance() {
 
       {requestModal && (
         <AttendanceCorrectionRequestModal
+          key={`${requestModal.mode}-${requestModal.record?.personnel_id || requestModal.request?.personnel_id}-${requestModal.request?.request_id || selectedDate}`}
           mode={requestModal.mode}
           record={requestModal.record}
           request={requestModal.request}

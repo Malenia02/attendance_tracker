@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\AttendanceChangeLog;
+use App\Models\AttendanceCorrectionRequest;
 use App\Models\AttendanceRecord;
 use App\Models\DtrCertification;
 use App\Models\DtrStatusLog;
@@ -187,6 +188,24 @@ class DtrController extends Controller
             ->orderBy('personnel_id', $sortDirection)
             ->paginate($perPage, ['*'], 'page', $page);
 
+        $pendingCorrections = AttendanceCorrectionRequest::query()
+            ->whereIn('personnel_id', collect($paginator->items())->pluck('personnel_id'))
+            ->whereBetween('attendance_date', [$periodStart->toDateString(), $cutoff->toDateString()])
+            ->where('request_status', 'Pending')
+            ->orderBy('attendance_date')
+            ->orderBy('attendance_correction_request_id')
+            ->get([
+                'attendance_correction_request_id',
+                'personnel_id',
+                'attendance_date',
+                'missing_field',
+                'proposed_time',
+            ])
+            ->groupBy('personnel_id')
+            ->map(fn (Collection $requests) => $requests->groupBy(
+                fn (AttendanceCorrectionRequest $correction) => $correction->attendance_date->toDateString()
+            ));
+
         $rows = collect($paginator->items())
             ->map(fn (Personnel $person) => $this->buildPersonnelRow(
                 $person,
@@ -195,7 +214,8 @@ class DtrController extends Controller
                 $periodEnd,
                 $cutoff,
                 $holidays,
-                $period
+                $period,
+                $pendingCorrections->get($person->personnel_id, collect())
             ));
         $workflowReady = (int) ($certificationSummary['Submitted'] ?? 0)
             + (int) ($certificationSummary['Submitted Late'] ?? 0)
@@ -362,7 +382,7 @@ class DtrController extends Controller
 
             if (! $monitorRow || ! $monitorRow['is_ready']) {
                 return response()->json([
-                    'message' => 'Resolve all missing, incomplete, unverified, and unscheduled attendance records before submission or certification.',
+                    'message' => 'Resolve missing, incomplete, unverified, unscheduled, and pending correction items before submission or certification.',
                 ], 422);
             }
 
@@ -793,7 +813,8 @@ class DtrController extends Controller
         Carbon $periodEnd,
         Carbon $cutoff,
         Collection $holidays,
-        string $period
+        string $period,
+        Collection $pendingCorrectionsByDate
     ): array {
         $records = $person->attendanceRecords->keyBy(
             fn (AttendanceRecord $record) => $record->attendance_date->toDateString()
@@ -823,6 +844,7 @@ class DtrController extends Controller
             $record = $records->get($date->toDateString());
 
             if (! $schedule) {
+                $dayCorrections = collect();
                 $notCoveredDays++;
                 $unscheduledRecords += $record ? 1 : 0;
                 $daily->push([
@@ -844,6 +866,8 @@ class DtrController extends Controller
                     'late_minutes' => 0,
                     'undertime_minutes' => 0,
                     'is_verified' => false,
+                    'pending_correction_count' => $dayCorrections->count(),
+                    'pending_correction_requests' => $this->formatPendingCorrections($dayCorrections),
                 ]);
 
                 continue;
@@ -860,6 +884,10 @@ class DtrController extends Controller
             $isAuthorizedDutyDay = ! $isRegularDutyDay && $isSpecialWorkingDay && ! $holiday;
             $isDutyDay = ($isRegularDutyDay || $isAuthorizedDutyDay) && ! $holiday;
             $attendanceRecord = $isDutyDay ? $record : null;
+            $isApprovedAbsence = in_array($record?->attendance_status, ['Leave', 'Official Business'], true);
+            $dayCorrections = $isDutyDay && ! $isApprovedAbsence
+                ? $pendingCorrectionsByDate->get($date->toDateString(), collect())
+                : collect();
             $status = $holiday
                 ? 'Holiday'
                 : (! $isDutyDay
@@ -892,6 +920,8 @@ class DtrController extends Controller
                 'late_minutes' => $attendanceRecord?->late_minutes ?? 0,
                 'undertime_minutes' => $attendanceRecord?->undertime_minutes ?? 0,
                 'is_verified' => (bool) $attendanceRecord?->is_verified,
+                'pending_correction_count' => $dayCorrections->count(),
+                'pending_correction_requests' => $this->formatPendingCorrections($dayCorrections),
             ]);
         }
 
@@ -914,6 +944,7 @@ class DtrController extends Controller
         $expectedDays = $daily->where('is_duty_day', true)->count();
         $missingDays = $daily->where('status', 'Missing')->count();
         $incompleteDays = $daily->where('status', 'Incomplete')->count();
+        $pendingCorrectionCount = $daily->sum('pending_correction_count');
         $unverifiedDays = $daily
             ->filter(fn (array $day) => $day['is_duty_day']
                 && ! in_array($day['status'], ['Missing', 'Holiday'], true)
@@ -968,6 +999,7 @@ class DtrController extends Controller
                 && $expectedDays > 0
                 && $missingDays === 0
                 && $incompleteDays === 0
+                && $pendingCorrectionCount === 0
                 && $unverifiedDays === 0
                 && $unscheduledRecords === 0,
             'dtr_eligibility' => [
@@ -985,12 +1017,24 @@ class DtrController extends Controller
             'issues' => [
                 'missing' => $missingDays,
                 'incomplete' => $incompleteDays,
+                'pending_corrections' => $pendingCorrectionCount,
                 'unverified' => $unverifiedDays,
                 'unscheduled' => $unscheduledRecords,
             ],
             'certification' => $this->formatCertification($certification),
             'daily_records' => $daily->values(),
         ];
+    }
+
+    private function formatPendingCorrections(Collection $requests): array
+    {
+        return $requests->map(fn (AttendanceCorrectionRequest $request): array => [
+            'request_id' => $request->attendance_correction_request_id,
+            'missing_field' => $request->missing_field,
+            'proposed_time' => $request->proposed_time
+                ? substr((string) $request->proposed_time, 0, 5)
+                : null,
+        ])->values()->all();
     }
 
     private function applicableHoliday(Collection $holidays, Personnel $person): ?Holiday

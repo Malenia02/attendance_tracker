@@ -77,7 +77,8 @@ class ActionCenterSecurityTest extends TestCase
         });
         Schema::create('attendance_correction_requests', function (Blueprint $table): void {
             $table->id('attendance_correction_request_id');
-            $table->unsignedBigInteger('attendance_id');
+            $table->unsignedBigInteger('attendance_id')->nullable();
+            $table->unsignedBigInteger('schedule_id')->nullable();
             $table->unsignedBigInteger('personnel_id');
             $table->date('attendance_date');
             $table->string('missing_field');

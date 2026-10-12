@@ -713,6 +713,7 @@ export default function DtrMonitoring() {
                       <div className="dtr-issues">
                         {!!row.issues.missing && <span>{row.issues.missing} missing</span>}
                         {!!row.issues.incomplete && <span>{row.issues.incomplete} incomplete</span>}
+                        {!!row.issues.pending_corrections && <span>{row.issues.pending_corrections} pending request{row.issues.pending_corrections === 1 ? "" : "s"}</span>}
                         {!!row.issues.unverified && <span>{row.issues.unverified} unverified</span>}
                         {!!row.issues.unscheduled && <span>{row.issues.unscheduled} unscheduled</span>}
                       </div>
@@ -768,6 +769,7 @@ export default function DtrMonitoring() {
           onReview={(date) => navigate(
             `/attendance?date=${date}&personnel=${selected.personnel_id}&correction=1`,
           )}
+          onReviewCorrectionRequests={() => navigate("/action-center?queue=correction_requests")}
           onManageSchedule={() => navigate(`/schedules?personnel=${selected.personnel_id}`)}
         />
       )}
@@ -793,6 +795,7 @@ function DtrDetails({
   onRequestReopen,
   onReviewReopen,
   onReview,
+  onReviewCorrectionRequests,
   onManageSchedule,
 }) {
   const [showReturnForm, setShowReturnForm] = useState(false);
@@ -815,6 +818,7 @@ function DtrDetails({
   };
   const problemDays = row.daily_records.filter((day) => (
     ["Missing", "Incomplete"].includes(day.status)
+    || day.pending_correction_count > 0
     || day.is_unscheduled
     || (day.is_duty_day && !["Missing", "Holiday"].includes(day.status) && !day.is_verified)
   ));
@@ -826,6 +830,7 @@ function DtrDetails({
     && day.attendance_id
     && !day.is_unscheduled
     && !day.is_verified
+    && !day.pending_correction_count
     && !["Missing", "Incomplete"].includes(day.status)
   ));
   const latestHistory = row.certification.history?.slice(0, 4) || [];
@@ -978,6 +983,9 @@ function DtrDetails({
               <span>
                 {row.issues.missing} missing · {row.issues.incomplete} incomplete · {row.issues.unverified} unverified
               </span>
+              {!!row.issues.pending_corrections && (
+                <span>{row.issues.pending_corrections} correction request{row.issues.pending_corrections === 1 ? "" : "s"} awaiting review</span>
+              )}
             </div>
             <div className="dtr-correction-actions">
               {!!verifiableDays.length && canVerify && (
@@ -993,12 +1001,18 @@ function DtrDetails({
                 <button
                   type="button"
                   disabled={exceptionBusy}
-                  onClick={() => problemDays[0].is_unscheduled
-                    ? onManageSchedule()
-                    : setCorrectionDay(problemDays[0])}
+                  onClick={() => problemDays[0].pending_correction_count
+                    ? onReviewCorrectionRequests()
+                    : (problemDays[0].is_unscheduled
+                      ? onManageSchedule()
+                      : setCorrectionDay(problemDays[0]))}
                 >
-                  {problemDays[0].is_unscheduled ? "Review schedule" : "Resolve first issue"}
-                  {problemDays[0].is_unscheduled ? <CalendarX2 size={14} /> : <PencilLine size={14} />}
+                  {problemDays[0].pending_correction_count
+                    ? "Review pending request"
+                    : (problemDays[0].is_unscheduled ? "Review schedule" : "Resolve first issue")}
+                  {problemDays[0].pending_correction_count
+                    ? <ExternalLink size={14} />
+                    : (problemDays[0].is_unscheduled ? <CalendarX2 size={14} /> : <PencilLine size={14} />)}
                 </button>
               )}
             </div>
@@ -1024,6 +1038,11 @@ function DtrDetails({
                 <span className={`dtr-day-status ${statusClass(day.status)}`}>{day.status}</span>
                 {day.is_authorized_duty_day && <small className="authorized">Authorized Duty Day</small>}
                 {day.holiday && <small className="holiday-name">{day.holiday}</small>}
+                {!!day.pending_correction_count && (
+                  <small className="pending-correction">
+                    {day.pending_correction_count} correction request{day.pending_correction_count === 1 ? "" : "s"} pending
+                  </small>
+                )}
                 {!!day.late_minutes && <small>Late {formatDuration(day.late_minutes)}</small>}
               </div>
               {day.is_unscheduled ? (
@@ -1046,19 +1065,26 @@ function DtrDetails({
                 >
                   Verify <CheckCheck size={12} />
                 </button>
-              ) : problemDays.some((problem) => problem.date === day.date) && (
+              ) : problemDays.some((problem) => problem.date === day.date)
+                && (!day.pending_correction_count || canCorrect) && (
                 <button
                   type="button"
                   className="dtr-review-day"
-                  onClick={() => day.is_unscheduled
-                    ? onManageSchedule()
-                    : (canCorrect ? setCorrectionDay(day) : onReview(day.date))}
-                  aria-label={`${canCorrect ? "Resolve" : "Review"} attendance for ${day.date}`}
+                  onClick={() => day.pending_correction_count
+                    ? onReviewCorrectionRequests()
+                    : (day.is_unscheduled
+                      ? onManageSchedule()
+                      : (canCorrect ? setCorrectionDay(day) : onReview(day.date)))}
+                  aria-label={`${day.pending_correction_count ? "Review correction requests for" : (canCorrect ? "Resolve" : "Review")} ${day.date}`}
                 >
-                  {day.is_unscheduled ? "Schedule" : (canCorrect ? "Resolve" : "Review")}
-                  {day.is_unscheduled
-                    ? <CalendarX2 size={12} />
-                    : (canCorrect ? <PencilLine size={12} /> : <ExternalLink size={12} />)}
+                  {day.pending_correction_count
+                    ? "Review request"
+                    : (day.is_unscheduled ? "Schedule" : (canCorrect ? "Resolve" : "Review"))}
+                  {day.pending_correction_count
+                    ? <ExternalLink size={12} />
+                    : (day.is_unscheduled
+                      ? <CalendarX2 size={12} />
+                      : (canCorrect ? <PencilLine size={12} /> : <ExternalLink size={12} />))}
                 </button>
               )}
             </article>

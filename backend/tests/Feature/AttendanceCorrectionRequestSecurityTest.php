@@ -154,7 +154,8 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
 
         Schema::create('attendance_correction_requests', function (Blueprint $table): void {
             $table->id('attendance_correction_request_id');
-            $table->unsignedBigInteger('attendance_id');
+            $table->unsignedBigInteger('attendance_id')->nullable();
+            $table->unsignedBigInteger('schedule_id')->nullable();
             $table->unsignedBigInteger('personnel_id');
             $table->unsignedBigInteger('submitted_by')->nullable();
             $table->date('attendance_date');
@@ -254,7 +255,7 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath(
                 'message',
-                'A correction request for this missing time-out is already pending.'
+                'A correction request for this missing attendance entry is already pending.'
             );
 
         $this->assertDatabaseCount('attendance_correction_requests', 1);
@@ -313,6 +314,84 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             'is_verified' => true,
             'verified_by' => $administrator->user_id,
         ]);
+    }
+
+    public function test_personnel_can_request_missing_time_in_without_an_attendance_row_and_hr_creates_an_unverified_record(): void
+    {
+        $this->travelTo(now()->startOfWeek()->addDays(2)->setTime(16, 0));
+        [$hr, $personnel, $date] = $this->createAbsenceFixture();
+        $employee = $this->createUser('absent-employee', 'Personnel', $personnel->personnel_id);
+
+        $this->actingAs($employee)
+            ->getJson('/api/attendance?date='.$date)
+            ->assertOk()
+            ->assertJsonPath('data.0.session_status.morning', 'Missed')
+            ->assertJsonPath('data.0.session_status.afternoon', 'Missed')
+            ->assertJsonPath('data.0.missing_time_in_entries.0.field', 'morning_time_in');
+
+        $requestId = $this->actingAs($employee)
+            ->postJson('/api/attendance/correction-requests', [
+                'attendance_date' => $date,
+                'missing_field' => 'afternoon_time_in',
+                'proposed_time' => '13:10',
+                'reason' => 'I arrived after a medical appointment and missed the normal kiosk scan.',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.attendance_id', null)
+            ->assertJsonPath('data.missing_label', 'Afternoon time-in')
+            ->json('data.request_id');
+
+        $this->assertDatabaseHas('attendance_correction_requests', [
+            'attendance_correction_request_id' => $requestId,
+            'attendance_id' => null,
+            'schedule_id' => $personnel->scheduleAssignments()->first()->schedule_id,
+        ]);
+        $this->assertDatabaseCount('attendance_records', 0);
+
+        $this->actingAs($hr)
+            ->patchJson("/api/attendance/correction-requests/{$requestId}/review", [
+                'action' => 'Approved',
+                'review_remarks' => 'Confirmed the reported arrival time with the supervisor.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'Approved');
+
+        $attendance = AttendanceRecord::query()
+            ->where('personnel_id', $personnel->personnel_id)
+            ->whereDate('attendance_date', $date)
+            ->firstOrFail();
+        $this->assertSame('13:10', $attendance->afternoon_time_in->format('H:i'));
+        $this->assertFalse($attendance->is_verified);
+        $this->assertSame('Manual', $attendance->record_source);
+        $this->assertDatabaseHas('attendance_correction_requests', [
+            'attendance_correction_request_id' => $requestId,
+            'attendance_id' => $attendance->attendance_id,
+        ]);
+        $this->assertDatabaseHas('attendance_change_logs', [
+            'attendance_id' => $attendance->attendance_id,
+            'changed_by' => $hr->user_id,
+            'action_type' => 'Created',
+        ]);
+    }
+
+    public function test_missing_time_in_request_rejects_time_outside_the_schedule_window(): void
+    {
+        $this->travelTo(now()->startOfWeek()->addDays(2)->setTime(16, 0));
+        [, $personnel, $date] = $this->createAbsenceFixture();
+        $employee = $this->createUser('invalid-timein-employee', 'Personnel', $personnel->personnel_id);
+
+        $this->actingAs($employee)
+            ->postJson('/api/attendance/correction-requests', [
+                'attendance_date' => $date,
+                'missing_field' => 'morning_time_in',
+                'proposed_time' => '05:00',
+                'reason' => 'I would like to report a missed time-in outside the schedule window.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'The proposed time-in must fall within the scheduled attendance window.');
+
+        $this->assertDatabaseCount('attendance_correction_requests', 0);
+        $this->assertDatabaseCount('attendance_records', 0);
     }
 
     public function test_hr_can_verify_another_personnel_attendance(): void
@@ -764,9 +843,9 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             'tuesday' => true,
             'wednesday' => true,
             'thursday' => true,
-            'friday' => false,
-            'saturday' => false,
-            'sunday' => false,
+            'friday' => true,
+            'saturday' => true,
+            'sunday' => true,
             'status' => 'Active',
         ]);
         $attendance = AttendanceRecord::create([

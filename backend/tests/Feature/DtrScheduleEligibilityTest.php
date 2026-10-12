@@ -119,6 +119,17 @@ class DtrScheduleEligibilityTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::create('attendance_correction_requests', function (Blueprint $table): void {
+            $table->id('attendance_correction_request_id');
+            $table->unsignedBigInteger('attendance_id')->nullable();
+            $table->unsignedBigInteger('personnel_id');
+            $table->date('attendance_date');
+            $table->string('missing_field');
+            $table->time('proposed_time')->nullable();
+            $table->string('request_status')->default('Pending');
+            $table->timestamps();
+        });
+
         Schema::create('holidays', function (Blueprint $table): void {
             $table->id('holiday_id');
             $table->date('holiday_date');
@@ -216,6 +227,7 @@ class DtrScheduleEligibilityTest extends TestCase
         Schema::dropIfExists('dtr_status_logs');
         Schema::dropIfExists('dtr_certifications');
         Schema::dropIfExists('holidays');
+        Schema::dropIfExists('attendance_correction_requests');
         Schema::dropIfExists('attendance_records');
         Schema::dropIfExists('personnel_schedules');
         Schema::dropIfExists('work_schedules');
@@ -698,6 +710,87 @@ class DtrScheduleEligibilityTest extends TestCase
         $this->assertSame('12:48', Carbon::parse($day['afternoon_time_in'])->setTimezone('Asia/Manila')->format('H:i'));
         $this->assertNull($day['afternoon_time_out']);
         $this->assertSame('Incomplete', $day['status']);
+    }
+
+    public function test_pending_correction_requests_are_visible_and_block_dtr_submission(): void
+    {
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-08-01',
+            'created_by' => $administrator->user_id,
+        ]);
+        $attendance = AttendanceRecord::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'attendance_date' => '2026-08-03',
+            'morning_time_in' => '2026-08-03 07:00:00',
+            'morning_time_out' => '2026-08-03 12:00:00',
+            'afternoon_time_in' => '2026-08-03 13:00:00',
+            'afternoon_time_out' => '2026-08-03 18:00:00',
+            'attendance_status' => 'Present',
+            'total_work_minutes' => 600,
+            'is_verified' => true,
+        ]);
+        $requestId = Schema::getConnection()->table('attendance_correction_requests')->insertGetId([
+            'attendance_id' => $attendance->attendance_id,
+            'personnel_id' => $personnel->personnel_id,
+            'attendance_date' => '2026-08-03',
+            'missing_field' => 'morning_time_in',
+            'proposed_time' => '07:05:00',
+            'request_status' => 'Pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        Schema::getConnection()->table('holidays')->insert([
+            'holiday_date' => '2026-08-04',
+            'holiday_name' => 'Test Public Holiday',
+            'holiday_type' => 'Regular Holiday',
+            'scope' => 'National',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (['2026-08-04', '2026-08-08'] as $excludedDate) {
+            Schema::getConnection()->table('attendance_correction_requests')->insert([
+                'attendance_id' => null,
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => $excludedDate,
+                'missing_field' => 'morning_time_in',
+                'proposed_time' => '07:05:00',
+                'request_status' => 'Pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+        Carbon::setTestNow(Carbon::parse('2026-08-15 18:00:00', 'Asia/Manila'));
+
+        $response = $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-08&period=first_half')
+            ->assertOk()
+            ->assertJsonPath('data.0.is_ready', false)
+            ->assertJsonPath('data.0.issues.pending_corrections', 1)
+            ->assertJsonPath('data.0.daily_records.2.pending_correction_count', 1)
+            ->assertJsonPath('data.0.daily_records.3.pending_correction_count', 0)
+            ->assertJsonPath('data.0.daily_records.7.pending_correction_count', 0)
+            ->assertJsonPath('data.0.daily_records.2.pending_correction_requests.0.request_id', $requestId);
+
+        $this->assertNotNull($response->json('data.0'));
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-08',
+                'period' => 'first_half',
+                'status' => 'Submitted',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Resolve missing, incomplete, unverified, unscheduled, and pending correction items before submission or certification.'
+            );
     }
 
     private function records(): array

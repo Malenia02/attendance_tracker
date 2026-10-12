@@ -11,6 +11,7 @@ class AttendanceCorrectionRequest extends Model
 
     protected $fillable = [
         'attendance_id',
+        'schedule_id',
         'personnel_id',
         'submitted_by',
         'attendance_date',
@@ -38,6 +39,11 @@ class AttendanceCorrectionRequest extends Model
             'attendance_id',
             'attendance_id'
         );
+    }
+
+    public function schedule(): BelongsTo
+    {
+        return $this->belongsTo(WorkSchedule::class, 'schedule_id', 'schedule_id');
     }
 
     public function personnel(): BelongsTo

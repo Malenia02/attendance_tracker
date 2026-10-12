@@ -194,6 +194,7 @@ final class ActionCenterController extends Controller
         return AttendanceCorrectionRequest::query()
             ->with([
                 'personnel.department:department_id,department_code,department_name',
+                'schedule',
                 'attendance:attendance_id,schedule_id,attendance_status,record_source,is_verified,morning_time_in,morning_time_out,afternoon_time_in,afternoon_time_out',
                 'attendance.schedule:schedule_id,schedule_name',
                 'submittedBy:user_id,username',
@@ -330,15 +331,18 @@ final class ActionCenterController extends Controller
                 'date' => $item->attendance_date->toDateString(),
                 'status' => $item->request_status,
                 'missing_field' => $item->missing_field,
-                'missing_label' => $item->missing_field === 'morning_time_out'
-                    ? 'Morning time-out'
-                    : 'Afternoon time-out',
+                'missing_label' => match ($item->missing_field) {
+                    'morning_time_in' => 'Morning time-in',
+                    'morning_time_out' => 'Morning time-out',
+                    'afternoon_time_in' => 'Afternoon time-in',
+                    default => 'Afternoon time-out',
+                },
                 'proposed_time' => Carbon::parse($item->proposed_time)->format('H:i'),
                 'reason' => $item->reason,
                 'submitted_by' => $item->submittedBy?->username,
                 'attendance' => $this->formatAttendanceContext($item),
-                'detail' => ($item->missing_field === 'morning_time_out' ? 'Morning' : 'Afternoon')
-                    .' time-out correction: '.$item->reason,
+                'detail' => $this->correctionFieldLabel($item->missing_field)
+                    .' correction: '.$item->reason,
                 'action_label' => 'Review correction',
                 'action_url' => '/attendance?'.http_build_query([
                     'date' => $item->attendance_date->toDateString(),
@@ -393,7 +397,16 @@ final class ActionCenterController extends Controller
         $attendance = $request->attendance;
 
         if (! $attendance) {
-            return null;
+            return [
+                'status' => 'No attendance row yet',
+                'record_source' => null,
+                'is_verified' => false,
+                'schedule_name' => $request->schedule?->schedule_name,
+                'morning_time_in' => null,
+                'morning_time_out' => null,
+                'afternoon_time_in' => null,
+                'afternoon_time_out' => null,
+            ];
         }
 
         return [
@@ -406,6 +419,16 @@ final class ActionCenterController extends Controller
             'afternoon_time_in' => $attendance->afternoon_time_in?->format('H:i'),
             'afternoon_time_out' => $attendance->afternoon_time_out?->format('H:i'),
         ];
+    }
+
+    private function correctionFieldLabel(string $field): string
+    {
+        return match ($field) {
+            'morning_time_in' => 'Morning time-in',
+            'morning_time_out' => 'Morning time-out',
+            'afternoon_time_in' => 'Afternoon time-in',
+            default => 'Afternoon time-out',
+        };
     }
 
     private function missingTimeOutLabel(AttendanceRecord $record): string
