@@ -8,6 +8,13 @@ is not discarded without the user's choice.
 
 ## Current release
 
+### v0.3.3 - 2026-10-13
+
+- Added a MySQL 8.4 CI regression check for repairing the attendance correction migration after a partial run.
+- The check verifies existing correction data survives and the corrected `schedule_id` foreign key is present.
+
+Deployment notes: no production schema change is introduced by this release. This CI check uses a dedicated ephemeral database and does not connect to production.
+
 ### v0.3.2 - 2026-10-12
 
 - Match the correction-request `schedule_id` type to `work_schedules.schedule_id` (`INT UNSIGNED`).

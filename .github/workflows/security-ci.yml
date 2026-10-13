@@ -86,6 +86,13 @@ jobs:
           php artisan tinker --execute="DB::table('migrations')->where('migration', '2026_07_29_000000_harden_production_integrity')->delete();"
           php artisan migrate --force --no-interaction
 
+      - name: Verify attendance correction migration repairs partial MySQL state
+        working-directory: backend
+        run: |
+          mysql --protocol=TCP -h 127.0.0.1 -uroot -ptest-root-password \
+            -e "CREATE DATABASE attendance_migration_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+          DB_DATABASE=attendance_migration_test php tests/Support/verify_attendance_correction_migration.php
+
       - name: Run backend tests
         working-directory: backend
         env:
