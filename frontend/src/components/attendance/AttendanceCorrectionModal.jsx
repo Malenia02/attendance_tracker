@@ -51,6 +51,15 @@ export default function AttendanceCorrectionModal({
     record.overtime_time_out,
   ].some(Boolean);
 
+  function clearSession(session) {
+    setTimes((current) => ({
+      ...current,
+      [`${session}_time_in`]: "",
+      [`${session}_time_out`]: "",
+    }));
+    setStatus(null);
+  }
+
   async function submit(event) {
     event.preventDefault();
     setStatus(null);
@@ -166,28 +175,50 @@ export default function AttendanceCorrectionModal({
           )}
 
           {recordType === "Time Entries" && (
-            <div className="attendance-correction-times">
-              {[
-                ["morning_time_in", "Morning time in"],
-                ["morning_time_out", "Morning time out"],
-                ["afternoon_time_in", "Afternoon time in"],
-                ["afternoon_time_out", "Afternoon time out"],
-              ].map(([field, label]) => (
-                <label key={field}>
-                  {label}
-                  <input
-                    type="time"
-                    value={times[field]}
-                    onChange={(event) => {
-                      setTimes((current) => ({
-                        ...current,
-                        [field]: event.target.value,
-                      }));
-                      setStatus(null);
-                    }}
-                  />
-                </label>
-              ))}
+            <div>
+              <p className="attendance-correction-times-help">
+                Keep the session the employee worked and clear the other one. At least one complete session must remain.
+              </p>
+              <div className="attendance-correction-times">
+                {[
+                  ["morning", "Morning session"],
+                  ["afternoon", "Afternoon session"],
+                ].map(([session, label]) => (
+                  <section className="attendance-correction-session" key={session}>
+                    <div className="attendance-correction-session-heading">
+                      <strong>{label}</strong>
+                      <button
+                        type="button"
+                        className="attendance-correction-clear-session"
+                        onClick={() => clearSession(session)}
+                        disabled={!times[`${session}_time_in`] && !times[`${session}_time_out`]}
+                        aria-label={`Clear ${label.toLowerCase()} times`}
+                      >
+                        Clear times
+                      </button>
+                    </div>
+                    {[
+                      [`${session}_time_in`, `${label.replace(" session", "")} time in`],
+                      [`${session}_time_out`, `${label.replace(" session", "")} time out`],
+                    ].map(([field, fieldLabel]) => (
+                      <label key={field}>
+                        {fieldLabel}
+                        <input
+                          type="time"
+                          value={times[field]}
+                          onChange={(event) => {
+                            setTimes((current) => ({
+                              ...current,
+                              [field]: event.target.value,
+                            }));
+                            setStatus(null);
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </section>
+                ))}
+              </div>
             </div>
           )}
 

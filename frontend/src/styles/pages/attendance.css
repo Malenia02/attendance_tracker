@@ -1638,6 +1638,53 @@
   background: var(--bg-card-soft);
 }
 
+.attendance-correction-times-help {
+  margin: 12px 0 -5px;
+  color: var(--text-soft);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.attendance-correction-session {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 9px;
+}
+
+.attendance-correction-session-heading {
+  min-height: 28px;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-main);
+  font-size: 9px;
+}
+
+.attendance-correction-clear-session {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-soft);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.attendance-correction-clear-session:hover:not(:disabled) {
+  border-color: rgba(49, 85, 198, 0.48);
+  color: var(--primary);
+}
+
+.attendance-correction-clear-session:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .attendance-correction-note {
   padding: 10px 11px;
   display: flex;
