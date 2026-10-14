@@ -558,7 +558,7 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             ->assertOk()
             ->assertJsonPath(
                 'message',
-                'Absence confirmed and audited. A different authorized reviewer must verify it before DTR certification.'
+                'Absence confirmed and audited. Any previous time entries were removed from the DTR. A different authorized reviewer must verify it before DTR certification.'
             )
             ->assertJsonPath('data.display_status', 'Absent')
             ->assertJsonPath('data.is_verified', false);
@@ -579,6 +579,106 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
             'attendance_id' => $attendanceId,
             'changed_by' => $hr->user_id,
             'action_type' => 'Created',
+        ]);
+    }
+
+    public function test_hr_must_explicitly_confirm_removing_existing_time_entries_before_marking_absent(): void
+    {
+        [$hr, $personnel, $date] = $this->createAbsenceFixture();
+        $scheduleId = PersonnelSchedule::query()
+            ->where('personnel_id', $personnel->personnel_id)
+            ->value('schedule_id');
+        $attendance = AttendanceRecord::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $scheduleId,
+            'attendance_date' => $date,
+            'morning_time_in' => $date.' 07:04:00',
+            'morning_time_out' => $date.' 12:01:00',
+            'afternoon_time_in' => $date.' 13:02:00',
+            'afternoon_time_out' => $date.' 17:00:00',
+            'overtime_time_in' => $date.' 17:15:00',
+            'overtime_time_out' => $date.' 18:00:00',
+            'attendance_status' => 'Present',
+            'total_work_minutes' => 600,
+            'overtime_minutes' => 45,
+            'record_source' => 'Manual',
+        ]);
+
+        $this->actingAs($hr)
+            ->postJson('/api/attendance/correction', [
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => $date,
+                'record_type' => 'Absent',
+                'reason' => 'The time entries were entered for the wrong employee.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'This record contains time entries. Confirm their removal before marking the day Absent.'
+            );
+
+        $this->assertSame('Present', $attendance->fresh()->attendance_status);
+        $this->assertDatabaseMissing('attendance_change_logs', [
+            'attendance_id' => $attendance->attendance_id,
+        ]);
+    }
+
+    public function test_hr_can_replace_erroneous_time_entries_with_audited_unverified_absence(): void
+    {
+        [$hr, $personnel, $date] = $this->createAbsenceFixture();
+        $scheduleId = PersonnelSchedule::query()
+            ->where('personnel_id', $personnel->personnel_id)
+            ->value('schedule_id');
+        $attendance = AttendanceRecord::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $scheduleId,
+            'attendance_date' => $date,
+            'morning_time_in' => $date.' 07:04:00',
+            'morning_time_out' => $date.' 12:01:00',
+            'afternoon_time_in' => $date.' 13:02:00',
+            'afternoon_time_out' => $date.' 17:00:00',
+            'overtime_time_in' => $date.' 17:15:00',
+            'overtime_time_out' => $date.' 18:00:00',
+            'attendance_status' => 'Present',
+            'total_work_minutes' => 600,
+            'overtime_minutes' => 45,
+            'record_source' => 'Manual',
+            'is_verified' => true,
+            'verified_by' => $hr->user_id,
+            'verified_at' => now()->subHour(),
+        ]);
+
+        $this->actingAs($hr)
+            ->postJson('/api/attendance/correction', [
+                'personnel_id' => $personnel->personnel_id,
+                'attendance_date' => $date,
+                'record_type' => 'Absent',
+                'replace_existing_time_entries' => true,
+                'reason' => 'The time entries were entered for the wrong employee.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.display_status', 'Absent')
+            ->assertJsonPath('data.has_time_entries', false)
+            ->assertJsonPath('data.is_verified', false)
+            ->assertJsonPath('message', 'Absence confirmed and audited. Any previous time entries were removed from the DTR. A different authorized reviewer must verify it before DTR certification.');
+
+        $attendance->refresh();
+        $this->assertSame('Absent', $attendance->attendance_status);
+        $this->assertNull($attendance->morning_time_in);
+        $this->assertNull($attendance->morning_time_out);
+        $this->assertNull($attendance->afternoon_time_in);
+        $this->assertNull($attendance->afternoon_time_out);
+        $this->assertNull($attendance->overtime_time_in);
+        $this->assertNull($attendance->overtime_time_out);
+        $this->assertSame(0, $attendance->total_work_minutes);
+        $this->assertSame(0, $attendance->overtime_minutes);
+        $this->assertFalse($attendance->is_verified);
+        $this->assertNull($attendance->verified_by);
+        $this->assertDatabaseHas('attendance_change_logs', [
+            'attendance_id' => $attendance->attendance_id,
+            'changed_by' => $hr->user_id,
+            'action_type' => 'Updated',
+            'reason' => 'The time entries were entered for the wrong employee.',
         ]);
     }
 

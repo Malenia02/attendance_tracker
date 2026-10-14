@@ -25,6 +25,7 @@ final class ManualAttendanceCorrectionRequest extends FormRequest
                 'Official Business',
                 'Work From Home',
             ])],
+            'replace_existing_time_entries' => ['sometimes', 'boolean'],
             'morning_time_in' => ['nullable', 'date_format:H:i'],
             'morning_time_out' => ['nullable', 'date_format:H:i'],
             'afternoon_time_in' => ['nullable', 'date_format:H:i'],

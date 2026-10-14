@@ -39,8 +39,17 @@ export default function AttendanceCorrectionModal({
     afternoon_time_out: timeInputValue(record.afternoon_time_out),
   });
   const [reason, setReason] = useState("");
+  const [confirmTimeEntryRemoval, setConfirmTimeEntryRemoval] = useState(false);
   const [status, setStatus] = useState(null);
   const missingTimeOutEntries = record.missing_time_out_entries || [];
+  const hasExistingTimeEntries = record.has_time_entries ?? [
+    record.morning_time_in,
+    record.morning_time_out,
+    record.afternoon_time_in,
+    record.afternoon_time_out,
+    record.overtime_time_in,
+    record.overtime_time_out,
+  ].some(Boolean);
 
   async function submit(event) {
     event.preventDefault();
@@ -49,6 +58,7 @@ export default function AttendanceCorrectionModal({
     try {
       const payload = await onSave({
         record_type: recordType,
+        replace_existing_time_entries: recordType === "Absent" && confirmTimeEntryRemoval,
         ...times,
         reason: reason.trim(),
       });
@@ -121,11 +131,39 @@ export default function AttendanceCorrectionModal({
 
           <label>
             Record type
-            <select value={recordType} onChange={(event) => { setRecordType(event.target.value); setStatus(null); }}>
+            <select value={recordType} onChange={(event) => {
+              setRecordType(event.target.value);
+              setConfirmTimeEntryRemoval(false);
+              setStatus(null);
+            }}>
               <option>Time Entries</option>
               {absenceTypes.map((type) => <option key={type}>{type}</option>)}
             </select>
           </label>
+
+          {recordType === "Absent" && hasExistingTimeEntries && (
+            <div className="attendance-correction-exception">
+              <AlertTriangle size={17} />
+              <div>
+                <strong>Existing time entries will be removed from this attendance record</strong>
+                <span>
+                  The original values will remain in the audit history. The absence will be unverified
+                  and must be checked by a different authorized reviewer before DTR certification.
+                </span>
+                <label className="attendance-correction-replacement-confirm">
+                  <input
+                    type="checkbox"
+                    checked={confirmTimeEntryRemoval}
+                    onChange={(event) => {
+                      setConfirmTimeEntryRemoval(event.target.checked);
+                      setStatus(null);
+                    }}
+                  />
+                  I confirm these time entries were entered by mistake and the employee was absent.
+                </label>
+              </div>
+            </div>
+          )}
 
           {recordType === "Time Entries" && (
             <div className="attendance-correction-times">
@@ -177,7 +215,13 @@ export default function AttendanceCorrectionModal({
 
         <footer className="app-modal-footer">
           <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="save" disabled={busy || reason.trim().length < 10}>
+          <button
+            type="submit"
+            className="save"
+            disabled={busy || reason.trim().length < 10 || (
+              recordType === "Absent" && hasExistingTimeEntries && !confirmTimeEntryRemoval
+            )}
+          >
             {busy
               ? "Saving…"
               : isMissingDutyDay && recordType === "Absent" ? "Confirm absent for review" : "Save for review"}

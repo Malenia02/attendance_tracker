@@ -1235,25 +1235,10 @@ class AttendanceController extends Controller
                 return response()->json(['message' => $absenceError], 422);
             }
 
-            $existingRecord = AttendanceRecord::query()
-                ->where('personnel_id', $personnel->personnel_id)
-                ->whereDate('attendance_date', $date)
-                ->first();
-
-            if ($existingRecord && collect([
-                $existingRecord->morning_time_in,
-                $existingRecord->morning_time_out,
-                $existingRecord->afternoon_time_in,
-                $existingRecord->afternoon_time_out,
-            ])->contains(fn ($value): bool => (bool) $value)) {
-                return response()->json([
-                    'message' => 'This date already contains time entries. Correct the recorded times instead of confirming an absence.',
-                ], 422);
-            }
         }
 
         $user = $request->user();
-        $result = DB::transaction(function () use ($personnel, $schedule, $date, $validated, $user): AttendanceRecord {
+        $result = DB::transaction(function () use ($personnel, $schedule, $date, $validated, $user): array {
             $record = AttendanceRecord::query()
                 ->where('personnel_id', $personnel->personnel_id)
                 ->whereDate('attendance_date', $date)
@@ -1279,8 +1264,28 @@ class AttendanceController extends Controller
                 'verified_at',
                 'remarks',
                 'record_source',
+                'overtime_time_in',
+                'overtime_time_out',
+                'overtime_minutes',
             ];
             $oldValues = $isNew ? null : $record->only($trackedFields);
+
+            $hasExistingTimeEntries = collect([
+                $record->morning_time_in,
+                $record->morning_time_out,
+                $record->afternoon_time_in,
+                $record->afternoon_time_out,
+                $record->overtime_time_in,
+                $record->overtime_time_out,
+            ])->contains(fn ($value): bool => (bool) $value);
+
+            if ($validated['record_type'] === 'Absent'
+                && $hasExistingTimeEntries
+                && ! ($validated['replace_existing_time_entries'] ?? false)) {
+                return [
+                    'error' => 'This record contains time entries. Confirm their removal before marking the day Absent.',
+                ];
+            }
 
             $record->schedule_id = $schedule?->schedule_id;
             $record->record_source = 'Manual';
@@ -1310,10 +1315,13 @@ class AttendanceController extends Controller
                 $record->morning_time_out = null;
                 $record->afternoon_time_in = null;
                 $record->afternoon_time_out = null;
+                $record->overtime_time_in = null;
+                $record->overtime_time_out = null;
                 $record->attendance_status = $validated['record_type'];
                 $record->total_work_minutes = 0;
                 $record->late_minutes = 0;
                 $record->undertime_minutes = 0;
+                $record->overtime_minutes = 0;
             }
 
             $record->save();
@@ -1327,16 +1335,22 @@ class AttendanceController extends Controller
                 'reason' => $validated['reason'],
             ]);
 
-            return $record->fresh(['schedule']);
+            return ['record' => $record->fresh(['schedule'])];
         });
+
+        if (isset($result['error'])) {
+            return response()->json(['message' => $result['error']], 422);
+        }
+
+        $correctedRecord = $result['record'];
 
         return response()->json([
             'message' => $validated['record_type'] === 'Absent'
-                ? 'Absence confirmed and audited. A different authorized reviewer must verify it before DTR certification.'
+                ? 'Absence confirmed and audited. Any previous time entries were removed from the DTR. A different authorized reviewer must verify it before DTR certification.'
                 : 'Attendance correction saved and audited. A different authorized reviewer must verify it before DTR certification.',
             'data' => $this->formatAttendance(
-                $result,
-                $result->schedule,
+                $correctedRecord,
+                $correctedRecord->schedule,
                 Carbon::parse($date)->endOfDay(),
                 false
             ),
@@ -2158,6 +2172,14 @@ class AttendanceController extends Controller
             'afternoon_time_out' => $record->afternoon_time_out?->toISOString(),
             'overtime_time_in' => $record->overtime_time_in?->toISOString(),
             'overtime_time_out' => $record->overtime_time_out?->toISOString(),
+            'has_time_entries' => collect([
+                $record->morning_time_in,
+                $record->morning_time_out,
+                $record->afternoon_time_in,
+                $record->afternoon_time_out,
+                $record->overtime_time_in,
+                $record->overtime_time_out,
+            ])->contains(fn ($value): bool => (bool) $value),
             'attendance_status' => $record->attendance_status,
             'display_status' => $displayStatus,
             'total_work_minutes' => $record->total_work_minutes,
