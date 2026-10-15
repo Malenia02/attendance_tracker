@@ -21,6 +21,7 @@ import ModalPortal from "../components/common/ModalPortal";
 import FormStatusBanner from "../components/common/FormStatusBanner";
 import FormDraftNotice from "../components/common/FormDraftNotice";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import useSessionFormDraft from "../hooks/useSessionFormDraft";
 import { formDraftKey } from "../lib/formDrafts";
 
@@ -401,7 +402,7 @@ export default function Departments() {
             </thead>
             <tbody>
               {loading && !departments.length ? (
-                <tr><td colSpan="7" className="users-empty">Loading departments…</td></tr>
+                <TableSkeletonRows columns={7} label="departments" />
               ) : departments.length ? departments.map((department) => (
                 <tr key={department.department_id}>
                   <td><strong>{department.department_code}</strong><small>{department.department_name}</small></td>

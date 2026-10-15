@@ -20,6 +20,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import ModalPortal from "../components/common/ModalPortal";
 import FormStatusBanner from "../components/common/FormStatusBanner";
 import FormDraftNotice from "../components/common/FormDraftNotice";
@@ -552,7 +553,7 @@ export default function Personnel() {
             </thead>
             <tbody>
               {loading && !records.length ? (
-                <tr><td colSpan="6" className="users-empty">Loading personnel records…</td></tr>
+                <TableSkeletonRows columns={6} label="personnel records" />
               ) : records.length === 0 ? (
                 <tr><td colSpan="6" className="users-empty">No personnel records match your filters.</td></tr>
               ) : records.map((record) => (

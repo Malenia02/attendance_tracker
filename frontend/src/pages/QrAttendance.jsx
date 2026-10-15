@@ -26,6 +26,7 @@ import DilgSeal from "../components/branding/DilgSeal";
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import { formatDuration } from "../lib/duration";
 
 
@@ -995,7 +996,7 @@ export default function QrAttendance() {
             <thead><tr><th>Personnel</th><th>Action</th><th>Result</th><th>Time</th><th>Operator</th><th>Message</th></tr></thead>
             <tbody>
               {scanLoading && !scanLogs.length ? (
-                <tr><td colSpan="6" className="users-empty">Loading QR activity…</td></tr>
+                <TableSkeletonRows columns={6} label="QR activity" />
               ) : scanLogs.length ? scanLogs.map((scan) => (
                 <tr key={scan.qr_scan_id}>
                   <td><strong>{scan.full_name || "Unknown QR"}</strong><small>{scan.employee_number || "No personnel match"}</small></td>

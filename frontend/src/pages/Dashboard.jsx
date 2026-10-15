@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
 import { formatDuration } from "../lib/duration";
+import { DashboardSkeleton } from "../components/common/Skeletons";
 
 const QUEUE_LABELS = {
   attendance_verification: ["Attendance verification", "/attendance", ClipboardCheck],
@@ -521,7 +522,7 @@ export default function Dashboard() {
   }
 
   if (loading) {
-    return <section className="ops-dashboard"><div className="dashboard-loading"><span><Activity size={25} /></span><strong>Preparing your secured dashboard…</strong><small>Loading your role-specific workspace</small></div></section>;
+    return <section className="ops-dashboard"><DashboardSkeleton /></section>;
   }
 
   if (!data) {

@@ -7,11 +7,11 @@ import {
   CircleAlert,
   Clock3,
   FileCheck2,
-  LoaderCircle,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
 import Pagination from "../components/common/Pagination";
+import { NotificationListSkeleton } from "../components/common/Skeletons";
 import { apiFetch } from "../lib/auth";
 
 const ICONS = {
@@ -143,7 +143,7 @@ export default function Notifications() {
 
         <div className="notifications-list" aria-live="polite">
           {loading ? (
-            <div className="notifications-state"><LoaderCircle className="spin" size={28} /><strong>Loading your notifications…</strong></div>
+            <NotificationListSkeleton />
           ) : error ? (
             <div className="notifications-state error"><CircleAlert size={28} /><strong>Notification Center is unavailable</strong><span>{error}</span><button type="button" onClick={loadNotifications}>Try again</button></div>
           ) : items.length === 0 ? (

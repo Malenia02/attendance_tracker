@@ -19,6 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import FormStatusBanner from "../components/common/FormStatusBanner";
 import ModalPortal from "../components/common/ModalPortal";
 import { apiFetch } from "../lib/auth";
@@ -375,7 +376,7 @@ export default function LeaveRequests() {
             </thead>
             <tbody>
               {loading && !records.length ? (
-                <tr><td colSpan="7" className="users-empty">Loading requests…</td></tr>
+                <TableSkeletonRows columns={7} label="leave requests" />
               ) : records.length ? records.map((record) => (
                 <tr key={record.leave_id}>
                   <td>

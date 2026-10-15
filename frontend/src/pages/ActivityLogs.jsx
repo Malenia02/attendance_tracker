@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import ModalPortal from "../components/common/ModalPortal";
 
 async function readResponse(response) {
@@ -204,7 +205,7 @@ export default function ActivityLogs() {
             <thead><tr><th>Date & time</th><th>Operator</th><th>Action</th><th>Description</th><th>Source</th><th>IP address</th><th><span className="sr-only">Details</span></th></tr></thead>
             <tbody>
               {loading && !logs.length ? (
-                <tr><td colSpan="7" className="users-empty">Loading audit activity…</td></tr>
+                <TableSkeletonRows columns={7} label="audit activity" />
               ) : logs.length ? logs.map((log) => (
                 <tr key={log.log_key}>
                   <td><time className="activity-time">{formatDateTime(log.created_at)}</time></td>

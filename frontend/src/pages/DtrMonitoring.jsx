@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 import ModalPortal from "../components/common/ModalPortal";
@@ -652,7 +653,7 @@ export default function DtrMonitoring() {
             </thead>
             <tbody>
               {loading && !rows.length ? (
-                <tr><td colSpan={meta.can_generate ? 8 : 7} className="users-empty">Calculating monthly DTR records…</td></tr>
+                <TableSkeletonRows columns={meta.can_generate ? 8 : 7} label="monthly DTR records" />
               ) : !filteredRows.length ? (
                 <tr><td colSpan={meta.can_generate ? 8 : 7} className="users-empty">No DTR records match these filters.</td></tr>
               ) : filteredRows.map((row) => (

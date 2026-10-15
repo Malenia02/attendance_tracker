@@ -19,6 +19,7 @@ import {
 import { Link, useSearchParams } from "react-router";
 import AttendanceCorrectionRequestModal from "../components/attendance/AttendanceCorrectionRequestModal";
 import Pagination from "../components/common/Pagination";
+import { ActionListSkeleton } from "../components/common/Skeletons";
 import { apiFetch, getStoredUser } from "../lib/auth";
 
 const QUEUE_ICONS = {
@@ -284,11 +285,7 @@ export default function ActionCenter() {
 
         <div className="action-center-list" aria-live="polite">
           {loading ? (
-            <div className="action-center-state">
-              <RefreshCw className="spin" size={24} />
-              <strong>Checking secure queues…</strong>
-              <span>Only records inside your authorized scope are being loaded.</span>
-            </div>
+            <ActionListSkeleton />
           ) : data.data.length ? data.data.map((item) => (
             <article key={`${queue}-${item.id}`} className="action-center-row">
               <div className="action-personnel-avatar">

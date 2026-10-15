@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   CircleAlert,
   ClipboardList,
-  RefreshCw,
   Search,
   ShieldCheck,
   UserCheck,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import { apiFetch, getStoredUser } from "../lib/auth";
 
 const EMPTY_DATA = {
@@ -235,7 +235,7 @@ export default function PersonnelOnboarding() {
             </tr></thead>
             <tbody>
               {loading && !records.data.length ? (
-                <tr><td colSpan="6" className="onboarding-empty"><RefreshCw className="spin" size={23} /> Checking readiness...</td></tr>
+                <TableSkeletonRows columns={6} label="personnel readiness" />
               ) : records.data.length ? records.data.map((record) => {
                 const actionable = ["Ready", "Active"].includes(record.readiness.state);
                 const missingLabels = record.readiness.requirements.filter((item) => !item.complete);

@@ -17,6 +17,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import ModalPortal from "../components/common/ModalPortal";
 import FormStatusBanner from "../components/common/FormStatusBanner";
 import FormDraftNotice from "../components/common/FormDraftNotice";
@@ -430,7 +431,7 @@ export default function SystemUsers() {
             </thead>
             <tbody>
               {loading && !users.length ? (
-                <tr><td colSpan="6" className="users-empty">Loading system users…</td></tr>
+                <TableSkeletonRows columns={6} label="system users" />
               ) : users.length === 0 ? (
                 <tr><td colSpan="6" className="users-empty">No system users match your filters.</td></tr>
               ) : users.map((user) => (

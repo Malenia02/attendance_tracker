@@ -12,6 +12,7 @@
 @import "./styles/components/update-notice.css";
 @import "./styles/components/notification-bell.css";
 @import "./styles/components/toasts.css";
+@import "./styles/components/skeletons.css";
 
 /* Feature pages */
 @import "./styles/pages/dashboard.css";

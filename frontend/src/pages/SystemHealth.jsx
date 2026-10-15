@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { apiFetch } from "../lib/auth";
+import { HealthOverviewSkeleton } from "../components/common/Skeletons";
 
 const CHECK_ICONS = {
   api: Server,
@@ -143,6 +144,8 @@ export default function SystemHealth() {
           <button type="button" onClick={refreshChecks}>Try again</button>
         </div>
       )}
+
+      {loading && !health && <HealthOverviewSkeleton />}
 
       {health && (
         <>

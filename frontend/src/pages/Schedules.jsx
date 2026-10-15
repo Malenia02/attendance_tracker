@@ -19,6 +19,7 @@ import {
 import useConfirmDialog from "../hooks/useConfirmDialog";
 import { apiFetch } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import { CardGridSkeleton, TableSkeletonRows } from "../components/common/Skeletons";
 import FormStatusBanner from "../components/common/FormStatusBanner";
 import FormDraftNotice from "../components/common/FormDraftNotice";
 import ModalPortal from "../components/common/ModalPortal";
@@ -514,7 +515,7 @@ export default function Schedules() {
 
       <div className="schedule-template-grid">
         {loading ? (
-          <div className="schedule-empty panel">Loading schedule templates…</div>
+          <CardGridSkeleton />
         ) : filteredSchedules.length ? filteredSchedules.map((schedule) => (
           <article className={`schedule-template-card ${schedule.status.toLowerCase()}`} key={schedule.schedule_id}>
             <div className="schedule-card-top">
@@ -580,7 +581,7 @@ export default function Schedules() {
             <thead><tr><th>Personnel</th><th>Department</th><th>Current schedule</th><th>Effective period</th><th>Upcoming</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {loading && !filteredPersonnel.length ? (
-                <tr><td colSpan="6" className="users-empty">Loading assignments…</td></tr>
+                <TableSkeletonRows columns={6} label="schedule assignments" />
               ) : filteredPersonnel.length ? filteredPersonnel.map((person) => (
                 <tr key={person.personnel_id}>
                   <td><strong>{person.full_name}</strong><small>{person.employee_number} · {person.personnel_type}</small></td>

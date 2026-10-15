@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { apiFetch, getStoredUser } from "../lib/auth";
 import Pagination from "../components/common/Pagination";
+import { TableSkeletonRows } from "../components/common/Skeletons";
 import { formatDuration } from "../lib/duration";
 import AttendanceCorrectionModal from "../components/attendance/AttendanceCorrectionModal";
 import AttendanceCorrectionRequestModal from "../components/attendance/AttendanceCorrectionRequestModal";
@@ -934,7 +935,7 @@ export default function Attendance() {
             </thead>
             <tbody>
               {loading && !records.length ? (
-                <tr><td colSpan="7" className="users-empty">Loading attendance records…</td></tr>
+                <TableSkeletonRows columns={7} label="attendance records" />
               ) : records.length === 0 ? (
                 <tr><td colSpan="7" className="users-empty">No attendance records match your filters.</td></tr>
               ) : records.map((record) => (
