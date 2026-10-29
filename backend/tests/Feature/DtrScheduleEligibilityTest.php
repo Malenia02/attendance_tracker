@@ -507,6 +507,151 @@ class DtrScheduleEligibilityTest extends TestCase
             );
     }
 
+    public function test_administrator_can_close_certify_and_export_on_the_final_scheduled_working_day(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-29 18:30:00', 'Asia/Manila'));
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-10-01',
+            'created_by' => $administrator->user_id,
+        ]);
+
+        foreach (CarbonPeriod::create('2026-10-16', '2026-10-29') as $date) {
+            if (! in_array($date->dayOfWeekIso, [1, 2, 3, 4], true)) {
+                continue;
+            }
+
+            AttendanceRecord::create([
+                'personnel_id' => $personnel->personnel_id,
+                'schedule_id' => $schedule->schedule_id,
+                'attendance_date' => $date->toDateString(),
+                'morning_time_in' => $date->toDateString().' 07:00:00',
+                'morning_time_out' => $date->toDateString().' 12:00:00',
+                'afternoon_time_in' => $date->toDateString().' 13:00:00',
+                'afternoon_time_out' => $date->toDateString().' 18:00:00',
+                'attendance_status' => 'Present',
+                'total_work_minutes' => 600,
+                'is_verified' => true,
+            ]);
+        }
+
+        $hr = User::create([
+            'username' => 'early-close-hr',
+            'password_hash' => 'test',
+            'user_role' => 'HR',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($hr)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-10',
+                'period' => 'second_half',
+                'status' => 'Submitted',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'This DTR period is still open. It may be submitted on or after October 31, 2026.'
+            );
+
+        $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-10&period=second_half')
+            ->assertOk()
+            ->assertJsonPath('data.0.is_ready', true)
+            ->assertJsonPath('data.0.cutoff.state', 'early_close')
+            ->assertJsonPath('data.0.cutoff.can_submit', true)
+            ->assertJsonPath('data.0.cutoff.early_close', true);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-10',
+                'period' => 'second_half',
+                'status' => 'Submitted',
+            ])
+            ->assertOk()
+            ->assertJsonPath('certification.status', 'Submitted');
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $administrator->user_id,
+            'activity_type' => 'DTR_EARLY_CLOSE_OVERRIDE',
+            'entity_type' => 'dtr_certifications',
+        ]);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-10',
+                'period' => 'second_half',
+                'status' => 'Certified',
+            ])
+            ->assertOk()
+            ->assertJsonPath('certification.status', 'Certified');
+
+        $download = $this->actingAs($administrator)
+            ->postJson('/api/dtr/generate', [
+                'month' => '2026-10',
+                'period' => 'second_half',
+                'personnel_ids' => [$personnel->personnel_id],
+            ])
+            ->assertOk();
+        unlink($download->baseResponse->getFile()->getPathname());
+    }
+
+    public function test_administrator_cannot_close_while_a_scheduled_working_day_remains(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-28 18:30:00', 'Asia/Manila'));
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-10-01',
+            'created_by' => $administrator->user_id,
+        ]);
+
+        foreach (CarbonPeriod::create('2026-10-16', '2026-10-28') as $date) {
+            if (! in_array($date->dayOfWeekIso, [1, 2, 3, 4], true)) {
+                continue;
+            }
+
+            AttendanceRecord::create([
+                'personnel_id' => $personnel->personnel_id,
+                'schedule_id' => $schedule->schedule_id,
+                'attendance_date' => $date->toDateString(),
+                'morning_time_in' => $date->toDateString().' 07:00:00',
+                'morning_time_out' => $date->toDateString().' 12:00:00',
+                'afternoon_time_in' => $date->toDateString().' 13:00:00',
+                'afternoon_time_out' => $date->toDateString().' 18:00:00',
+                'attendance_status' => 'Present',
+                'total_work_minutes' => 600,
+                'is_verified' => true,
+            ]);
+        }
+
+        $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-10&period=second_half')
+            ->assertOk()
+            ->assertJsonPath('data.0.is_ready', true)
+            ->assertJsonPath('data.0.cutoff.can_submit', false)
+            ->assertJsonPath('data.0.cutoff.early_close', false);
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                'month' => '2026-10',
+                'period' => 'second_half',
+                'status' => 'Submitted',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'This DTR period is still open. It may be submitted on or after October 31, 2026.'
+            );
+    }
+
     #[DataProvider('cutoffPersonnelTypes')]
     public function test_cutoff_dtr_can_still_be_submitted_late_certified_and_exported(string $personnelType): void
     {

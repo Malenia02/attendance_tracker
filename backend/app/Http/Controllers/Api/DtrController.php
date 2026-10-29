@@ -215,7 +215,8 @@ class DtrController extends Controller
                 $cutoff,
                 $holidays,
                 $period,
-                $pendingCorrections->get($person->personnel_id, collect())
+                $pendingCorrections->get($person->personnel_id, collect()),
+                $user->user_role === 'Administrator'
             ));
         $workflowReady = (int) ($certificationSummary['Submitted'] ?? 0)
             + (int) ($certificationSummary['Submitted Late'] ?? 0)
@@ -401,7 +402,7 @@ class DtrController extends Controller
                 ], 422);
             }
 
-            if ($status === 'Submitted' && ! $submissionTimeline['can_submit']) {
+            if ($status === 'Submitted' && ! ($monitorRow['cutoff']['can_submit'] ?? false)) {
                 return response()->json([
                     'message' => 'This DTR period is still open. It may be submitted on or after '
                         .$reportingContext['cutoff']->format('F j, Y').'.',
@@ -413,6 +414,8 @@ class DtrController extends Controller
             $certificationKey,
             ['certification_status' => 'Draft']
         );
+        $isEarlyClose = $status === 'Submitted'
+            && (bool) ($monitorRow['cutoff']['early_close'] ?? false);
 
         $result = DB::transaction(function () use (
             $certificationKey,
@@ -422,7 +425,8 @@ class DtrController extends Controller
             $user,
             $request,
             $monitorRow,
-            $isFullMonthOverride
+            $isFullMonthOverride,
+            $isEarlyClose
         ): array {
             $certification = DtrCertification::query()
                 ->where($certificationKey)
@@ -490,6 +494,23 @@ class DtrController extends Controller
                     'activity_type' => 'DTR_FULL_MONTH_OVERRIDE',
                     'description' => Str::limit(
                         "{$user->username} authorized a full-month GIP DTR override for personnel {$certification->personnel_id}: {$overrideReason}",
+                        500,
+                        ''
+                    ),
+                    'entity_type' => 'dtr_certifications',
+                    'entity_id' => $certification->dtr_certification_id,
+                    'ip_address' => ClientIp::for($request),
+                    'user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+                    'request_id' => RequestId::for($request),
+                ]);
+            }
+
+            if ($isEarlyClose) {
+                ActivityLog::create([
+                    'user_id' => $user->user_id,
+                    'activity_type' => 'DTR_EARLY_CLOSE_OVERRIDE',
+                    'description' => Str::limit(
+                        "{$user->username} closed DTR personnel {$certification->personnel_id} on the final scheduled working day before the calendar cutoff.",
                         500,
                         ''
                     ),
@@ -814,7 +835,8 @@ class DtrController extends Controller
         Carbon $cutoff,
         Collection $holidays,
         string $period,
-        Collection $pendingCorrectionsByDate
+        Collection $pendingCorrectionsByDate,
+        bool $canCloseEarly
     ): array {
         $records = $person->attendanceRecords->keyBy(
             fn (AttendanceRecord $record) => $record->attendance_date->toDateString()
@@ -965,6 +987,25 @@ class DtrController extends Controller
             $reportingContext,
             $certification?->certification_status
         );
+        $futureDutyCoverage = $this->futureDutyCoverage($person, $cutoff, $periodEnd, $holidays);
+        $canUseEarlyClose = $canCloseEarly
+            && ! $cutoffTimeline['can_submit']
+            && in_array($certification?->certification_status ?? 'Draft', ['Draft', 'Returned', 'Reopened'], true)
+            && $futureDutyCoverage['has_complete_coverage']
+            && $futureDutyCoverage['remaining_duty_days'] === 0;
+
+        if ($canUseEarlyClose) {
+            $cutoffTimeline = [
+                ...$cutoffTimeline,
+                'state' => 'early_close',
+                'label' => 'Final Working Day',
+                'can_submit' => true,
+                'early_close' => true,
+                'message' => 'Administrator early close is available because no scheduled duty days remain in this reporting period.',
+            ];
+        } else {
+            $cutoffTimeline['early_close'] = false;
+        }
         $primarySchedule = $coveredSchedules->first();
         $officialHours = $this->formatOfficialHours($primarySchedule);
 
@@ -1031,6 +1072,60 @@ class DtrController extends Controller
             ],
             'certification' => $this->formatCertification($certification),
             'daily_records' => $daily->values(),
+        ];
+    }
+
+    /** @return array{has_complete_coverage: bool, remaining_duty_days: int} */
+    private function futureDutyCoverage(
+        Personnel $person,
+        Carbon $cutoff,
+        Carbon $periodEnd,
+        Collection $holidays
+    ): array {
+        $firstFutureDate = $cutoff->copy()->startOfDay()->addDay();
+
+        if ($firstFutureDate->greaterThan($periodEnd)) {
+            return ['has_complete_coverage' => true, 'remaining_duty_days' => 0];
+        }
+
+        $hasCompleteCoverage = true;
+        $remainingDutyDays = 0;
+
+        foreach (CarbonPeriod::create($firstFutureDate, $periodEnd) as $date) {
+            if ($person->employment_start_date && $date->lessThan($person->employment_start_date)) {
+                continue;
+            }
+
+            if ($person->employment_end_date && $date->greaterThan($person->employment_end_date)) {
+                continue;
+            }
+
+            $assignment = $person->scheduleAssignments->first(fn (PersonnelSchedule $assignment) => $assignment->effective_from->lte($date)
+                && (! $assignment->effective_to || $assignment->effective_to->gte($date))
+            );
+            $schedule = $assignment?->schedule;
+
+            if (! $schedule) {
+                $hasCompleteCoverage = false;
+
+                continue;
+            }
+
+            $dateEvents = $holidays->get($date->toDateString(), collect());
+            $holiday = $this->applicableHoliday($dateEvents, $person);
+            $isSpecialWorkingDay = $dateEvents->contains(fn (Holiday $event) => $event->holiday_type === 'Special Working Holiday'
+                && (! $event->department_id || $event->department_id === $person->department_id)
+            );
+            $isRegularDutyDay = (bool) $schedule->{strtolower($date->format('l'))};
+
+            if (($isRegularDutyDay || ($isSpecialWorkingDay && ! $holiday)) && ! $holiday) {
+                $remainingDutyDays++;
+            }
+        }
+
+        return [
+            'has_complete_coverage' => $hasCompleteCoverage,
+            'remaining_duty_days' => $remainingDutyDays,
         ];
     }
 

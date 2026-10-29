@@ -909,6 +909,12 @@
   background: rgba(248, 155, 55, 0.08);
 }
 
+.dtr-cutoff-notice.early_close {
+  color: #11734f;
+  border-color: rgba(17, 115, 79, 0.28);
+  background: rgba(17, 115, 79, 0.08);
+}
+
 .dtr-cutoff-notice.overdue {
   color: #b42318;
   border-color: rgba(180, 35, 24, 0.25);
