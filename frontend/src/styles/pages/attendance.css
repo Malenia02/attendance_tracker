@@ -1511,6 +1511,12 @@
   background: rgba(180, 35, 24, 0.06);
 }
 
+.attendance-request-modal > footer .resolve {
+  color: #157347;
+  border-color: rgba(21, 135, 84, 0.22);
+  background: rgba(21, 135, 84, 0.08);
+}
+
 .attendance-request-modal > footer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -1,6 +1,6 @@
 FROM composer:2 AS composer
 
-FROM php:8.3-apache-bookworm
+FROM php:8.3.36-apache-bookworm
 
 ENV APP_ENV=production \
     APP_DEBUG=false \

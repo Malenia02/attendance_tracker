@@ -316,6 +316,44 @@ class AttendanceCorrectionRequestSecurityTest extends TestCase
         ]);
     }
 
+    public function test_reviewer_can_close_a_request_as_already_corrected_without_changing_attendance(): void
+    {
+        [$employee, $attendance, $date] = $this->createMissingTimeOutFixture();
+        $requestId = $this->actingAs($employee)
+            ->postJson('/api/attendance/correction-requests', [
+                'attendance_date' => $date,
+                'missing_field' => 'morning_time_out',
+                'proposed_time' => '12:05',
+                'reason' => 'I was assisting with an urgent field report and missed the kiosk.',
+            ])
+            ->assertCreated()
+            ->json('data.request_id');
+
+        // An administrator has already entered a time, which differs from
+        // the employee's proposal and must not be overwritten by this action.
+        $attendance->forceFill(['morning_time_out' => $date.' 12:00:00'])->save();
+        $administrator = $this->createUser('manual-correction-closer', 'Administrator');
+
+        $this->actingAs($administrator)
+            ->patchJson("/api/attendance/correction-requests/{$requestId}/review", [
+                'action' => 'Resolved',
+                'review_remarks' => 'Attendance was corrected manually and verified with HR.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'Resolved')
+            ->assertJsonPath('message', 'Correction request closed as already corrected. The attendance record was not changed.');
+
+        $attendance->refresh();
+        $this->assertSame('12:00', $attendance->morning_time_out->format('H:i'));
+        $this->assertDatabaseHas('attendance_correction_requests', [
+            'attendance_correction_request_id' => $requestId,
+            'request_status' => 'Resolved',
+            'reviewed_by' => $administrator->user_id,
+            'pending_key' => null,
+        ]);
+        $this->assertDatabaseCount('attendance_change_logs', 0);
+    }
+
     public function test_personnel_can_request_missing_time_in_without_an_attendance_row_and_hr_creates_an_unverified_record(): void
     {
         $this->travelTo(now()->startOfWeek()->addDays(2)->setTime(16, 0));

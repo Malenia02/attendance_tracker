@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, ShieldCheck, X, XCircle } from "lucide-react";
+import { AlertTriangle, BadgeCheck, CheckCircle2, Clock3, ExternalLink, ShieldCheck, X, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import FormStatusBanner from "../common/FormStatusBanner";
@@ -45,6 +45,7 @@ export default function AttendanceCorrectionRequestModal({
   const isReview = mode === "review";
   const selectedEntry = missingEntries.find((entry) => entry.field === missingField);
   const selectedEntryLabel = isReview ? request?.missing_label : selectedEntry?.label;
+  const existingRequestedTime = request?.attendance?.[request?.missing_field];
 
   async function submitEmployeeRequest(event) {
     event.preventDefault();
@@ -169,24 +170,41 @@ export default function AttendanceCorrectionRequestModal({
               </div>
             )}
 
+            {existingRequestedTime && (
+              <div className="attendance-request-warning">
+                <AlertTriangle size={18} />
+                <div>
+                  <strong>This entry is already on the attendance record: {formatRequestedTime(existingRequestedTime)}</strong>
+                  <span>Approval would replace that time. If an administrator already corrected the record and it is now accurate, use “Already corrected” and explain what was changed.</span>
+                </div>
+              </div>
+            )}
+
             <label>
               Reviewer remarks
               <textarea
                 value={reviewRemarks}
                 onChange={(event) => { setReviewRemarks(event.target.value); setStatus(null); }}
                 maxLength={500}
-                placeholder="Required when rejecting; optional when approving..."
+                placeholder="Required for rejection or marking as already corrected (at least 10 characters)..."
               />
             </label>
 
             <div className="attendance-request-security">
               <ShieldCheck size={16} />
-              Approval applies only the requested missing attendance entry. The resulting attendance record
-              remains unverified and requires authorized review before DTR certification.
+              Approval applies the requested missing entry and leaves attendance unverified. “Already corrected” closes this request without changing the attendance record.
             </div>
 
             <footer className="app-modal-footer review-actions">
               <button type="button" onClick={onClose}>Cancel</button>
+              <button
+                type="button"
+                className="resolve"
+                disabled={busy || reviewRemarks.trim().length < 10}
+                onClick={() => submitReview("Resolved")}
+              >
+                <BadgeCheck size={15} />Already corrected
+              </button>
               <button
                 type="button"
                 className="reject"

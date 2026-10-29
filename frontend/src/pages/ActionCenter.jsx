@@ -70,7 +70,7 @@ function statusClass(status = "") {
   const value = status.toLowerCase();
   if (value.includes("pending") || value.includes("expire")) return "warning";
   if (value.includes("incomplete") || value.includes("returned") || value.includes("required")) return "danger";
-  if (value.includes("present") || value.includes("approved")) return "success";
+  if (value.includes("present") || value.includes("approved") || value.includes("resolved")) return "success";
   return "neutral";
 }
 

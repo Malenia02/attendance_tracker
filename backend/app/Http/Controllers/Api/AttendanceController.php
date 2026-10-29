@@ -351,7 +351,7 @@ class AttendanceController extends Controller
     {
         $validated = $request->validate([
             'date' => ['nullable', 'date'],
-            'status' => ['nullable', Rule::in(['Pending', 'Approved', 'Rejected', 'Cancelled'])],
+            'status' => ['nullable', Rule::in(['Pending', 'Approved', 'Rejected', 'Resolved', 'Cancelled'])],
         ]);
         $user = $request->user();
         $date = Carbon::parse($validated['date'] ?? now()->toDateString())->toDateString();
@@ -590,13 +590,16 @@ class AttendanceController extends Controller
         }
 
         $validated = $request->validate([
-            'action' => ['required', Rule::in(['Approved', 'Rejected'])],
+            'action' => ['required', Rule::in(['Approved', 'Rejected', 'Resolved'])],
             'review_remarks' => ['nullable', 'string', 'max:500'],
         ]);
 
-        if ($validated['action'] === 'Rejected' && strlen(trim($validated['review_remarks'] ?? '')) < 10) {
+        if (in_array($validated['action'], ['Rejected', 'Resolved'], true)
+            && strlen(trim($validated['review_remarks'] ?? '')) < 10) {
             return response()->json([
-                'message' => 'Provide a rejection reason of at least 10 characters.',
+                'message' => $validated['action'] === 'Resolved'
+                    ? 'Explain how the attendance was already corrected (at least 10 characters).'
+                    : 'Provide a rejection reason of at least 10 characters.',
             ], 422);
         }
 
@@ -781,12 +784,14 @@ class AttendanceController extends Controller
             return response()->json(['message' => $result['error']], 422);
         }
 
-        $approved = $validated['action'] === 'Approved';
+        $message = match ($validated['action']) {
+            'Approved' => 'Correction request approved and applied. The attendance record must be verified before DTR certification.',
+            'Resolved' => 'Correction request closed as already corrected. The attendance record was not changed.',
+            default => 'Correction request rejected. The employee can review the decision and submit a new request.',
+        };
 
         return response()->json([
-            'message' => $approved
-                ? 'Correction request approved and applied. The attendance record must be verified before DTR certification.'
-                : 'Correction request rejected. The employee can review the decision and submit a new request.',
+            'message' => $message,
             'data' => $this->formatCorrectionRequest(
                 $result['request']->load([
                     'personnel.department',

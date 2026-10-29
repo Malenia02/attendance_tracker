@@ -735,9 +735,9 @@ export default function Personnel() {
                   <div><strong>Personal information</strong><small>Identity and contact details</small></div>
                 </div>
                 <div className="admin-form-grid">
-              <FormField label="First name" name="first_name" form={form} errors={fieldErrors} onChange={updateForm} required />
-              <FormField label="Middle name" name="middle_name" form={form} errors={fieldErrors} onChange={updateForm} />
-              <FormField label="Last name" name="last_name" form={form} errors={fieldErrors} onChange={updateForm} required />
+              <FormField label="First name" name="first_name" form={form} errors={fieldErrors} onChange={updateForm} placeholder="e.g., Juan" required />
+              <FormField label="Middle name" name="middle_name" form={form} errors={fieldErrors} onChange={updateForm} placeholder="e.g., Dela Cruz" />
+              <FormField label="Last name" name="last_name" form={form} errors={fieldErrors} onChange={updateForm} placeholder="e.g., Santos" required />
               <FormField label="Suffix" name="suffix" form={form} errors={fieldErrors} onChange={updateForm} placeholder="Jr., Sr., III" />
 
               <div className="form-field">
@@ -748,9 +748,9 @@ export default function Personnel() {
                 </select>
                 <FieldError errors={fieldErrors} name="sex" />
               </div>
-              <FormField label="Contact number" name="contact_number" form={form} errors={fieldErrors} onChange={updateForm} />
-              <FormField label="Email address" name="email" type="email" form={form} errors={fieldErrors} onChange={updateForm} />
-              <FormField label="Address" name="address" form={form} errors={fieldErrors} onChange={updateForm} full />
+              <FormField label="Contact number" name="contact_number" form={form} errors={fieldErrors} onChange={updateForm} placeholder="e.g., 0917 123 4567" />
+              <FormField label="Email address" name="email" type="email" form={form} errors={fieldErrors} onChange={updateForm} placeholder="e.g., juan.santos@example.com" />
+              <FormField label="Address" name="address" form={form} errors={fieldErrors} onChange={updateForm} placeholder="e.g., Purok 1, Ipil, Zamboanga Sibugay" full />
                 </div>
               </div>
 
@@ -836,12 +836,13 @@ export default function Personnel() {
                   form={form}
                   errors={fieldErrors}
                   onChange={updateForm}
+                  placeholder="e.g., REG-DILG-ZSP-2026-001"
                   required
                   full
                 />
               )}
 
-              <FormField label="Position title" name="position_title" form={form} errors={fieldErrors} onChange={updateForm} full />
+              <FormField label="Position title" name="position_title" form={form} errors={fieldErrors} onChange={updateForm} placeholder="e.g., Administrative Aide" full />
               <FormField label="Employment start" name="employment_start_date" type="date" form={form} errors={fieldErrors} onChange={updateForm} />
               <FormField label="Employment end" name="employment_end_date" type="date" form={form} errors={fieldErrors} onChange={updateForm} />
                 </div>
