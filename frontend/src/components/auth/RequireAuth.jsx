@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router";
+import { Navigate, useLocation } from "react-router";
 import DilgSeal from "../branding/DilgSeal";
 import {
   clearAuth,
@@ -8,6 +8,7 @@ import {
 } from "../../lib/auth";
 
 export default function RequireAuth({ children }) {
+  const location = useLocation();
   const cachedUser = getStoredUser();
   const [status, setStatus] = useState(cachedUser ? "authenticated" : "checking");
   const [retryKey, setRetryKey] = useState(0);
@@ -37,7 +38,8 @@ export default function RequireAuth({ children }) {
   }, [retryKey]);
 
   if (status === "guest") {
-    return <Navigate to="/login" replace />;
+    const returnTo = `${location.pathname}${location.search}`;
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
 
   if (status === "checking") {

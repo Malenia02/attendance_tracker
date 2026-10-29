@@ -22,6 +22,8 @@
 @import "./styles/pages/system-health.css";
 @import "./styles/pages/about.css";
 @import "./styles/pages/login.css";
+@import "./styles/pages/landing.css";
+@import "./styles/pages/issue-reports.css";
 
 /* Shared administration components used by system users and personnel */
 @import "./styles/components/admin-records.css";

@@ -78,6 +78,12 @@
   text-decoration: none;
 }
 
+.app-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .app-footer-links a:hover,
 .app-footer-github:hover {
   color: var(--primary);

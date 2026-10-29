@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\PersonnelOnboardingController;
 use App\Http\Controllers\Api\QrAttendanceController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SystemHealthController;
+use App\Http\Controllers\Api\SystemIssueReportController;
 use App\Http\Controllers\Api\SystemUserController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,6 +36,9 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
         ->middleware('role:Administrator,HR,Supervisor');
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::get('/notifications/summary', [NotificationController::class, 'summary']);
+    Route::get('/issue-reports', [SystemIssueReportController::class, 'index']);
+    Route::post('/issue-reports', [SystemIssueReportController::class, 'store'])
+        ->middleware('throttle:5,10');
     Route::get('/system-health', SystemHealthController::class)
         ->middleware('role:Administrator');
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])
@@ -161,6 +165,9 @@ Route::middleware(['web', 'auth:sanctum', 'session.active', 'throttle:api', 'api
     Route::middleware('role:Administrator')->group(function (): void {
         // Administrator security: immutable activity logs, system users, and office network allowlists.
         Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+        Route::patch('/issue-reports/{issueReport}', [SystemIssueReportController::class, 'update'])
+            ->whereNumber('issueReport')
+            ->middleware('throttle:20,1');
 
         Route::get('/system-users/options', [SystemUserController::class, 'options']);
         Route::apiResource('/system-users', SystemUserController::class)

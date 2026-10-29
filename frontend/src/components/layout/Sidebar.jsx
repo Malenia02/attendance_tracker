@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  MessageSquareWarning,
   QrCode,
   ShieldCheck,
   Users,
@@ -88,6 +89,16 @@ const menuSections = [
         label: "Calendar & Duty Days",
         path: "/calendar",
         icon: CalendarRange,
+      },
+    ],
+  },
+  {
+    label: "Help & Information",
+    items: [
+      {
+        label: "Report an Issue",
+        path: "/issue-reports",
+        icon: MessageSquareWarning,
       },
     ],
   },

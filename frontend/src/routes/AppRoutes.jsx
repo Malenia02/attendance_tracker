@@ -15,6 +15,7 @@ import ErrorPage from "../pages/ErrorPage";
 import Schedules from "../pages/Schedules";
 import LeaveRequests from "../pages/LeaveRequests";
 import About from "../pages/About";
+import Landing from "../pages/Landing";
 import { RoutePageSkeleton } from "../components/common/Skeletons";
 
 const ActionCenter = lazy(() => import("../pages/ActionCenter"));
@@ -22,22 +23,21 @@ const Dashboard = lazy(() => import("../pages/Dashboard"));
 const Notifications = lazy(() => import("../pages/Notifications"));
 const PersonnelOnboarding = lazy(() => import("../pages/PersonnelOnboarding"));
 const SystemHealth = lazy(() => import("../pages/SystemHealth"));
+const IssueReports = lazy(() => import("../pages/IssueReports"));
 
 export default function AppRoutes() {
   return (
     <Routes>
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
 
       <Route
-        path="/"
         element={
           <RequireAuth>
             <MainLayout />
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-
         <Route
           path="dashboard"
           element={
@@ -64,6 +64,14 @@ export default function AppRoutes() {
         />
         <Route path="attendance" element={<Attendance />} />
         <Route path="about" element={<About />} />
+        <Route
+          path="issue-reports"
+          element={
+            <Suspense fallback={<RoutePageSkeleton title="System Support" description="Loading issue reports…" />}>
+              <IssueReports />
+            </Suspense>
+          }
+        />
         <Route path="leave-requests" element={<LeaveRequests />} />
         <Route path="personnel" element={<Personnel />} />
         <Route

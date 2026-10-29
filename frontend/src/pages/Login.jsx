@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 import {
   ArrowRight,
   CircleAlert,
@@ -16,6 +16,7 @@ import {
   storeAuth,
   verifySession,
 } from "../lib/auth";
+import { safeReturnPath } from "../lib/navigation";
 
 function offerToSavePassword(username, password, user) {
   if (typeof window.PasswordCredential !== "function" || !navigator.credentials?.store) {
@@ -39,6 +40,8 @@ function offerToSavePassword(username, password, user) {
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnPath = safeReturnPath(searchParams.get("returnTo"));
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +52,7 @@ export default function Login() {
     let active = true;
     verifySession({ force: true })
       .then(() => {
-        if (active) navigate("/dashboard", { replace: true });
+        if (active) navigate(returnPath, { replace: true });
       })
       .catch(() => {
         // A missing or expired session leaves the login form available.
@@ -58,9 +61,9 @@ export default function Login() {
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [navigate, returnPath]);
 
-  if (getStoredUser()) return <Navigate to="/dashboard" replace />;
+  if (getStoredUser()) return <Navigate to={returnPath} replace />;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -91,7 +94,7 @@ export default function Login() {
 
       storeAuth(payload.user);
       offerToSavePassword(username, password, payload.user);
-      navigate("/dashboard", { replace: true });
+      navigate(returnPath, { replace: true });
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -135,7 +138,7 @@ export default function Login() {
           <div className="login-heading">
             <span className="login-eyebrow">Welcome back</span>
             <h2>Sign in to your account</h2>
-            <p>Enter your assigned credentials to access the attendance system.</p>
+            <p>Enter the credentials created and assigned to you by your authorized system administrator.</p>
           </div>
 
           <form className="login-form" method="post" onSubmit={handleSubmit}>
@@ -204,8 +207,8 @@ export default function Login() {
           <div className="login-help">
             <p>Install on your phone</p>
             <span>Android: in Chrome, open the menu and tap Install app. iPhone: in Safari, tap Share, then Add to Home Screen.</span>
-            <p className="login-help-secondary">Having trouble signing in?</p>
-            <span>On your private phone, choose Save if your browser offers to save your password. Contact your DILG system administrator if you need help.</span>
+            <p className="login-help-secondary">Need an account or having trouble signing in?</p>
+            <span>Personnel cannot register directly. Contact your DILG system administrator to create or activate your account. On a private phone, choose Save if your browser offers to save your password.</span>
           </div>
         </div>
 

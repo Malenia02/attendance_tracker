@@ -127,4 +127,14 @@ class User extends Authenticatable
             'user_id'
         );
     }
+
+    public function submittedIssueReports(): HasMany
+    {
+        return $this->hasMany(SystemIssueReport::class, 'reported_by', 'user_id');
+    }
+
+    public function reviewedIssueReports(): HasMany
+    {
+        return $this->hasMany(SystemIssueReport::class, 'reviewed_by', 'user_id');
+    }
 }

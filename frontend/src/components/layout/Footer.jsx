@@ -1,14 +1,17 @@
 import {
   ArrowUpRight,
   Code2,
+  MessageSquareWarning,
   ShieldCheck,
 } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import DilgSeal from "../branding/DilgSeal";
 import { appVersion } from "../../lib/release";
 
 export default function Footer() {
   const year = new Date().getFullYear();
+  const location = useLocation();
+  const currentPage = `${location.pathname}${location.search}`;
 
   return (
     <footer className="app-footer">
@@ -25,6 +28,7 @@ export default function Footer() {
           <nav className="app-footer-links" aria-label="Footer navigation">
             <Link to="/dashboard">Dashboard</Link>
             <Link to="/about">About</Link>
+            <Link to="/issue-reports" state={{ from: currentPage }}><MessageSquareWarning size={13} />Report issue</Link>
           </nav>
           <a
             className="app-footer-github"
