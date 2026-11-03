@@ -52,6 +52,7 @@ class DtrDocumentGeneratorTest extends TestCase
             'saturday_hours' => 'N/A',
             'certification' => ['version_number' => 2],
             'daily_records' => array_map(fn (int $day) => [
+                'date' => $month->copy()->day($day)->toDateString(),
                 'day_number' => $day,
                 'status' => $day === 2 ? 'Holiday' : ($day === 17 ? 'Rest Day' : 'Present'),
                 'morning_time_in' => in_array($day, [2, 17]) ? null : '07:10:00',
@@ -98,7 +99,10 @@ class DtrDocumentGeneratorTest extends TestCase
                             $this->assertSame('', trim($cells->item($column)->textContent), "Day {$day}, column {$column}");
                         }
                     } elseif (in_array($day, [2, 17])) {
-                        $this->assertSame($day === 2 ? 'HOLIDAY' : 'REST DAY', $cells->item(1)->textContent);
+                        $this->assertSame(
+                            $day === 2 ? 'HOLIDAY' : strtoupper($month->copy()->day(17)->format('l')),
+                            $cells->item(1)->textContent
+                        );
                     } else {
                         $this->assertSame('7:10', $cells->item(1)->textContent);
                         $this->assertSame('5:00', $cells->item(4)->textContent);
@@ -137,7 +141,8 @@ class DtrDocumentGeneratorTest extends TestCase
                     'undertime_minutes' => 0,
                 ],
                 [
-                    'day_number' => 2,
+                    'date' => '2026-07-03',
+                    'day_number' => 3,
                     'status' => 'Rest Day',
                     'morning_time_in' => null,
                     'morning_time_out' => null,
@@ -147,7 +152,30 @@ class DtrDocumentGeneratorTest extends TestCase
                     'undertime_minutes' => 0,
                 ],
                 [
-                    'day_number' => 3,
+                    'date' => '2026-07-04',
+                    'day_number' => 4,
+                    'status' => 'Rest Day',
+                    'morning_time_in' => null,
+                    'morning_time_out' => null,
+                    'afternoon_time_in' => null,
+                    'afternoon_time_out' => null,
+                    'late_minutes' => 0,
+                    'undertime_minutes' => 0,
+                ],
+                [
+                    'date' => '2026-07-05',
+                    'day_number' => 5,
+                    'status' => 'Rest Day',
+                    'morning_time_in' => null,
+                    'morning_time_out' => null,
+                    'afternoon_time_in' => null,
+                    'afternoon_time_out' => null,
+                    'late_minutes' => 0,
+                    'undertime_minutes' => 0,
+                ],
+                [
+                    'date' => '2026-07-02',
+                    'day_number' => 2,
                     'status' => 'Holiday',
                     'morning_time_in' => null,
                     'morning_time_out' => null,
@@ -174,7 +202,10 @@ class DtrDocumentGeneratorTest extends TestCase
             $this->assertStringContainsString('July 2026', $documentXml);
             $this->assertStringContainsString('7:15', $documentXml);
             $this->assertStringContainsString('7:00-12:00', $documentXml);
-            $this->assertStringContainsString('REST DAY', $documentXml);
+            $this->assertStringContainsString('FRIDAY', $documentXml);
+            $this->assertStringContainsString('SATURDAY', $documentXml);
+            $this->assertStringContainsString('SUNDAY', $documentXml);
+            $this->assertStringNotContainsString('REST DAY', $documentXml);
             $this->assertStringContainsString('HOLIDAY', $documentXml);
             $this->assertSame(
                 6,

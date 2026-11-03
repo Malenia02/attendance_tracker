@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\DtrPeriod;
+use Carbon\Carbon;
 use DOMDocument;
 use DOMElement;
 use DOMNode;
@@ -263,7 +264,7 @@ class DtrDocumentGenerator
 
             $deficiencyMinutes = (int) $record['late_minutes'] + (int) $record['undertime_minutes'];
             $totalDeficiencyMinutes += $deficiencyMinutes;
-            $label = $this->statusLabel($record['status']);
+            $label = $this->statusLabel($record);
 
             if ($label && ! $record['morning_time_in'] && ! $record['afternoon_time_in']) {
                 $this->setCellText($document, $xpath, $cells->item(1), $label, $isJobOrder ? 16 : 12, true);
@@ -438,16 +439,40 @@ class DtrDocumentGenerator
         return $value ? date('g:i', strtotime($value)) : '';
     }
 
-    private function statusLabel(string $status): ?string
+    private function statusLabel(array $record): ?string
     {
-        return match ($status) {
+        return match ($record['status']) {
             'Missing', 'Absent' => 'ABSENT',
             'Leave' => 'LEAVE',
             'Holiday' => 'HOLIDAY',
-            'Rest Day' => 'REST DAY',
+            'Rest Day' => $this->restDayLabel($record),
             'Official Business' => 'OB',
             'Work From Home' => 'WFH',
             default => null,
+        };
+    }
+
+    private function restDayLabel(array $record): string
+    {
+        if (! empty($record['date'])) {
+            try {
+                return strtoupper(Carbon::parse($record['date'])->format('l'));
+            } catch (Throwable) {
+                // Fall back to the API's preformatted weekday below.
+            }
+        }
+
+        $weekday = strtoupper(trim((string) ($record['day'] ?? '')));
+
+        return match ($weekday) {
+            'MON', 'MONDAY' => 'MONDAY',
+            'TUE', 'TUESDAY' => 'TUESDAY',
+            'WED', 'WEDNESDAY' => 'WEDNESDAY',
+            'THU', 'THURSDAY' => 'THURSDAY',
+            'FRI', 'FRIDAY' => 'FRIDAY',
+            'SAT', 'SATURDAY' => 'SATURDAY',
+            'SUN', 'SUNDAY' => 'SUNDAY',
+            default => 'REST DAY',
         };
     }
 }
