@@ -51,9 +51,9 @@ const periodGuides = {
     note: "For GIP and JO personnel. The Word form keeps days 1–31, with days 1–15 blank and excluded from totals.",
   },
   full_month: {
-    title: "Full month view",
-    description: "Shows the whole month for regular monthly reporting or special review.",
-    note: "JO personnel may select either half-month or full-month reporting. GIP full-month reporting requires a documented Administrator or HR override.",
+    title: "Full month / combined export",
+    description: "Shows the whole month for regular reporting or combines two separately certified cutoff DTRs into one document.",
+    note: "If the cutoff workflow already started, certify both the 1st–15th and 16th–month-end DTRs. The system will then enable one combined full-month download without creating an overlapping certification.",
   },
 };
 
@@ -79,6 +79,15 @@ async function readResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message || "The request could not be completed.");
   return payload;
+}
+
+function isDownloadableDtr(row, period, meta) {
+  const isCertified = row.certification.status === "Certified";
+  const isCombinedReady = period === "full_month" && row.combined_export?.ready;
+  const isAllowedPersonnel = meta.can_generate_others
+    || row.personnel_id === meta.current_personnel_id;
+
+  return (isCertified || isCombinedReady) && isAllowedPersonnel;
 }
 
 export default function DtrMonitoring() {
@@ -179,11 +188,12 @@ export default function DtrMonitoring() {
           can_full_month_override: payload.can_full_month_override,
           cutoff: payload.cutoff,
         });
-        setSelectedIds((current) => current.filter(
-          (id) => payload.data.some(
-            (row) => row.personnel_id === id && row.certification.status === "Certified",
-          ),
-        ));
+        setSelectedIds((current) => current.filter((id) => payload.data.some(
+          (row) => row.personnel_id === id && isDownloadableDtr(row, period, {
+            can_generate_others: payload.can_generate_others,
+            current_personnel_id: payload.current_personnel_id,
+          }),
+        )));
         setSelected((current) => current
           ? payload.data.find((row) => row.personnel_id === current.personnel_id) || null
           : null);
@@ -233,9 +243,8 @@ export default function DtrMonitoring() {
     }), [rows, readinessFilter]);
 
   const downloadableRows = useMemo(
-    () => filteredRows.filter((row) => row.certification.status === "Certified"
-      && (meta.can_generate_others || row.personnel_id === meta.current_personnel_id)),
-    [filteredRows, meta.can_generate_others, meta.current_personnel_id],
+    () => filteredRows.filter((row) => isDownloadableDtr(row, period, meta)),
+    [filteredRows, meta, period],
   );
 
   async function updateStatus(row, status, remarks = null, fullMonthOverrideReason = null) {
@@ -435,7 +444,8 @@ export default function DtrMonitoring() {
       link.download = filename;
       link.click();
       URL.revokeObjectURL(url);
-      setNotice(`Downloaded ${personnelIds.length} certified DTR${personnelIds.length === 1 ? "" : "s"}.`);
+      const description = period === "full_month" ? "full-month DTR" : "certified DTR";
+      setNotice(`Downloaded ${personnelIds.length} ${description}${personnelIds.length === 1 ? "" : "s"}.`);
       window.setTimeout(() => setNotice(""), 4000);
     } catch (requestError) {
       setError(requestError.message);
@@ -515,7 +525,7 @@ export default function DtrMonitoring() {
             >
               <option value="first_half">1st–15th</option>
               <option value="second_half">16th–month end</option>
-              <option value="full_month">Full month (optional)</option>
+              <option value="full_month">Full month / combined export</option>
             </select>
           </label>
           <button type="button" onClick={exportCsv} disabled={!filteredRows.length}>
@@ -527,16 +537,18 @@ export default function DtrMonitoring() {
               className="generate"
               onClick={generateDtr}
               disabled={generating || (!selectedIds.length && !downloadableRows.length)}
-              title="Only certified DTR records can be downloaded"
+              title={period === "full_month"
+                ? "A full-month DTR can be downloaded after the monthly record or both cutoff DTRs are certified"
+                : "Only certified DTR records can be downloaded"}
             >
               <FileCheck2 size={17} />
               {generating
                 ? "Preparing download…"
                 : selectedIds.length
-                  ? `Download Certified DTR (${selectedIds.length})`
+                  ? `Download ${period === "full_month" ? "Full-Month" : "Certified"} DTR (${selectedIds.length})`
                   : downloadableRows.length
-                    ? `Download Certified DTR (${downloadableRows.length})`
-                    : "No Certified DTR"}
+                    ? `Download ${period === "full_month" ? "Full-Month" : "Certified"} DTR (${downloadableRows.length})`
+                    : period === "full_month" ? "No Full-Month DTR Ready" : "No Certified DTR"}
             </button>
           )}
         </div>
@@ -664,10 +676,10 @@ export default function DtrMonitoring() {
                         type="checkbox"
                         aria-label={`Select ${row.full_name}`}
                         checked={selectedIds.includes(row.personnel_id)}
-                        disabled={row.certification.status !== "Certified"
-                          || (!meta.can_generate_others && row.personnel_id !== meta.current_personnel_id)}
-                        title={row.certification.status !== "Certified"
-                          ? "This DTR must be certified before it can be downloaded"
+                        disabled={!isDownloadableDtr(row, period, meta)}
+                        title={!isDownloadableDtr(row, period, meta)
+                          ? row.combined_export?.message
+                            || "This DTR must be certified before it can be downloaded"
                           : meta.can_generate_others || row.personnel_id === meta.current_personnel_id
                             ? `Select ${row.full_name} for DTR download`
                             : "You may only download your own certified DTR"}
@@ -721,8 +733,8 @@ export default function DtrMonitoring() {
                     )}
                   </td>
                   <td>
-                    <span className={`dtr-cert-status ${statusClass(row.certification.status)}`}>
-                      {row.certification.status}
+                    <span className={`dtr-cert-status ${statusClass(row.combined_export?.ready ? "Certified" : row.certification.status)}`}>
+                      {row.combined_export?.ready ? "Combined Ready" : row.certification.status}
                     </span>
                   </td>
                   <td>
@@ -840,8 +852,11 @@ function DtrDetails({
   const pendingReopen = reopenRequests.find((request) => request.status === "Pending");
   const requiresFullMonthOverride = row.personnel_type?.toUpperCase() === "GIP"
     && row.period === "full_month";
+  const usesCutoffWorkflow = row.period === "full_month"
+    && row.combined_export?.uses_cutoff_workflow;
   const canSubmit = row.is_ready
     && row.cutoff?.can_submit !== false
+    && !usesCutoffWorkflow
     && (!requiresFullMonthOverride || canFullMonthOverride);
 
   function toggleAffectedDate(date) {
@@ -889,6 +904,18 @@ function DtrDetails({
             <div>
               <strong>{row.cutoff.label} · cutoff {row.cutoff.cutoff_date}</strong>
               <p>{row.cutoff.message} Submission deadline: {row.cutoff.deadline_date}.</p>
+            </div>
+          </div>
+        )}
+
+        {usesCutoffWorkflow && (
+          <div className={`dtr-cutoff-notice ${row.combined_export.ready ? "early_close" : "action_required"}`}>
+            <FileCheck2 size={19} />
+            <div>
+              <strong>{row.combined_export.ready
+                ? "Combined full-month DTR ready"
+                : "Complete both cutoff certifications"}</strong>
+              <p>{row.combined_export.message}</p>
             </div>
           </div>
         )}
@@ -1319,7 +1346,8 @@ function DtrDetails({
             </strong>
           </div>
           <div className="dtr-detail-actions">
-            {["Draft", "Returned", "Reopened"].includes(row.certification.status) && (
+            {["Draft", "Returned", "Reopened"].includes(row.certification.status)
+              && !usesCutoffWorkflow && (
               <button
                 type="button"
                 className="submit"

@@ -146,6 +146,9 @@ class DtrController extends Controller
             ? 'employee_number'
             : 'last_name';
         $sortDirection = $validated['direction'] ?? 'asc';
+        $loadedCertificationPeriods = $period === DtrPeriod::FULL_MONTH
+            ? DtrPeriod::values()
+            : [$period];
         $paginator = (clone $personnelQuery)
             ->select([
                 'personnel_id',
@@ -181,7 +184,7 @@ class DtrController extends Controller
                     ])
                     ->where('dtr_year', $month->year)
                     ->where('dtr_month', $month->month)
-                    ->where('dtr_period', $period),
+                    ->whereIn('dtr_period', $loadedCertificationPeriods),
             ])
             ->orderBy($sortColumn, $sortDirection)
             ->when($sortColumn === 'last_name', fn ($query) => $query->orderBy('first_name', $sortDirection))
@@ -351,17 +354,21 @@ class DtrController extends Controller
         $monitorRow = null;
 
         if (in_array($status, ['Submitted', 'Certified'], true)) {
-            $conflictingWorkflow = DtrCertification::query()
+            $conflictingPeriods = DtrCertification::query()
                 ->where('personnel_id', $personnel->personnel_id)
                 ->where('dtr_year', $year)
                 ->where('dtr_month', $month)
                 ->whereIn('dtr_period', DtrPeriod::conflictingPeriods($validated['period']))
                 ->where('certification_status', '!=', 'Draft')
-                ->exists();
+                ->pluck('dtr_period');
 
-            if ($conflictingWorkflow) {
+            if ($conflictingPeriods->isNotEmpty()) {
+                $message = $validated['period'] === DtrPeriod::FULL_MONTH
+                    ? 'This month already uses the cutoff workflow. Complete and certify both the 1st–15th and 16th–month-end DTRs, then select Full month to download one combined document.'
+                    : 'This month already has a full-month DTR workflow. Reopen or complete that workflow instead of creating overlapping cutoff DTRs.';
+
                 return response()->json([
-                    'message' => 'This month already has an overlapping DTR workflow. Use either the two cutoff periods or one full-month DTR, not both.',
+                    'message' => $message,
                 ], 409);
             }
 
@@ -601,7 +608,7 @@ class DtrController extends Controller
         $monitorRequest = Request::create('/api/dtr', 'GET', [
             'month' => $validated['month'],
             'period' => $validated['period'],
-            'status' => 'Certified',
+            'status' => $validated['period'] === DtrPeriod::FULL_MONTH ? null : 'Certified',
             'personnel_ids' => $validated['personnel_ids'] ?? null,
             'per_page' => $monitorPerPage,
         ]);
@@ -621,73 +628,108 @@ class DtrController extends Controller
             }
         }
 
-        $uncertified = $reports->reject(
-            fn (array $row) => ($row['certification']['status'] ?? 'Draft') === 'Certified'
-        );
-
-        if ($requestedIds->isNotEmpty() && $uncertified->isNotEmpty()) {
-            $names = $uncertified->pluck('full_name')->take(3)->implode(', ');
-            $remaining = max(0, $uncertified->count() - 3);
-
-            return response()->json([
-                'message' => 'Only certified DTRs can be generated. Certify '
-                    .$names
-                    .($remaining ? " and {$remaining} more" : '')
-                    .' first.',
-            ], 422);
-        }
-
-        $reports = $reports
-            ->filter(fn (array $row) => ($row['certification']['status'] ?? 'Draft') === 'Certified')
-            ->values();
-
-        if ($reports->isEmpty()) {
-            return response()->json([
-                'message' => 'No certified personnel DTR records are available for the selected month.',
-            ], 422);
-        }
-
-        $certifications = DtrCertification::query()
-            ->where('dtr_year', (int) substr($validated['month'], 0, 4))
-            ->where('dtr_month', (int) substr($validated['month'], 5, 2))
-            ->where('dtr_period', $validated['period'])
+        $isCombinedMonthRequest = $validated['period'] === DtrPeriod::FULL_MONTH;
+        $reportMonth = Carbon::createFromFormat('Y-m-d', $validated['month'].'-01');
+        $sourcePeriods = $isCombinedMonthRequest ? DtrPeriod::values() : [$validated['period']];
+        $sourceCertifications = DtrCertification::query()
+            ->where('dtr_year', $reportMonth->year)
+            ->where('dtr_month', $reportMonth->month)
+            ->whereIn('dtr_period', $sourcePeriods)
             ->whereIn('personnel_id', $reports->pluck('personnel_id'))
             ->get()
-            ->keyBy('personnel_id');
+            ->groupBy('personnel_id');
+        $certifications = collect();
         $invalidSnapshots = collect();
-        $reports = $reports->map(function (array $report) use ($certifications, $invalidSnapshots): array {
-            $certification = $certifications->get($report['personnel_id']);
+        $unavailableReports = collect();
+        $reports = $reports->map(function (array $report) use (
+            $certifications,
+            $invalidSnapshots,
+            $isCombinedMonthRequest,
+            $reportMonth,
+            $sourceCertifications,
+            $unavailableReports
+        ): ?array {
+            $personnelCertifications = $sourceCertifications->get($report['personnel_id'], collect());
+            $certification = $personnelCertifications->first(fn (DtrCertification $item) => $item->dtr_period === $report['period']
+                && $item->certification_status === 'Certified'
+            );
+
+            if (! $certification && $isCombinedMonthRequest) {
+                $firstHalf = $personnelCertifications->firstWhere('dtr_period', DtrPeriod::FIRST_HALF);
+                $secondHalf = $personnelCertifications->firstWhere('dtr_period', DtrPeriod::SECOND_HALF);
+
+                if (
+                    $firstHalf?->certification_status !== 'Certified'
+                    || $secondHalf?->certification_status !== 'Certified'
+                    || ! $firstHalf->certified_snapshot
+                    || ! $secondHalf->certified_snapshot
+                ) {
+                    $unavailableReports->push($report['full_name']);
+
+                    return null;
+                }
+
+                foreach ([$firstHalf, $secondHalf] as $sourceCertification) {
+                    if (! $this->certifiedSnapshotIsValid($sourceCertification)) {
+                        $invalidSnapshots->push($report['full_name']);
+
+                        return null;
+                    }
+                }
+
+                $certifications->put($report['personnel_id'], $firstHalf);
+
+                return $this->combineCertifiedCutoffSnapshots($firstHalf, $secondHalf, $reportMonth);
+            }
+
+            if (! $certification) {
+                $unavailableReports->push($report['full_name']);
+
+                return null;
+            }
+
+            $certifications->put($report['personnel_id'], $certification);
 
             if (! $certification?->certified_snapshot) {
                 return $report;
             }
 
-            $encodedSnapshot = json_encode(
-                $certification->certified_snapshot,
-                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-            );
-            $expectedHash = hash_hmac(
-                'sha256',
-                $encodedSnapshot,
-                (string) config('attendance.dtr_signing_key')
-            );
-
-            if (! hash_equals((string) $certification->certified_hash, $expectedHash)) {
+            if (! $this->certifiedSnapshotIsValid($certification)) {
                 $invalidSnapshots->push($report['full_name']);
 
-                return $report;
+                return null;
             }
 
             return [
                 ...$certification->certified_snapshot,
                 'certification' => $report['certification'],
             ];
-        });
+        })->filter()->values();
 
         if ($invalidSnapshots->isNotEmpty()) {
             return response()->json([
                 'message' => 'A certified DTR integrity check failed for '.$invalidSnapshots->implode(', ').'.',
             ], 409);
+        }
+
+        if ($unavailableReports->isNotEmpty() && $requestedIds->isNotEmpty()) {
+            $names = $unavailableReports->unique()->take(3)->implode(', ');
+            $remaining = max(0, $unavailableReports->unique()->count() - 3);
+            $message = $isCombinedMonthRequest
+                ? 'A combined full-month DTR requires both cutoff DTRs to be Certified for '
+                : 'Only certified DTRs can be generated. Certify ';
+
+            return response()->json([
+                'message' => $message.$names.($remaining ? " and {$remaining} more" : '').' first.',
+            ], 422);
+        }
+
+        if ($reports->isEmpty()) {
+            return response()->json([
+                'message' => $isCombinedMonthRequest
+                    ? 'No personnel have both cutoff DTRs certified for a combined full-month download.'
+                    : 'No certified personnel DTR records are available for the selected month.',
+            ], 422);
         }
 
         $ineligibleReports = $reports->filter(function (array $report): bool {
@@ -739,7 +781,6 @@ class DtrController extends Controller
                 ->deleteFileAfterSend(true);
         }
 
-        $reportMonth = Carbon::createFromFormat('Y-m-d', $validated['month'].'-01');
         $periodSuffix = DtrPeriod::fileSuffix($reportMonth, $validated['period']);
         $zipPath = $generatedDirectory.DIRECTORY_SEPARATOR."DTR-{$periodSuffix}-{$batchId}.zip";
         $archive = new ZipArchive;
@@ -771,6 +812,82 @@ class DtrController extends Controller
             ->deleteFileAfterSend(true);
     }
 
+    private function certifiedSnapshotIsValid(DtrCertification $certification): bool
+    {
+        if (! $certification->certified_snapshot || blank($certification->certified_hash)) {
+            return false;
+        }
+
+        $encodedSnapshot = json_encode(
+            $certification->certified_snapshot,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+        $expectedHash = hash_hmac(
+            'sha256',
+            $encodedSnapshot,
+            (string) config('attendance.dtr_signing_key')
+        );
+
+        return hash_equals((string) $certification->certified_hash, $expectedHash);
+    }
+
+    private function combineCertifiedCutoffSnapshots(
+        DtrCertification $firstHalf,
+        DtrCertification $secondHalf,
+        Carbon $month
+    ): array {
+        $firstSnapshot = $firstHalf->certified_snapshot;
+        $secondSnapshot = $secondHalf->certified_snapshot;
+        $dailyRecords = collect($firstSnapshot['daily_records'] ?? [])
+            ->concat($secondSnapshot['daily_records'] ?? [])
+            ->unique('date')
+            ->sortBy('date')
+            ->values()
+            ->all();
+        $versionNumber = max(
+            (int) ($firstSnapshot['certification']['version_number'] ?? $firstHalf->version_number),
+            (int) ($secondSnapshot['certification']['version_number'] ?? $secondHalf->version_number)
+        );
+        $summedFields = [
+            'expected_days',
+            'recorded_days',
+            'present_days',
+            'half_days',
+            'late_days',
+            'late_minutes',
+            'leave_days',
+            'absent_days',
+            'incomplete_days',
+            'unverified_days',
+            'total_work_minutes',
+        ];
+        $combined = [
+            ...$firstSnapshot,
+            'month_label' => DtrPeriod::label($month, DtrPeriod::FULL_MONTH),
+            'period' => DtrPeriod::FULL_MONTH,
+            'period_label' => DtrPeriod::label($month, DtrPeriod::FULL_MONTH),
+            'period_start' => $month->copy()->startOfMonth()->toDateString(),
+            'period_end' => $month->copy()->endOfMonth()->toDateString(),
+            'daily_records' => $dailyRecords,
+            'completion_percent' => 100,
+            'is_ready' => true,
+            'certification_source' => 'combined_cutoffs',
+            'certification' => [
+                'status' => 'Certified',
+                'version_number' => $versionNumber,
+                'is_amended' => $versionNumber > 1,
+                'source_periods' => [DtrPeriod::FIRST_HALF, DtrPeriod::SECOND_HALF],
+            ],
+        ];
+
+        foreach ($summedFields as $field) {
+            $combined[$field] = (int) ($firstSnapshot[$field] ?? 0)
+                + (int) ($secondSnapshot[$field] ?? 0);
+        }
+
+        return $combined;
+    }
+
     private function auditDtrDownloads(Request $request, Collection $reports, Collection $certifications): void
     {
         $user = $request->user();
@@ -788,11 +905,14 @@ class DtrController extends Controller
         ): void {
             foreach ($reports as $report) {
                 $certification = $certifications->get($report['personnel_id']);
+                $isCombined = ($report['certification_source'] ?? null) === 'combined_cutoffs';
                 ActivityLog::create([
                     'user_id' => $user->user_id,
-                    'activity_type' => 'DTR_DOWNLOADED',
+                    'activity_type' => $isCombined ? 'DTR_COMBINED_DOWNLOADED' : 'DTR_DOWNLOADED',
                     'description' => Str::limit(
-                        "{$user->username} downloaded the certified {$report['period_label']} DTR for {$report['full_name']}.",
+                        $isCombined
+                            ? "{$user->username} downloaded a combined full-month DTR from separately certified cutoff records for {$report['full_name']}."
+                            : "{$user->username} downloaded the certified {$report['period_label']} DTR for {$report['full_name']}.",
                         500,
                         ''
                     ),
@@ -981,7 +1101,8 @@ class DtrController extends Controller
                 && ! $day['is_verified'])
             ->count();
         $resolvedDays = max(0, $expectedDays - $missingDays - $incompleteDays);
-        $certification = $person->dtrCertifications->first();
+        $certification = $person->dtrCertifications->firstWhere('dtr_period', $period);
+        $combinedExport = $this->combinedExportSummary($person, $period);
         $reportingContext = $this->cutoffs->context($month, $period);
         $cutoffTimeline = $this->cutoffs->timeline(
             $reportingContext,
@@ -1071,7 +1192,36 @@ class DtrController extends Controller
                 'unscheduled' => $unscheduledRecords,
             ],
             'certification' => $this->formatCertification($certification),
+            'combined_export' => $combinedExport,
             'daily_records' => $daily->values(),
+        ];
+    }
+
+    /** @return array{uses_cutoff_workflow: bool, ready: bool, first_half_status: string, second_half_status: string, message: string}|null */
+    private function combinedExportSummary(Personnel $person, string $period): ?array
+    {
+        if ($period !== DtrPeriod::FULL_MONTH || ! $this->cutoffs->isSemiMonthly($person->personnel_type)) {
+            return null;
+        }
+
+        $certifications = $person->dtrCertifications->keyBy('dtr_period');
+        $firstStatus = $certifications->get(DtrPeriod::FIRST_HALF)?->certification_status ?? 'Not Started';
+        $secondStatus = $certifications->get(DtrPeriod::SECOND_HALF)?->certification_status ?? 'Not Started';
+        $usesCutoffWorkflow = $firstStatus !== 'Not Started' || $secondStatus !== 'Not Started';
+        $ready = $firstStatus === 'Certified' && $secondStatus === 'Certified';
+
+        $message = match (true) {
+            $ready => 'Both cutoff DTRs are certified. A single combined full-month document is ready to download.',
+            ! $usesCutoffWorkflow => 'No cutoff DTR workflow has started for this month.',
+            default => "Combined download requires both cutoff DTRs to be Certified. 1st–15th: {$firstStatus}; 16th–month end: {$secondStatus}.",
+        };
+
+        return [
+            'uses_cutoff_workflow' => $usesCutoffWorkflow,
+            'ready' => $ready,
+            'first_half_status' => $firstStatus,
+            'second_half_status' => $secondStatus,
+            'message' => $message,
         ];
     }
 

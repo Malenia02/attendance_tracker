@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AttendanceRecord;
+use App\Models\DtrCertification;
 use App\Models\Personnel;
 use App\Models\PersonnelSchedule;
 use App\Models\User;
@@ -429,7 +430,141 @@ class DtrScheduleEligibilityTest extends TestCase
             ->assertConflict()
             ->assertJsonPath(
                 'message',
-                'This month already has an overlapping DTR workflow. Use either the two cutoff periods or one full-month DTR, not both.'
+                'This month already uses the cutoff workflow. Complete and certify both the 1st–15th and 16th–month-end DTRs, then select Full month to download one combined document.'
+            );
+
+        $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-08&period=full_month')
+            ->assertOk()
+            ->assertJsonPath('data.0.certification.status', 'Draft')
+            ->assertJsonPath('data.0.combined_export.uses_cutoff_workflow', true)
+            ->assertJsonPath('data.0.combined_export.ready', false)
+            ->assertJsonPath('data.0.combined_export.first_half_status', 'Submitted')
+            ->assertJsonPath('data.0.combined_export.second_half_status', 'Not Started');
+    }
+
+    public function test_two_certified_cutoffs_can_be_downloaded_as_one_full_month_document(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-31 19:00:00', 'Asia/Manila'));
+        [$administrator, $personnel] = $this->records();
+        $schedule = WorkSchedule::create($this->schedulePayload());
+
+        PersonnelSchedule::create([
+            'personnel_id' => $personnel->personnel_id,
+            'schedule_id' => $schedule->schedule_id,
+            'effective_from' => '2026-10-01',
+            'created_by' => $administrator->user_id,
+        ]);
+
+        $dutyDays = ['01', '05', '06', '07', '08', '12', '13', '14', '15', '19', '20', '21', '22', '26', '27', '28', '29'];
+        foreach ($dutyDays as $day) {
+            $date = "2026-10-{$day}";
+            $morningMinute = (int) $day <= 15 ? '01' : '16';
+            Schema::getConnection()->table('attendance_records')->insert([
+                'personnel_id' => $personnel->personnel_id,
+                'schedule_id' => $schedule->schedule_id,
+                'attendance_date' => $date,
+                'morning_time_in' => $date." 07:{$morningMinute}:00",
+                'morning_time_out' => $date.' 12:00:00',
+                'afternoon_time_in' => $date.' 13:00:00',
+                'afternoon_time_out' => $date.' 18:00:00',
+                'attendance_status' => 'Present',
+                'total_work_minutes' => 600,
+                'is_verified' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $this->assertDatabaseHas('attendance_records', [
+            'personnel_id' => $personnel->personnel_id,
+            'attendance_date' => '2026-10-15',
+        ]);
+        $this->assertDatabaseCount('attendance_records', count($dutyDays));
+
+        foreach (['first_half', 'second_half'] as $period) {
+            $this->actingAs($administrator)
+                ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                    'month' => '2026-10',
+                    'period' => $period,
+                    'status' => 'Submitted',
+                ])
+                ->assertOk();
+
+            $this->actingAs($administrator)
+                ->patchJson("/api/dtr/{$personnel->personnel_id}/status", [
+                    'month' => '2026-10',
+                    'period' => $period,
+                    'status' => 'Certified',
+                ])
+                ->assertOk()
+                ->assertJsonPath('certification.status', 'Certified');
+        }
+
+        $this->actingAs($administrator)
+            ->getJson('/api/dtr?month=2026-10&period=full_month')
+            ->assertOk()
+            ->assertJsonPath('data.0.certification.status', 'Draft')
+            ->assertJsonPath('data.0.combined_export.uses_cutoff_workflow', true)
+            ->assertJsonPath('data.0.combined_export.ready', true)
+            ->assertJsonPath('data.0.combined_export.first_half_status', 'Certified')
+            ->assertJsonPath('data.0.combined_export.second_half_status', 'Certified');
+
+        $download = $this->actingAs($administrator)
+            ->postJson('/api/dtr/generate', [
+                'month' => '2026-10',
+                'period' => 'full_month',
+                'personnel_ids' => [$personnel->personnel_id],
+            ])
+            ->assertOk();
+        $path = $download->baseResponse->getFile()->getPathname();
+
+        try {
+            $archive = new ZipArchive;
+            $this->assertTrue($archive->open($path) === true);
+            $xml = $archive->getFromName('word/document.xml');
+            $archive->close();
+            $this->assertStringContainsString('AEMON TARGARYEN', $xml);
+            $this->assertStringContainsString('7:01', $xml);
+            $this->assertStringContainsString('7:16', $xml);
+        } finally {
+            unlink($path);
+        }
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $administrator->user_id,
+            'activity_type' => 'DTR_COMBINED_DOWNLOADED',
+            'entity_type' => 'dtr_certifications',
+        ]);
+        $this->assertDatabaseMissing('dtr_certifications', [
+            'personnel_id' => $personnel->personnel_id,
+            'dtr_year' => 2026,
+            'dtr_month' => 10,
+            'dtr_period' => 'full_month',
+        ]);
+
+        $firstHalf = DtrCertification::query()
+            ->where('personnel_id', $personnel->personnel_id)
+            ->where('dtr_year', 2026)
+            ->where('dtr_month', 10)
+            ->where('dtr_period', 'first_half')
+            ->firstOrFail();
+        $tamperedSnapshot = $firstHalf->certified_snapshot;
+        $tamperedSnapshot['full_name'] = 'Tampered Personnel';
+        $firstHalf->certified_snapshot = $tamperedSnapshot;
+        $firstHalf->save();
+        Carbon::setTestNow(now()->addMinutes(2));
+
+        $this->actingAs($administrator)
+            ->postJson('/api/dtr/generate', [
+                'month' => '2026-10',
+                'period' => 'full_month',
+                'personnel_ids' => [$personnel->personnel_id],
+            ])
+            ->assertConflict()
+            ->assertJsonPath(
+                'message',
+                'A certified DTR integrity check failed for Aemon Targaryen.'
             );
     }
 
